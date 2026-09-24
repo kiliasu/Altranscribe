@@ -1,0 +1,3 @@
+Copyright 2017 The Roboto Flex Project Authors (https://github.com/TypeNetwork/Roboto-Flex)
+
+https://scripts.sil.org/OFL

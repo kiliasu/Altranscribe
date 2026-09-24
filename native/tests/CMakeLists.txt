@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.14)
+project(audio_processing_tests LANGUAGES C CXX)
+enable_testing()
+add_subdirectory(../third_party third_party)
+add_executable(audio_processing_test audio_processing_test.cpp ../audio/audio_processing.cpp)
+target_compile_features(audio_processing_test PRIVATE cxx_std_17)
+target_compile_definitions(audio_processing_test PRIVATE NOMINMAX)
+target_include_directories(audio_processing_test PRIVATE ../audio)
+target_link_libraries(audio_processing_test PRIVATE alt_rnnoise alt_resampler)
+add_test(NAME audio_processing COMMAND audio_processing_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/rnnoise/rnnoise-model.bin")

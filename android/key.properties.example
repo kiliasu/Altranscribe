@@ -1,0 +1,6 @@
+# Copy to android/key.properties (ignored by Git) to sign release APKs with your own key.
+# storeFile is relative to android/app; an absolute path with forward slashes also works.
+storeFile=C:/path/to/altranscribe-release.jks
+storePassword=your-keystore-password
+keyAlias=altranscribe
+keyPassword=your-key-password

@@ -1,0 +1,63 @@
+name: Verify and build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      android:
+        description: Build the Android ARM64 debug APK (includes building FFmpeg)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install the pinned Flutter SDK
+        run: |
+          git clone --depth 1 --branch 3.47.3 https://github.com/flutter/flutter.git "$env:RUNNER_TEMP/flutter"
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter checkout failed.' }
+          "$env:RUNNER_TEMP/flutter/bin" >> $env:GITHUB_PATH
+      - name: Analyze and test Flutter and native audio
+        run: ./dev.ps1 -Verify
+      - name: Build Windows
+        run: ./dev.ps1 -Build
+
+  android:
+    if: github.event_name == 'workflow_dispatch' && inputs.android
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install the pinned Flutter SDK and select Java 17
+        run: |
+          git clone --depth 1 --branch 3.47.3 https://github.com/flutter/flutter.git "$env:RUNNER_TEMP/flutter"
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter checkout failed.' }
+          "$env:RUNNER_TEMP/flutter/bin" >> $env:GITHUB_PATH
+          "JAVA_HOME=$env:JAVA_HOME_17_X64" >> $env:GITHUB_ENV
+          "$env:JAVA_HOME_17_X64/bin" >> $env:GITHUB_PATH
+          "ANDROID_HOME=$env:GITHUB_WORKSPACE/.tools/android-sdk" >> $env:GITHUB_ENV
+          "ANDROID_SDK_ROOT=$env:GITHUB_WORKSPACE/.tools/android-sdk" >> $env:GITHUB_ENV
+      - name: Prepare Android SDK and native decoder
+        run: |
+          flutter config --android-sdk "$env:ANDROID_HOME" --jdk-dir "$env:JAVA_HOME"
+          if ($LASTEXITCODE -ne 0) { throw 'Android toolchain configuration failed.' }
+          ./scripts/setup-android.ps1
+          ./scripts/setup-android-ffmpeg.ps1
+      - name: Build Android
+        run: ./android-dev.ps1 -Build
