@@ -394,7 +394,8 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: SizedBox(
-              width: 400,
+              // Wide enough for two connected segments in the test font.
+              width: 640,
               child: AltButtonGroup(
                 stretch: true,
                 items: const [

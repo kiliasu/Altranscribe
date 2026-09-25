@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:material_ui/material_ui.dart';
 
 // Account for the native chip's two-pixel border to keep a 32px height.
@@ -89,39 +90,57 @@ class AltButtonGroup extends StatefulWidget {
 
 class _AltButtonGroupState extends State<AltButtonGroup> {
   int? pressed;
+  bool get medium => widget.height >= 56;
+  double get horizontal => medium
+      ? 24.0
+      : widget.height <= 32
+      ? 12.0
+      : 16.0;
+  TextStyle labelStyle(BuildContext context) => medium
+      ? Theme.of(context).textTheme.titleMedium!
+            .copyWith(fontWeight: FontWeight.w500)
+      : Theme.of(context).textTheme.labelLarge!;
+
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final medium = widget.height >= 56;
-    final style = medium
-        ? Theme.of(context).textTheme.titleMedium!
-              .copyWith(fontWeight: FontWeight.w500)
-        : Theme.of(context).textTheme.labelLarge!;
-    final horizontal = medium
-        ? 24.0
-        : widget.height <= 32
-        ? 12.0
-        : 16.0;
-    double natural = 0;
+    final style = labelStyle(context);
+    final widths = <double>[];
     for (final item in widget.items) {
       final painter = TextPainter(
         text: TextSpan(text: item.label, style: style),
         textDirection: Directionality.of(context),
         textScaler: MediaQuery.textScalerOf(context),
       )..layout();
-      natural = math.max(
-        natural,
+      widths.add(
         painter.width +
             horizontal * 2 +
             (item.icon == null ? 0 : (medium ? 32 : 28)),
       );
       painter.dispose();
     }
-    return SizedBox(
+    final count = widget.items.length;
+    final natural = widths.fold(0.0, math.max);
+    return _GroupSizing(
+      widths: widths,
       height: widget.height,
+      stretch: widget.stretch,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final count = widget.items.length;
+          // Equal segments would cut long labels off on a phone; standalone
+          // pills that wrap onto further lines keep every label readable.
+          if (!_GroupSizing.fits(widths, constraints.maxWidth)) {
+            return Wrap(
+              spacing: _GroupSizing.spacing,
+              runSpacing: _GroupSizing.spacing,
+              children: [
+                for (var i = 0; i < count; i++)
+                  SizedBox(
+                    height: widget.height,
+                    child: button(context, i, false),
+                  ),
+              ],
+            );
+          }
           final width = widget.stretch
               ? constraints.maxWidth
               : math.min(
@@ -156,84 +175,7 @@ class _AltButtonGroupState extends State<AltButtonGroup> {
                       flex: (weight * 1000000).round(),
                       child: child!,
                     ),
-                    child: Semantics(
-                      selected: widget.selected.contains(i),
-                      child: Listener(
-                        behavior: HitTestBehavior.translucent,
-                        onPointerDown: widget.onPressed == null
-                            ? null
-                            : (_) => setState(() => pressed = i),
-                        onPointerUp: (_) => setState(() => pressed = null),
-                        onPointerCancel: (_) => setState(() => pressed = null),
-                        child: FilledButton(
-                          key: widget.items[i].key,
-                          onPressed: widget.onPressed == null
-                              ? null
-                              : () => widget.onPressed!(i),
-                          onHover: (hover) {
-                            if (!hover && pressed == i) {
-                              setState(() => pressed = null);
-                            }
-                          },
-                          style: ButtonStyle(
-                            minimumSize: WidgetStatePropertyAll(
-                              Size(0, widget.height),
-                            ),
-                            padding: const WidgetStatePropertyAll(
-                              EdgeInsets.symmetric(horizontal: 8),
-                            ),
-                            backgroundColor: WidgetStatePropertyAll(
-                              widget.selected.contains(i)
-                                  ? colors.primary
-                                  : colors.surfaceContainer,
-                            ),
-                            foregroundColor: WidgetStatePropertyAll(
-                              widget.selected.contains(i)
-                                  ? colors.onPrimary
-                                  : colors.onSurfaceVariant,
-                            ),
-                            textStyle: WidgetStatePropertyAll(style),
-                            shape: WidgetStateProperty.resolveWith((states) {
-                              final down = states.contains(WidgetState.pressed);
-                              // The shape follows the same tokens for mouse and keyboard presses.
-                              final inner = down || widget.selected.contains(i)
-                                  ? (medium ? 12.0 : 8.0)
-                                  : 8.0;
-                              return RoundedRectangleBorder(
-                                borderRadius: BorderRadius.horizontal(
-                                  left: Radius.circular(
-                                    i == 0 ? widget.height : inner,
-                                  ),
-                                  right: Radius.circular(
-                                    i == count - 1 ? widget.height : inner,
-                                  ),
-                                ),
-                              );
-                            }),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (widget.items[i].icon != null) ...[
-                                Icon(
-                                  widget.items[i].icon,
-                                  size: medium ? 24 : 20,
-                                  fill: widget.selected.contains(i) ? 1 : 0,
-                                ),
-                                const SizedBox(width: 8),
-                              ],
-                              Flexible(
-                                child: Text(
-                                  widget.items[i].label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                    child: button(context, i, true),
                   ),
                 ],
               ],
@@ -242,6 +184,161 @@ class _AltButtonGroupState extends State<AltButtonGroup> {
         },
       ),
     );
+  }
+
+  /// One segment; [connected] segments share edges and grow while pressed.
+  Widget button(BuildContext context, int i, bool connected) {
+    final colors = Theme.of(context).colorScheme;
+    final count = widget.items.length;
+    final selected = widget.selected.contains(i);
+    return Semantics(
+      selected: selected,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: widget.onPressed == null || !connected
+            ? null
+            : (_) => setState(() => pressed = i),
+        onPointerUp: (_) => setState(() => pressed = null),
+        onPointerCancel: (_) => setState(() => pressed = null),
+        child: FilledButton(
+          key: widget.items[i].key,
+          onPressed: widget.onPressed == null
+              ? null
+              : () => widget.onPressed!(i),
+          onHover: (hover) {
+            if (!hover && pressed == i) setState(() => pressed = null);
+          },
+          style: ButtonStyle(
+            minimumSize: WidgetStatePropertyAll(Size(0, widget.height)),
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: connected ? 8 : horizontal),
+            ),
+            backgroundColor: WidgetStatePropertyAll(
+              selected ? colors.primary : colors.surfaceContainer,
+            ),
+            foregroundColor: WidgetStatePropertyAll(
+              selected ? colors.onPrimary : colors.onSurfaceVariant,
+            ),
+            textStyle: WidgetStatePropertyAll(labelStyle(context)),
+            tapTargetSize: connected ? null : MaterialTapTargetSize.shrinkWrap,
+            shape: WidgetStateProperty.resolveWith((states) {
+              if (!connected) {
+                return RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(widget.height),
+                );
+              }
+              final down = states.contains(WidgetState.pressed);
+              // The shape follows the same tokens for mouse and keyboard presses.
+              final inner = down || selected ? (medium ? 12.0 : 8.0) : 8.0;
+              return RoundedRectangleBorder(
+                borderRadius: BorderRadius.horizontal(
+                  left: Radius.circular(i == 0 ? widget.height : inner),
+                  right: Radius.circular(
+                    i == count - 1 ? widget.height : inner,
+                  ),
+                ),
+              );
+            }),
+          ),
+          child: Row(
+            mainAxisSize: connected ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (widget.items[i].icon != null) ...[
+                Icon(
+                  widget.items[i].icon,
+                  size: medium ? 24 : 20,
+                  fill: selected ? 1 : 0,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Text(
+                  widget.items[i].label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Answers intrinsic size queries for a group from its measured labels, so
+/// the LayoutBuilder inside never has to be measured speculatively.
+class _GroupSizing extends SingleChildRenderObjectWidget {
+  const _GroupSizing({
+    required this.widths,
+    required this.height,
+    required this.stretch,
+    required Widget super.child,
+  });
+  final List<double> widths;
+  final double height;
+  final bool stretch;
+  static const spacing = 4.0;
+
+  static double connectedWidth(List<double> widths) =>
+      widths.fold(0.0, math.max) * widths.length + 2 * (widths.length - 1);
+  static bool fits(List<double> widths, double width) =>
+      !width.isFinite || connectedWidth(widths) <= width;
+  static double wrappedHeight(
+    List<double> widths,
+    double height,
+    double width,
+  ) {
+    var rows = 1;
+    var used = 0.0;
+    for (final item in widths) {
+      if (used > 0 && used + spacing + item > width) {
+        rows++;
+        used = item;
+      } else {
+        used = used == 0 ? item : used + spacing + item;
+      }
+    }
+    return rows * height + (rows - 1) * spacing;
+  }
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderGroupSizing(widths, height, stretch);
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderGroupSizing renderObject,
+  ) => renderObject
+    ..widths = widths
+    ..height = height
+    ..stretch = stretch;
+}
+
+class _RenderGroupSizing extends RenderProxyBox {
+  _RenderGroupSizing(this.widths, this.height, this.stretch);
+  List<double> widths;
+  double height;
+  bool stretch;
+  double heightFor(double width) => _GroupSizing.fits(widths, width)
+      ? height
+      : _GroupSizing.wrappedHeight(widths, height, width);
+  @override
+  double computeMinIntrinsicWidth(double height) => widths.fold(0.0, math.max);
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      _GroupSizing.connectedWidth(widths);
+  @override
+  double computeMinIntrinsicHeight(double width) => heightFor(width);
+  @override
+  double computeMaxIntrinsicHeight(double width) => heightFor(width);
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final width = stretch && constraints.maxWidth.isFinite
+        ? constraints.maxWidth
+        : constraints.constrainWidth(_GroupSizing.connectedWidth(widths));
+    return Size(width, constraints.constrainHeight(heightFor(width)));
   }
 }
 
