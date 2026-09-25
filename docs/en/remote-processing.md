@@ -4,22 +4,28 @@ English | [简体中文](../zh-CN/remote-processing.md) · [Home](../../README.m
 
 A Windows computer can share local Whisper and text models with another Windows computer or an Android phone. The client handles capture, captions, and transcript storage; the host handles recognition, translation, and summaries.
 
-## Connection steps
+## Pairing a device
 
 1. Prepare Whisper and a model on the host. For translation or summaries, start and configure Ollama or a local OpenAI-compatible text service.
-2. Open sharing settings on the host's **Devices** page. Select a network address, port (8178 by default), model, and CPU or GPU. Optionally share the text model, then start sharing.
-3. On the client, open **Devices → Connect to host**, enter the HTTP address and token shown by the host, and click **Connect and use**. The host becomes the processing engine right away.
-4. Return to the home screen and start live or file transcription. If the host does not share a text model, turn off translation, title/summary generation, and file cleanup.
+2. On the host's **Devices** page, turn on sharing: choose a network address, port (8178 by default), model, and CPU or GPU, optionally share the text model, then start. The panel then shows a QR code and a six-digit pairing code; **Add device** on the same page reopens it later.
+3. On an Android phone, open **Devices → Scan to pair** and point the camera at the QR code. On a Windows client, or without a camera, choose **Connect to host**: hosts sharing on the same network are listed under *Hosts nearby*, so pick one or type the address, then enter the pairing code. An invite link copied from the host's panel can be pasted into the address field instead.
+4. The host becomes the processing engine right away. Return to the home screen and start live or file transcription. If the host does not share a text model, turn off translation, title/summary generation, and file cleanup.
 5. To return to local or cloud processing, save a different engine under **Settings → Whisper models**.
 
+A pairing code lasts ten minutes and works once; closing the host's sharing panel ends it, and **New code** makes another. Each paired device receives its own credential, which stays valid across restarts of sharing until the device is removed from the host's *Paired devices* list. Hosts running 0.6.1 or older have no pairing codes; they still accept the token they display.
+
 The client does not need Whisper or model weights. Windows file transcription still requires local FFmpeg; Android includes decoding components.
+
+## Status and discovery
+
+- The **Devices** page shows whether the saved host is online, busy, or offline, checked every twenty seconds while the page is open. The host shows when each paired device was last seen.
+- Hosts answer discovery requests on UDP port 47653 from devices on the same network. If the saved host later answers from a different address, for example after a DHCP change, the client updates the address by itself. Discovery does not cross networks; over Tailscale, connect by address.
+- Windows Firewall must allow the app's inbound connections: the sharing port over TCP and port 47653 over UDP. Windows normally asks once when sharing first starts; the app does not change firewall rules.
 
 ## Sharing and networking
 
 - Sharing is off by default. Closing its settings panel leaves sharing active; turn off the sharing switch or exit the host app to end it.
-- Each time sharing starts, a new token is generated. Clients must reconnect with the new token.
-- Windows Firewall must allow inbound connections on the selected port. The app does not change firewall rules.
-- Local network addresses and Tailscale's private address range are accepted. Connections between Tailscale nodes have not been verified. Public internet connections, HTTPS, and automatic device discovery are not supported.
+- Local network addresses and Tailscale's private address range are accepted. Connections between Tailscale nodes have not been verified. Public internet connections and HTTPS are not supported.
 - HTTP does not encrypt traffic; share only on trusted networks. Tailscale connections rely on Tailscale's own network protection.
 - Running local transcription and sharing at the same time uses additional memory or GPU memory. Clients receive a message when the host is busy.
 
@@ -29,4 +35,4 @@ Transcripts are stored on the client. The host does not store client transcripts
 
 Pausing stops new capture. Discarding cancels the current task and deletes its client transcript without shutting down the host. Ending host sharing interrupts client tasks. A disconnect preserves completed text; translation failures preserve the source text.
 
-Automatic reconnection, audio resumption, task migration, and transcript synchronization are not available. The client saves one host configuration, with an encrypted token. Sharing does not support per-device permissions or individual device revocation.
+Automatic reconnection, audio resumption, task migration, and transcript synchronization are not available. The client saves one host, with an encrypted credential. The host keeps only a hash of each device's credential, in `devices.json` next to its settings, so the file cannot be used to connect.

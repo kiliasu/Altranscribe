@@ -1,7 +1,7 @@
 name: altranscribe
 description: "Altranscribe — real-time transcription and translation for Windows and Android."
 publish_to: 'none'
-version: 0.6.1+4
+version: 0.6.2+5
 
 environment:
   sdk: ^3.13.3
@@ -14,6 +14,7 @@ dependencies:
   file_selector: 1.1.0
   ffi: 2.2.0
   crypto: 3.0.7
+  qr: 4.0.0
 
 dev_dependencies:
   file_selector_platform_interface: 2.7.0

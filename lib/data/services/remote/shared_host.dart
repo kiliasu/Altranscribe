@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -9,17 +8,30 @@ import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
+import 'package:altranscribe/data/services/remote/discovery.dart';
+import 'package:altranscribe/data/services/remote/paired_devices.dart';
 import 'package:altranscribe/data/services/remote/remote_protocol.dart';
 
 class SharedHost extends ChangeNotifier {
-  SharedHost({required this.engine, required this.translator});
+  SharedHost({
+    required this.engine,
+    required this.translator,
+    PairedDevices? devices,
+  }) : devices = devices ?? PairedDevices();
   final SpeechEngine engine;
   final TranslationService translator;
+
+  /// Who may connect; pairing codes and revocation live here.
+  final PairedDevices devices;
+  final discovery = DiscoveryResponder();
   HttpServer? _server;
   bool busy = false;
   bool _disposed = false;
   String? error;
-  String token = '';
+
+  /// Set when the LAN discovery port could not be opened; sharing still works
+  /// by address.
+  bool discoveryUnavailable = false;
   String address = '';
   Map<String, Object?> info = {};
   final _speech = _HostQueue();
@@ -69,9 +81,7 @@ class SharedHost extends ChangeNotifier {
       }
       server.idleTimeout = const Duration(seconds: 30);
       _server = server;
-      final random = Random.secure();
-      token = base64UrlEncode(List.generate(32, (_) => random.nextInt(256)))
-          .replaceAll('=', '');
+      await devices.load();
       address = Uri(
         scheme: 'http',
         host: bindAddress.address,
@@ -100,6 +110,12 @@ class SharedHost extends ChangeNotifier {
           unawaited(stop());
         },
       );
+      try {
+        await discovery.start(describe);
+        discoveryUnavailable = false;
+      } catch (_) {
+        discoveryUnavailable = true;
+      }
     } catch (_) {
       error = 'remoteHostFailed';
       translator.stop();
@@ -111,19 +127,53 @@ class SharedHost extends ChangeNotifier {
     }
   }
 
-  bool _authorized(HttpRequest request) {
+  /// What discovery answers with; the address is where clients connect.
+  Map<String, Object?> describe() => {
+    'id': devices.hostId,
+    'name': info['name'],
+    'address': address,
+    'busy': pending > 0,
+  };
+
+  static bool _privatePeer(HttpRequest request) {
     final peer = request.connectionInfo?.remoteAddress;
-    if (peer == null || !privateAddress(peer)) return false;
+    return peer != null && privateAddress(peer);
+  }
+
+  PairedDevice? _authorized(HttpRequest request) {
+    if (!_privatePeer(request)) return null;
     final supplied =
         request.headers.value(HttpHeaders.authorizationHeader) ?? '';
-    final expected = 'Bearer $token';
-    var difference = supplied.length ^ expected.length;
-    for (var i = 0; i < expected.length; i++) {
-      difference |=
-          expected.codeUnitAt(i) ^
-          (i < supplied.length ? supplied.codeUnitAt(i) : 0);
+    if (!supplied.startsWith('Bearer ')) return null;
+    return devices.authorize(supplied.substring(7));
+  }
+
+  /// Trades a pairing code for a device token. Wrong codes answer 403 and
+  /// count against the code, which closes after a few guesses.
+  Future<void> _pair(HttpRequest request, HttpResponse response) async {
+    final data = await boundedBytes(
+      request,
+      4096,
+    ).timeout(const Duration(seconds: 30));
+    final json = Map<String, dynamic>.from(
+      jsonDecode(utf8.decode(data)) as Map,
+    );
+    final code = json['code'] as String;
+    final name = json['name'] as String? ?? '';
+    final platform = json['platform'] as String? ?? '';
+    final paired = await devices.pair(code, name, platform: platform);
+    if (paired == null) {
+      response.statusCode = 403;
+      return;
     }
-    return difference == 0;
+    response.write(
+      jsonEncode({
+        'token': paired.token,
+        'deviceId': paired.device.id,
+        'hostId': devices.hostId,
+        'name': info['name'],
+      }),
+    );
   }
 
   Future<void> _handle(HttpRequest request) async {
@@ -132,10 +182,23 @@ class SharedHost extends ChangeNotifier {
     response.headers.contentType = ContentType.json;
     response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
     try {
-      if (!_authorized(request) || request.headers.value('origin') != null) {
+      final browser = request.headers.value('origin') != null;
+      final pairing =
+          request.method == 'POST' && request.uri.path == '/v1/pair';
+      final device = browser || pairing ? null : _authorized(request);
+      if (pairing && !browser && _privatePeer(request)) {
+        await _pair(request, response);
+      } else if (device == null) {
         response.statusCode = 401;
       } else if (request.method == 'GET' && request.uri.path == '/v1/info') {
-        response.write(jsonEncode(info));
+        response.write(
+          jsonEncode({
+            ...info,
+            'hostId': devices.hostId,
+            'busy': pending > 0,
+            'device': device.name,
+          }),
+        );
       } else if (request.method != 'POST') {
         response.statusCode = 404;
       } else {
@@ -289,7 +352,8 @@ class SharedHost extends ChangeNotifier {
     _notify();
     final server = _server;
     _server = null;
-    token = '';
+    discovery.stop();
+    devices.cancelPairing();
     try {
       await server?.close(force: true);
       translator.stop();

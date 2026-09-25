@@ -25,6 +25,7 @@ class MainActivity : FlutterActivity() {
     private var capture: Pair<Map<String, Any?>, MethodChannel.Result>? = null
     private var picker: MethodChannel.Result? = null
     private var saver: Pair<ByteArray, MethodChannel.Result>? = null
+    private var scanner: MethodChannel.Result? = null
     private var overlay: (() -> Unit)? = null
     override fun provideFlutterEngine(context: Context): FlutterEngine = runtime.engine
     override fun shouldDestroyEngineWithHost() = false
@@ -56,7 +57,13 @@ class MainActivity : FlutterActivity() {
         capture = null
         picker?.success(emptyList<String>()); picker = null
         saver?.second?.success(false); saver = null
+        scanner?.success(null); scanner = null
         super.onDestroy()
+    }
+    fun scanQr(hint: String, result: MethodChannel.Result) {
+        if (scanner != null) { result.error("busy", "Scanner already open", null); return }
+        scanner = result
+        startActivityForResult(Intent(this, ScanActivity::class.java).putExtra(ScanActivity.EXTRA_HINT, hint), 106)
     }
     fun saveDocument(name: String, mime: String, bytes: ByteArray, result: MethodChannel.Result) {
         if (saver != null) { result.error("busy", "Save dialog already open", null); return }
@@ -137,6 +144,12 @@ class MainActivity : FlutterActivity() {
                     contentResolver.openOutputStream(target, "wt")?.use { it.write(pending.first) } ?: throw IllegalStateException("No output stream")
                     pending.second.success(true)
                 } catch (error: Exception) { pending.second.error("exportFailed", error.message, null) }
+            }
+            106 -> {
+                val pending = scanner; scanner = null
+                if (pending == null) return
+                if (data?.getBooleanExtra(ScanActivity.EXTRA_DENIED, false) == true) pending.error("cameraDenied", "Camera permission denied", null)
+                else pending.success(if (resultCode == Activity.RESULT_OK) data?.getStringExtra(ScanActivity.EXTRA_TEXT) else null)
             }
         }
     }

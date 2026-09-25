@@ -80,6 +80,17 @@ flutter {
     source = "../.."
 }
 
+dependencies {
+    // The pairing QR scanner: CameraX for the preview and ZXing to decode frames.
+    val camerax = "1.4.2"
+    implementation("androidx.activity:activity:1.9.3")
+    implementation("androidx.camera:camera-core:$camerax")
+    implementation("androidx.camera:camera-camera2:$camerax")
+    implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.camera:camera-view:$camerax")
+    implementation("com.google.zxing:core:3.5.3")
+}
+
 val audioAssets by tasks.registering(Copy::class) {
     from("../../native/third_party/rnnoise/rnnoise-model.bin")
     from("../../native/third_party/rnnoise/COPYING") { into("licenses"); rename { "RNNoise-LICENSE" } }

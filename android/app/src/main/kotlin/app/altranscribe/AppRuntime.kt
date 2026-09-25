@@ -61,6 +61,7 @@ class AppRuntime private constructor(val context: Context) {
                 "openDocument" -> withActivity(result) { it.openDocument(call.argument<String>("uri")!!, result) }
                 "readDocument" -> async(result) { readDocument(call.argument<String>("uri")!!) }
                 "shareFile" -> withActivity(result) { it.shareFile(call.argument<String>("path")!!, call.argument<String>("mime")!!, result) }
+                "scanQr" -> withActivity(result) { it.scanQr(call.argument<String>("hint") ?: "", result) }
                 "backgroundWork" -> {
                     val enabled = call.argument<Boolean>("enabled") == true
                     try {

@@ -38,8 +38,10 @@ try {
         [Environment]::SetEnvironmentVariable($name, $localEnvironment[$name], 'Process')
     }
     $pubOutput = & $flutter pub get 2>&1
-    if ($LASTEXITCODE -ne 0 -and "$pubOutput" -match 'Building with plugins requires symlink support') {
-        # Directory junctions work without changing Windows Developer Mode.
+    $pubFailed = $LASTEXITCODE -ne 0
+    if (-not $pubFailed -or "$pubOutput" -match 'Building with plugins requires symlink support') {
+        # Directory junctions work without changing Windows Developer Mode. A dependency
+        # change can leave the folder empty even though pub get itself succeeds.
         $pluginRoot = Join-Path $projectRoot 'windows/flutter/ephemeral/.plugin_symlinks'
         $plugins = Get-Content -LiteralPath '.flutter-plugins-dependencies' -Raw | ConvertFrom-Json
         foreach ($plugin in $plugins.plugins.windows) {
@@ -54,7 +56,7 @@ try {
                 New-Item -ItemType Junction -Path $linkPath -Target $targetPath | Out-Null
             }
         }
-        $pubOutput = & $flutter pub get 2>&1
+        if ($pubFailed) { $pubOutput = & $flutter pub get 2>&1 }
     }
     if ($LASTEXITCODE -ne 0) {
         $pubOutput | Write-Output

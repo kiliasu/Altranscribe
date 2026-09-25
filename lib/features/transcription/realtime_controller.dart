@@ -4,6 +4,7 @@ import 'package:altranscribe/data/services/logging/app_log.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
@@ -28,6 +29,8 @@ import 'package:altranscribe/data/services/translation/translation_context.dart'
 import 'package:altranscribe/data/services/transcription/transcript_assembler.dart';
 import 'package:altranscribe/data/models/caption_preferences.dart';
 import 'package:altranscribe/data/services/models/model_catalog.dart';
+import 'package:altranscribe/data/services/remote/discovery.dart';
+import 'package:altranscribe/data/services/remote/paired_devices.dart';
 import 'package:altranscribe/data/services/remote/remote_protocol.dart';
 import 'package:altranscribe/data/services/remote/remote_services.dart';
 import 'package:altranscribe/data/services/remote/shared_host.dart';
@@ -97,8 +100,24 @@ class RealtimeController extends ChangeNotifier {
   final SharedHost? _providedHost;
   late final sharedHost =
       _providedHost ??
-      SharedHost(engine: WhisperService(audio), translator: LocalLlmService());
+      SharedHost(
+        engine: WhisperService(audio),
+        translator: LocalLlmService(),
+        // Phones never host, so their registry stays in memory.
+        devices: PairedDevices(
+          file: MobilePlatform.android
+              ? null
+              : File('${store.directory.path}/devices.json'),
+        ),
+      );
   final remoteConnection = RemoteConnection();
+
+  /// Health of the saved host, refreshed while someone is watching it.
+  HostStatus hostStatus = HostStatus.unknown;
+  DateTime? hostSeen;
+  Timer? _hostTimer;
+  int _hostWatchers = 0;
+  bool _probingHost = false;
   late final remoteEngine = RemoteSpeechEngine(remoteConnection);
   late final remoteTranslator = RemoteTranslationService(remoteConnection);
   late final remoteSummarizer = RemoteTranslationService(remoteConnection);
@@ -219,10 +238,11 @@ class RealtimeController extends ChangeNotifier {
       }
       remoteConnection.address = settings['remoteAddress'] as String? ?? '';
       remoteConnection.name = settings['remoteName'] as String? ?? '';
+      remoteConnection.hostId = settings['remoteHostId'] as String? ?? '';
       if (remoteConnection.address.isNotEmpty) {
-        remoteConnection.token = await WindowsCredentialStore(store.directory)
-            .readNamed('remote-host');
+        remoteConnection.token = await credentials.readNamed('remote-host');
       }
+      if (localInferenceAllowed) await sharedHost.devices.load();
       final root = environmentValue('ALTRANSCRIBE_WHISPER_DIR');
       executable =
           environmentValue('ALTRANSCRIBE_WHISPER_EXECUTABLE') ??
@@ -320,6 +340,7 @@ class RealtimeController extends ChangeNotifier {
       'useRemote': useRemote,
       'remoteAddress': remoteConnection.address,
       'remoteName': remoteConnection.name,
+      'remoteHostId': remoteConnection.hostId,
     });
     _notify();
   }
@@ -336,29 +357,173 @@ class RealtimeController extends ChangeNotifier {
     }
   }
 
-  Future<void> connectRemote(String address, String token, String name) async {
+  Future<void> connectRemote(
+    String address,
+    String token,
+    String name, {
+    String hostId = '',
+  }) async {
     if (active || updatingRecordId != null) throw StateError('recordBusy');
     final candidate = RemoteConnection(
       address: address,
       token: token,
       name: name,
+      hostId: hostId,
     );
     final client = RemoteClient(candidate);
     try {
-      await client.connect();
-      await WindowsCredentialStore(store.directory)
-          .writeNamed('remote-host', token);
+      final info = await client.connect();
+      await credentials.writeNamed('remote-host', token);
       remoteConnection.address = remoteUri(address).toString();
       remoteConnection.token = token.trim();
       remoteConnection.name = name.trim().isEmpty
           ? candidate.info!['name'] as String
           : name.trim();
+      remoteConnection.hostId = candidate.hostId;
       remoteConnection.info = candidate.info;
+      hostStatus = info['busy'] == true ? HostStatus.busy : HostStatus.online;
+      hostSeen = DateTime.now();
       useRemote = true;
       speechProvider = SpeechProvider.whisper;
       await saveSettings();
+      _scheduleHostProbes();
     } finally {
       client.close();
+    }
+  }
+
+  String get deviceName => MobilePlatform.android
+      ? MobilePlatform.deviceName
+      : Platform.localHostname;
+
+  /// Trades a pairing code shown on the host for this device's own token,
+  /// then connects. [name] is what this device calls the host.
+  Future<void> pairWithHost(
+    String address,
+    String code, {
+    String name = '',
+  }) async {
+    if (active || updatingRecordId != null) throw StateError('recordBusy');
+    final client = RemoteClient(RemoteConnection(address: address));
+    final grant = await client.pair(
+      code,
+      deviceName,
+      MobilePlatform.android ? 'android' : 'windows',
+    );
+    AppLog.instance.info('remote', 'Paired with host ${grant['hostId']}');
+    await connectRemote(
+      address,
+      grant['token'] as String,
+      name.trim().isEmpty ? grant['name'] as String? ?? '' : name,
+      hostId: grant['hostId'] as String,
+    );
+  }
+
+  /// Pairs from a scanned or pasted invite.
+  Future<void> pairWithInvite(String text) async {
+    final invite = PairingInvite.parse(text);
+    await pairWithHost(invite.address, invite.code, name: invite.name);
+  }
+
+  Future<void> forgetHost() async {
+    if (active || updatingRecordId != null) throw StateError('recordBusy');
+    remoteConnection
+      ..address = ''
+      ..token = ''
+      ..name = ''
+      ..hostId = ''
+      ..info = null;
+    hostStatus = HostStatus.unknown;
+    hostSeen = null;
+    _scheduleHostProbes();
+    await credentials.writeNamed('remote-host', '');
+    await saveSettings();
+  }
+
+  /// Hosts answering on the local network right now.
+  Future<List<DiscoveredHost>> findHosts() => discoverHosts();
+
+  /// Keeps the saved host's status fresh while a page shows it.
+  void watchHost(bool watching) {
+    _hostWatchers = math.max(0, _hostWatchers + (watching ? 1 : -1));
+    _scheduleHostProbes();
+  }
+
+  void _scheduleHostProbes() {
+    final wanted = _hostWatchers > 0 && remoteConnection.address.isNotEmpty;
+    if (wanted && _hostTimer == null) {
+      _hostTimer = Timer.periodic(
+        const Duration(seconds: 20),
+        (_) => probeHost(),
+      );
+      unawaited(probeHost());
+    } else if (!wanted) {
+      _hostTimer?.cancel();
+      _hostTimer = null;
+    }
+  }
+
+  /// One health check of the saved host. A host that moved to another
+  /// address is found again by identity through discovery.
+  Future<void> probeHost({bool discover = true}) async {
+    if (_probingHost ||
+        _disposed ||
+        remoteConnection.address.isEmpty ||
+        remoteConnection.token.isEmpty) {
+      return;
+    }
+    _probingHost = true;
+    var moved = false;
+    try {
+      final client = RemoteClient(
+        RemoteConnection(
+          address: remoteConnection.address,
+          token: remoteConnection.token,
+          name: remoteConnection.name,
+          hostId: remoteConnection.hostId,
+        ),
+      );
+      try {
+        final info = await client.connect();
+        remoteConnection.info = info;
+        if (info['hostId'] is String) {
+          remoteConnection.hostId = info['hostId'] as String;
+        }
+        hostStatus = info['busy'] == true ? HostStatus.busy : HostStatus.online;
+        hostSeen = DateTime.now();
+      } finally {
+        client.close();
+      }
+    } catch (_) {
+      hostStatus = HostStatus.offline;
+      if (discover && remoteConnection.hostId.isNotEmpty) {
+        final found = await _findSavedHost();
+        if (found != null && found.address != remoteConnection.address) {
+          AppLog.instance.info(
+            'remote',
+            'Host ${remoteConnection.name} answered from ${found.address}',
+          );
+          remoteConnection.address = found.address;
+          moved = true;
+        }
+      }
+    } finally {
+      _probingHost = false;
+    }
+    if (moved) {
+      await saveSettings();
+      return probeHost(discover: false);
+    }
+    _notify();
+  }
+
+  Future<DiscoveredHost?> _findSavedHost() async {
+    try {
+      return (await discoverHosts())
+          .where((host) => host.id == remoteConnection.hostId)
+          .firstOrNull;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -1369,6 +1534,7 @@ class RealtimeController extends ChangeNotifier {
     recordSummarizer.stop();
     if (generatingSummary) translator.stop();
     _timer?.cancel();
+    _hostTimer?.cancel();
     unawaited(stop());
     super.dispose();
   }

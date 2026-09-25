@@ -62,6 +62,10 @@ class MobilePlatform {
   static Future<void> shareFile(String path, String mimeType) =>
       channel.invokeMethod<void>('shareFile', {'path': path, 'mime': mimeType});
 
+  /// Opens the camera scanner; null when the user backs out.
+  static Future<String?> scanQr(String hint) =>
+      channel.invokeMethod<String>('scanQr', {'hint': hint});
+
   static Future<void> backgroundWork(bool enabled, {String? language}) async {
     if (android) {
       await channel.invokeMethod<void>('backgroundWork', {

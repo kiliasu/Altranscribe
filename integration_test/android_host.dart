@@ -37,10 +37,13 @@ Future<void> main() async {
     llmAddress: 'http://127.0.0.1:11434',
     llmModel: Platform.environment['ALTRANSCRIBE_TRANSLATION_MODEL']!,
   );
+  // The phone test pairs like a real client would, with a code and the address.
+  final paired = await live.sharedHost.devices.create('Android test phone');
   await File('${live.store.directory.path}/android-peer.json').writeAsString(
     jsonEncode({
       'address': live.sharedHost.address,
-      'token': live.sharedHost.token,
+      'token': paired.token,
+      'pairingCode': live.sharedHost.devices.beginPairing(),
       'name': 'Altranscribe Windows',
     }),
     flush: true,

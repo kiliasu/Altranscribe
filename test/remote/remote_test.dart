@@ -37,8 +37,12 @@ Future<void> startHost(
   llmModel: 'test-llm',
 );
 
-RemoteConnection connection(SharedHost host) =>
-    RemoteConnection(address: host.address, token: host.token);
+/// A connection for a freshly paired test device.
+Future<RemoteConnection> connection(SharedHost host) async =>
+    RemoteConnection(address: host.address, token: await pairedToken(host));
+
+Future<String> pairedToken(SharedHost host) async =>
+    (await host.devices.create('Test client')).token;
 
 class CancellableEngine extends FakeEngine {
   @override
@@ -119,24 +123,25 @@ void main() {
       );
     }
 
+    final token = await pairedToken(host);
     expect((await request('info')).$1, 401);
     expect((await request('info', token: 'x' * 43)).$1, 401);
     expect(
-      (await request(
-        'info',
-        token: host.token,
-        origin: 'https://example.com',
-      )).$1,
+      (await request('info', token: token, origin: 'https://example.com')).$1,
       401,
     );
-    final info = await request('info', token: host.token);
+    final info = await request('info', token: token);
     expect(info.$1, 200);
-    expect(info.$2, isNot(contains(host.token)));
+    expect(info.$2, isNot(contains(token)));
     expect(jsonDecode(info.$2)['speechProvider'], 'whisper');
+    expect(jsonDecode(info.$2)['hostId'], host.devices.hostId);
+    expect(jsonDecode(info.$2)['busy'], false);
+    expect(jsonDecode(info.$2)['device'], 'Test client');
+    expect(host.devices.devices.single.lastSeen, isNotNull);
     expect(
       (await request(
         'transcribe?language=en',
-        token: host.token,
+        token: token,
         bytes: [1, 2, 3],
       )).$1,
       400,
@@ -145,16 +150,60 @@ void main() {
     expect(
       (await request(
         'translate',
-        token: host.token,
+        token: token,
         bytes: utf8.encode('{"text":7}'),
       )).$1,
       400,
     );
-    final old = host.token;
+
+    // Pairing: a code from the host's screen becomes a device token.
+    Future<(int, String)> pair(String body, {String? origin}) =>
+        request('pair', bytes: utf8.encode(body), origin: origin);
+    expect((await pair('{"code":"123456","name":"Phone"}')).$1, 403);
+    final code = host.devices.beginPairing();
+    expect((await pair('{"code":"000000","name":"Phone"}')).$1, 403);
+    expect((await pair('{"code":"$code"}', origin: 'https://x.test')).$1, 401);
+    expect((await pair('{"code":7}')).$1, 400);
+    final paired = await pair(
+      '{"code":"$code","name":"Phone","platform":"android"}',
+    );
+    expect(paired.$1, 200);
+    final grant = jsonDecode(paired.$2) as Map;
+    expect(grant['hostId'], host.devices.hostId);
+    expect(grant['name'], 'Test host');
+    expect(host.devices.devices.last.name, 'Phone');
+    expect(host.devices.devices.last.platform, 'android');
+    expect((await pair('{"code":"$code","name":"Again"}')).$1, 403);
+    expect((await request('info', token: grant['token'] as String)).$1, 200);
+
+    // Tokens survive a restart of sharing, and revocation ends them.
     await host.stop();
+    expect(host.devices.pairingCode, isNull);
     await startHost(host);
-    expect(host.token, isNot(old));
-    expect((await request('info', token: old)).$1, 401);
+    expect((await request('info', token: token)).$1, 200);
+    await host.devices.revoke(host.devices.devices.first.id);
+    expect((await request('info', token: token)).$1, 401);
+    expect((await request('info', token: grant['token'] as String)).$1, 200);
+
+    final client = RemoteClient(RemoteConnection(address: host.address));
+    host.devices.beginPairing();
+    await expectLater(
+      client.pair('111111', 'Laptop', 'windows'),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          'pairingCodeInvalid',
+        ),
+      ),
+    );
+    final result = await client.pair(
+      host.devices.pairingCode!,
+      'Laptop',
+      'windows',
+    );
+    expect(result['token'], isA<String>());
+    expect(host.devices.devices.last.name, 'Laptop');
   });
 
   test('real HTTP client routes speech, translation/context, summary and cleanup to local host only', () async {
@@ -166,7 +215,7 @@ void main() {
       await host.stop();
       host.dispose();
     });
-    final config = connection(host);
+    final config = await connection(host);
     final speech = RemoteSpeechEngine(config),
         llm = RemoteTranslationService(config);
     addTearDown(() async {
@@ -214,7 +263,7 @@ void main() {
       ..generateSummary = false
       ..useRemote = true;
     live.remoteConnection.address = host.address;
-    live.remoteConnection.token = host.token;
+    live.remoteConnection.token = await pairedToken(host);
     addTearDown(live.dispose);
     await live.start(
       microphone: true,
@@ -270,7 +319,7 @@ void main() {
             ..initialized = true
             ..useRemote = true;
       live.remoteConnection.address = host.address;
-      live.remoteConnection.token = host.token;
+      live.remoteConnection.token = await pairedToken(host);
       addTearDown(live.dispose);
       await live.startFiles(
         paths: ['fixture.wav'],
@@ -303,7 +352,7 @@ void main() {
       ..generateSummary = false
       ..useRemote = true;
     live.remoteConnection.address = host.address;
-    live.remoteConnection.token = host.token;
+    live.remoteConnection.token = await pairedToken(host);
     addTearDown(live.dispose);
     await live.start(microphone: true, system: false, language: 'en');
     (live.audio as FakeAudio).events.add(chunk('microphone', 0));
@@ -335,7 +384,7 @@ void main() {
         host.dispose();
       });
       for (var i = 0; i < 9; i++) {
-        final client = RemoteClient(connection(host));
+        final client = RemoteClient(await connection(host));
         clients.add(client);
         await client.connect();
         tasks.add(
@@ -374,7 +423,7 @@ void main() {
         host.dispose();
       });
       for (var i = 0; i < 3; i++) {
-        final client = RemoteClient(connection(host));
+        final client = RemoteClient(await connection(host));
         clients.add(client);
         await client.connect();
         tasks.add(

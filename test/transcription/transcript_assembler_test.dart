@@ -354,7 +354,7 @@ void main() {
         ..useRemote = true
         ..generateSummary = false;
       live.remoteConnection.address = host.address;
-      live.remoteConnection.token = host.token;
+      live.remoteConnection.token = (await host.devices.create('Client')).token;
       addTearDown(live.dispose);
       await live.start(microphone: true, system: false, language: 'en');
       final audio = live.audio as FakeAudio;

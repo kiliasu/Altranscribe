@@ -64,7 +64,8 @@ void main() {
       );
       expect(engine.gpuActive, true);
       config.address = host.address;
-      config.token = host.token;
+      final pairedToken = (await host.devices.create('Smoke client')).token;
+      config.token = pairedToken;
       await speech.start('', '', directory);
       await llm.prepare('', '');
       // Reuse only the known synthesized fixture from the prior smoke test.
@@ -104,7 +105,7 @@ void main() {
       );
       addTearDown(client.dispose);
       await client.initialize();
-      await client.connectRemote(host.address, host.token, 'Smoke host');
+      await client.connectRemote(host.address, pairedToken, 'Smoke host');
       await client.startFiles(
         paths: [fixture.path],
         language: 'en',
@@ -126,7 +127,7 @@ void main() {
       );
       final settingsText = await File('${directory.path}/client/settings.json')
           .readAsString();
-      expect(settingsText, isNot(contains(host.token)));
+      expect(settingsText, isNot(contains(pairedToken)));
       expect(host.running, true);
       await File('${directory.path}/report.json').writeAsString(
         jsonEncode({

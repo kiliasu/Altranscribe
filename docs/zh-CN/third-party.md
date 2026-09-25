@@ -23,3 +23,7 @@ Android 使用 OpenCC 字典进行简体中文转换，采用 [Apache 2.0 许可
 ## FFmpeg
 
 Android 随包提供 FFmpeg 8.1.2 共享库（LGPL 2.1+），由[官方源码包](https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz)通过 `scripts/build-android-ffmpeg.sh` 构建，不含 GPL、非自由和网络组件。GitHub 上的每个 Android 发布都会附上该源码包和构建脚本；另见[开发说明（英文）](../CONTRIBUTING.md#distribution)。
+
+## 二维码配对
+
+Windows 主机使用 Dart 包 [qr](https://pub.dev/packages/qr)（BSD 3-Clause）绘制配对二维码，其许可文本包含在应用的许可列表中。Android 使用 [ZXing](https://github.com/zxing/zxing) core 和 Jetpack [CameraX](https://developer.android.com/media/camera/camerax) 扫描，两者均为 Apache 2.0，未做修改。

@@ -23,3 +23,7 @@ Android uses OpenCC dictionaries for Simplified Chinese conversion under [Apache
 ## FFmpeg
 
 Android bundles FFmpeg 8.1.2 shared libraries under LGPL 2.1+, built from the [official source archive](https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz) with `scripts/build-android-ffmpeg.sh`, without GPL, non-free or network components. Each Android release on GitHub attaches that source archive and the build script; see also [Distribution](../CONTRIBUTING.md#distribution).
+
+## QR pairing
+
+The Windows host draws pairing QR codes with the [qr](https://pub.dev/packages/qr) Dart package (BSD 3-Clause); its license text is included in the app's license list. Android scans them with [ZXing](https://github.com/zxing/zxing) core and Jetpack [CameraX](https://developer.android.com/media/camera/camerax), both under Apache 2.0 with no modifications.

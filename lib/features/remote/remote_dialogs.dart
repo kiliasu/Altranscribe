@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -10,38 +11,39 @@ import 'package:altranscribe/data/services/translation/translation_service.dart'
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/remote/remote_protocol.dart';
 import 'package:altranscribe/data/services/remote/shared_host.dart';
+import 'package:altranscribe/shared/ui/alt_icons.dart';
+import 'package:altranscribe/shared/ui/qr_code.dart';
 
 String remoteIssue(Object error, bool english) {
-  final key = error.toString().replaceFirst(
-    RegExp(r'^(FormatException|Bad state):\s*'),
-    '',
-  );
+  final text = error.toString();
+  final key =
+      RegExp(r'^PlatformException\(([^,]+),').firstMatch(text)?.group(1) ??
+      text.replaceFirst(RegExp(r'^(FormatException|Bad state):\s*'), '');
   return strings[key]?[english ? 1 : 0] ??
       strings['remoteUnavailable']![english ? 1 : 0];
 }
 
+/// Connects by address with a pairing code from the host's screen, a pasted
+/// invite link, or a token from a host older than 0.6.2.
 class RemoteConnectionDialog extends StatefulWidget {
   const RemoteConnectionDialog({
     super.key,
     required this.controller,
     required this.english,
+    this.initialAddress,
   });
   final RealtimeController controller;
   final bool english;
+  final String? initialAddress;
   @override
   State<RemoteConnectionDialog> createState() => _RemoteConnectionState();
 }
 
 class _RemoteConnectionState extends State<RemoteConnectionDialog> {
-  late final name = TextEditingController(
-    text: widget.controller.remoteConnection.name,
-  );
   late final address = TextEditingController(
-    text: widget.controller.remoteConnection.address,
+    text: widget.initialAddress ?? widget.controller.remoteConnection.address,
   );
-  late final token = TextEditingController(
-    text: widget.controller.remoteConnection.token,
-  );
+  final secret = TextEditingController();
   bool busy = false;
   String? error;
   String t(String key) => strings[key]![widget.english ? 1 : 0];
@@ -49,18 +51,23 @@ class _RemoteConnectionState extends State<RemoteConnectionDialog> {
       !busy &&
       !widget.controller.active &&
       widget.controller.updatingRecordId == null;
+
   Future<void> connect() async {
     setState(() {
       busy = true;
       error = null;
     });
     try {
-      await widget.controller.connectRemote(
-        address.text,
-        token.text,
-        name.text,
-      );
-      if (mounted) Navigator.pop(context);
+      final target = address.text.trim();
+      final code = secret.text.trim();
+      if (target.startsWith('altranscribe://')) {
+        await widget.controller.pairWithInvite(target);
+      } else if (PairingInvite.codePattern.hasMatch(code)) {
+        await widget.controller.pairWithHost(target, code);
+      } else {
+        await widget.controller.connectRemote(target, code, '');
+      }
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) setState(() => error = remoteIssue(e, widget.english));
     } finally {
@@ -70,9 +77,8 @@ class _RemoteConnectionState extends State<RemoteConnectionDialog> {
 
   @override
   void dispose() {
-    name.dispose();
     address.dispose();
-    token.dispose();
+    secret.dispose();
     super.dispose();
   }
 
@@ -89,16 +95,10 @@ class _RemoteConnectionState extends State<RemoteConnectionDialog> {
             Text(t('remoteProcessingHint')),
             const SizedBox(height: 16),
             TextField(
-              key: const Key('remote-name'),
-              controller: name,
-              enabled: editable,
-              maxLength: 80,
-              decoration: InputDecoration(labelText: t('deviceName')),
-            ),
-            TextField(
               key: const Key('remote-address'),
               controller: address,
               enabled: editable,
+              autocorrect: false,
               decoration: InputDecoration(
                 labelText: t('remoteAddress'),
                 hintText: 'http://192.168.1.20:8178',
@@ -107,12 +107,16 @@ class _RemoteConnectionState extends State<RemoteConnectionDialog> {
             const SizedBox(height: 16),
             TextField(
               key: const Key('remote-token'),
-              controller: token,
+              controller: secret,
               enabled: editable,
-              obscureText: true,
               autocorrect: false,
               enableSuggestions: false,
-              decoration: InputDecoration(labelText: t('pairingToken')),
+              decoration: InputDecoration(
+                labelText: t('codeOrToken'),
+                helperText: t('codeOrTokenHint'),
+                helperMaxLines: 3,
+              ),
+              onSubmitted: editable ? (_) => connect() : null,
             ),
             const SizedBox(height: 16),
             Text(t('remoteNetworkHint')),
@@ -166,17 +170,32 @@ class _SharedHostState extends State<SharedHostDialog> {
       widget.controller.translationModel.isNotEmpty;
   bool loading = true;
   String? error;
+  Timer? clock;
   SharedHost get host => widget.controller.sharedHost;
   String t(String key) => strings[key]![widget.english ? 1 : 0];
   @override
   void initState() {
     super.initState();
     host.addListener(refresh);
+    host.devices.addListener(refresh);
+    // The countdown next to the code ticks once a second.
+    clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && host.devices.pairingCode != null) setState(() {});
+    });
+    // Deferred: the registry notifies the Devices page, which may be building.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && host.running) offerCode();
+    });
     load();
   }
 
   void refresh() {
     if (mounted) setState(() {});
+  }
+
+  /// A code is shown while this panel is open; closing it ends the window.
+  void offerCode() {
+    if (host.devices.pairingCode == null) host.devices.beginPairing();
   }
 
   Future<void> load() async {
@@ -232,6 +251,7 @@ class _SharedHostState extends State<SharedHostDialog> {
         llmAddress: controller.translationAddress,
         llmModel: controller.translationModel,
       );
+      if (mounted && host.running) offerCode();
     } catch (_) {
       if (mounted) setState(() => error = t('remoteHostFailed'));
     }
@@ -240,9 +260,107 @@ class _SharedHostState extends State<SharedHostDialog> {
   @override
   void dispose() {
     host.removeListener(refresh);
+    host.devices.removeListener(refresh);
+    clock?.cancel();
+    // After this frame: listeners must not be notified while the tree is locked.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => host.devices.cancelPairing(),
+    );
     name.dispose();
     port.dispose();
     super.dispose();
+  }
+
+  PairingInvite invite(String code) => PairingInvite(
+    address: host.address,
+    code: code,
+    name: host.info['name'] as String? ?? '',
+    hostId: host.devices.hostId,
+  );
+
+  Future<void> copyInvite(String code) async {
+    await Clipboard.setData(
+      ClipboardData(text: invite(code).toUri().toString()),
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(t('copied'))));
+    }
+  }
+
+  List<Widget> pairingSection(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final code = host.devices.pairingCode;
+    final expiry = host.devices.pairingExpiry;
+    final remaining = expiry == null
+        ? Duration.zero
+        : expiry.difference(DateTime.now());
+    final minutes = remaining.inMinutes.clamp(0, 99);
+    final seconds = (remaining.inSeconds % 60).clamp(0, 59);
+    return [
+      Text(t('pairDevice'), style: text.titleMedium),
+      const SizedBox(height: 8),
+      Text(t('pairingCodeHint')),
+      const SizedBox(height: 16),
+      if (code == null)
+        Center(
+          child: FilledButton.tonalIcon(
+            onPressed: offerCode,
+            icon: const Icon(AltIcons.refresh, size: 20),
+            label: Text(t('newPairingCode')),
+          ),
+        )
+      else ...[
+        Center(
+          child: AltQrCode(
+            key: const Key('pairing-qr'),
+            data: invite(code).toUri().toString(),
+            size: 200,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: SelectableText(
+            '${code.substring(0, 3)} ${code.substring(3)}',
+            key: const Key('pairing-code'),
+            style: text.headlineMedium?.copyWith(
+              letterSpacing: 6,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        Center(
+          child: Text(
+            '${t('pairingCode')} · ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
+            style: text.bodySmall,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          children: [
+            TextButton.icon(
+              onPressed: host.devices.beginPairing,
+              icon: const Icon(AltIcons.refresh, size: 18),
+              label: Text(t('newPairingCode')),
+            ),
+            TextButton.icon(
+              onPressed: () => copyInvite(code),
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              label: Text(t('copyInvite')),
+            ),
+          ],
+        ),
+      ],
+      if (host.discoveryUnavailable) ...[
+        const SizedBox(height: 8),
+        Text(
+          t('discoveryUnavailable'),
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      ],
+    ];
   }
 
   @override
@@ -269,20 +387,8 @@ class _SharedHostState extends State<SharedHostDialog> {
                 const SizedBox(height: 16),
                 Text(t('remoteAddress')),
                 SelectableText(host.address),
-                const SizedBox(height: 12),
-                Text(t('pairingToken')),
-                Row(
-                  children: [
-                    Expanded(child: SelectableText(host.token)),
-                    IconButton(
-                      tooltip: t('copy'),
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: host.token)),
-                      icon: const Icon(Icons.copy_rounded),
-                    ),
-                  ],
-                ),
-                Text(t('pairingTokenHint')),
+                const SizedBox(height: 20),
+                ...pairingSection(context),
               ] else ...[
                 TextField(
                   controller: name,
