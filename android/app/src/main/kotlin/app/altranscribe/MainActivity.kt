@@ -67,9 +67,12 @@ class MainActivity : FlutterActivity() {
     fun openDocument(uri: String, result: MethodChannel.Result) {
         val target = Uri.parse(uri).buildUpon().fragment(null).build()
         try {
+            // A viewer would only show its own error for a deleted document, so probe it first.
+            (contentResolver.openInputStream(target) ?: throw java.io.FileNotFoundException(uri)).close()
             startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(target, contentResolver.getType(target) ?: "*/*")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
             result.success(null)
+        } catch (error: java.io.FileNotFoundException) { result.error("sourceFileMissing", error.message, null)
         } catch (error: Exception) { result.error("fileOpenFailed", error.message, null) }
     }
     fun shareFile(path: String, mime: String, result: MethodChannel.Result) {

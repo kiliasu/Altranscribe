@@ -15,12 +15,14 @@ class RecordStore {
       if (path == null) throw StateError('Android bridge is not initialized');
       return RecordStore(Directory(path));
     }
+    // An empty override, as left behind by some shells, means "not set".
     final override = Platform.environment['ALTRANSCRIBE_DATA_DIR'];
     final local = Platform.environment['LOCALAPPDATA'];
-    if (override == null && local == null) {
+    if (override?.isNotEmpty == true) return RecordStore(Directory(override!));
+    if (local == null || local.isEmpty) {
       throw UnsupportedError('Windows is required');
     }
-    return RecordStore(Directory(override ?? '$local/Altranscribe'));
+    return RecordStore(Directory('$local/Altranscribe'));
   }
   Future<void> initialize() => directory.create(recursive: true);
   Future<Map<String, dynamic>> loadSettings() async {

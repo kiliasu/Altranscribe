@@ -72,7 +72,7 @@ class RealtimeController extends ChangeNotifier {
            catalog ??
            ModelCatalog(
              Directory(
-               Platform.environment['ALTRANSCRIBE_MODELS_DIR'] ??
+               environmentValue('ALTRANSCRIBE_MODELS_DIR') ??
                    '${store.directory.path}/models',
              ),
            );
@@ -223,9 +223,9 @@ class RealtimeController extends ChangeNotifier {
         remoteConnection.token = await WindowsCredentialStore(store.directory)
             .readNamed('remote-host');
       }
-      final root = Platform.environment['ALTRANSCRIBE_WHISPER_DIR'];
+      final root = environmentValue('ALTRANSCRIBE_WHISPER_DIR');
       executable =
-          Platform.environment['ALTRANSCRIBE_WHISPER_EXECUTABLE'] ??
+          environmentValue('ALTRANSCRIBE_WHISPER_EXECUTABLE') ??
           settings['executable'] as String? ??
           (root == null ? '' : '$root/build/bin/whisper-server.exe');
       model =
@@ -249,7 +249,7 @@ class RealtimeController extends ChangeNotifier {
         model = catalog.path(defaultModel);
       }
       final compute =
-          Platform.environment['ALTRANSCRIBE_COMPUTE_MODE'] ??
+          environmentValue('ALTRANSCRIBE_COMPUTE_MODE') ??
           settings['computeMode'];
       computeMode =
           ComputeMode.values
@@ -274,7 +274,7 @@ class RealtimeController extends ChangeNotifier {
         settings['translationContext'] as Map? ?? {},
       );
       translationModel =
-          Platform.environment['ALTRANSCRIBE_TRANSLATION_MODEL'] ??
+          environmentValue('ALTRANSCRIBE_TRANSLATION_MODEL') ??
           settings['translationModel'] as String? ??
           '';
       microphoneDevice = settings['microphoneDevice'] as String? ?? '';
@@ -285,8 +285,8 @@ class RealtimeController extends ChangeNotifier {
       systemAutoGain = settings['systemAutoGain'] as bool? ?? false;
       await _reloadRecords();
       if ((settings.isEmpty && root != null) ||
-          Platform.environment.containsKey('ALTRANSCRIBE_WHISPER_EXECUTABLE') ||
-          Platform.environment.containsKey('ALTRANSCRIBE_TRANSLATION_MODEL')) {
+          environmentValue('ALTRANSCRIBE_WHISPER_EXECUTABLE') != null ||
+          environmentValue('ALTRANSCRIBE_TRANSLATION_MODEL') != null) {
         await saveSettings();
       }
     } catch (e, s) {
@@ -1372,4 +1372,10 @@ class RealtimeController extends ChangeNotifier {
     unawaited(stop());
     super.dispose();
   }
+}
+
+/// Overrides from the environment; an empty value counts as unset.
+String? environmentValue(String name) {
+  final value = Platform.environment[name];
+  return value == null || value.isEmpty ? null : value;
 }

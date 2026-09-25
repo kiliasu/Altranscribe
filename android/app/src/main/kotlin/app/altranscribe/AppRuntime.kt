@@ -107,7 +107,7 @@ class AppRuntime private constructor(val context: Context) {
     /** Whole-file read of a picked document; exports embed it, so keep a sane ceiling. */
     private fun readDocument(uri: String): ByteArray {
         val target = android.net.Uri.parse(uri).buildUpon().fragment(null).build()
-        val stream = context.contentResolver.openInputStream(target) ?: throw IllegalStateException("fileMissing")
+        val stream = context.contentResolver.openInputStream(target) ?: throw java.io.FileNotFoundException(uri)
         return stream.use { input ->
             val bytes = input.readBytes()
             check(bytes.size <= 256 * 1024 * 1024) { "fileTooLarge" }
@@ -118,8 +118,14 @@ class AppRuntime private constructor(val context: Context) {
     fun async(result: MethodChannel.Result, operation: () -> Any?) {
         io.execute {
             try { val value = operation(); main.post { result.success(value) } }
-            catch (error: Exception) { main.post { result.error("androidPlatform", error.message, null) } }
+            catch (error: Exception) { main.post { result.error(errorCode(error), error.message, null) } }
         }
+    }
+    /** A missing document or a message that is itself a string key becomes a localizable code. */
+    private fun errorCode(error: Exception): String = when {
+        error is java.io.FileNotFoundException -> "sourceFileMissing"
+        error.message?.matches(Regex("[a-zA-Z]+")) == true -> error.message!!
+        else -> "androidPlatform"
     }
     fun withActivity(result: MethodChannel.Result, operation: (MainActivity) -> Unit) {
         val foreground = activity.get()
