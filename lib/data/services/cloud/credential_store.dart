@@ -6,13 +6,19 @@ import 'package:flutter/services.dart';
 import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
 
 abstract class CredentialStore {
-  Future<String> read(CloudProvider provider);
-  Future<void> write(CloudProvider provider, String key);
+  Future<String> read(CloudProvider provider) => readNamed(provider.name);
+  Future<void> write(CloudProvider provider, String key) =>
+      writeNamed(provider.name, key);
+
+  /// Secrets that belong to no fixed provider, such as the OpenAI-compatible
+  /// key or a host token, are stored under a plain name.
+  Future<String> readNamed(String name);
+  Future<void> writeNamed(String name, String key);
 }
 
 /// Windows uses DPAPI; Android uses an app-bound Keystore AES-GCM key.
 /// No keys are included in settings, transcript records, or diagnostic output.
-class WindowsCredentialStore implements CredentialStore {
+class WindowsCredentialStore extends CredentialStore {
   WindowsCredentialStore(this.directory);
   final Directory directory;
   static const channel = MethodChannel('altranscribe/audio');
@@ -24,8 +30,6 @@ class WindowsCredentialStore implements CredentialStore {
   }
 
   @override
-  Future<String> read(CloudProvider provider) => readNamed(provider.name);
-
   Future<String> readNamed(String name) async {
     final file = _file(name);
     if (!await file.exists()) return '';
@@ -37,9 +41,6 @@ class WindowsCredentialStore implements CredentialStore {
   }
 
   @override
-  Future<void> write(CloudProvider provider, String key) =>
-      writeNamed(provider.name, key);
-
   Future<void> writeNamed(String name, String key) async {
     final file = _file(name);
     if (key.trim().isEmpty) {

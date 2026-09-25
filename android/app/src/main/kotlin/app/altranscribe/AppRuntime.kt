@@ -49,10 +49,18 @@ class AppRuntime private constructor(val context: Context) {
                         model.outputStream().use { output -> input.copyTo(output) }
                     }
                     val data = File(context.filesDir, "records").also { it.mkdirs() }
-                    mapOf("dataDirectory" to data.path, "deviceName" to Build.MODEL)
+                    // Logs live in the app's external folder so they can be pulled or shared.
+                    val logs = File(context.getExternalFilesDir(null) ?: context.filesDir, "logs").also { it.mkdirs() }
+                    mapOf("dataDirectory" to data.path, "logDirectory" to logs.path, "deviceName" to Build.MODEL)
                 }
                 "pendingFiles" -> { result.success(pendingFiles); pendingFiles = emptyList() }
                 "chooseFiles" -> withActivity(result) { it.chooseFiles(result) }
+                "saveDocument" -> withActivity(result) {
+                    it.saveDocument(call.argument<String>("name")!!, call.argument<String>("mime")!!, call.argument<ByteArray>("bytes")!!, result)
+                }
+                "openDocument" -> withActivity(result) { it.openDocument(call.argument<String>("uri")!!, result) }
+                "readDocument" -> async(result) { readDocument(call.argument<String>("uri")!!) }
+                "shareFile" -> withActivity(result) { it.shareFile(call.argument<String>("path")!!, call.argument<String>("mime")!!, result) }
                 "backgroundWork" -> {
                     val enabled = call.argument<Boolean>("enabled") == true
                     try {
@@ -94,6 +102,17 @@ class AppRuntime private constructor(val context: Context) {
         }
         files.attach(engine.dartExecutor.binaryMessenger)
         engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
+    }
+
+    /** Whole-file read of a picked document; exports embed it, so keep a sane ceiling. */
+    private fun readDocument(uri: String): ByteArray {
+        val target = android.net.Uri.parse(uri).buildUpon().fragment(null).build()
+        val stream = context.contentResolver.openInputStream(target) ?: throw IllegalStateException("fileMissing")
+        return stream.use { input ->
+            val bytes = input.readBytes()
+            check(bytes.size <= 256 * 1024 * 1024) { "fileTooLarge" }
+            bytes
+        }
     }
 
     fun async(result: MethodChannel.Result, operation: () -> Any?) {

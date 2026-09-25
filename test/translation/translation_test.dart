@@ -277,7 +277,10 @@ void main() {
       throwsFormatException,
     );
     expect(
-      () => LocalLlmService.localAddress('https://external.example'),
+      () => LocalLlmService.serviceAddress(
+        'https://external.example',
+        LlmProvider.ollama,
+      ),
       throwsFormatException,
     );
   });

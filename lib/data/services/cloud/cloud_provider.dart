@@ -1,4 +1,4 @@
-enum CloudProvider { openAI, gemini }
+enum CloudProvider { openAI, gemini, anthropic }
 
 enum SpeechProvider { whisper, openAI, gemini }
 
@@ -26,12 +26,16 @@ extension SpeechProviderInfo on SpeechProvider {
 }
 
 extension CloudProviderInfo on CloudProvider {
-  String get label => this == CloudProvider.openAI ? 'OpenAI' : 'Google Gemini';
-  Uri get base => Uri.parse(
-    this == CloudProvider.openAI
-        ? 'https://api.openai.com'
-        : 'https://generativelanguage.googleapis.com',
-  );
+  String get label => switch (this) {
+    CloudProvider.openAI => 'OpenAI',
+    CloudProvider.gemini => 'Google Gemini',
+    CloudProvider.anthropic => 'Anthropic',
+  };
+  Uri get base => Uri.parse(switch (this) {
+    CloudProvider.openAI => 'https://api.openai.com',
+    CloudProvider.gemini => 'https://generativelanguage.googleapis.com',
+    CloudProvider.anthropic => 'https://api.anthropic.com',
+  });
 }
 
 // The ASR model's published BCP-47 identifiers differ from UI language codes.

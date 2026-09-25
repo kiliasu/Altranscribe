@@ -7,17 +7,29 @@ import 'package:altranscribe/data/services/cloud/cloud_api.dart';
 import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
 
-enum LlmProvider { ollama, openAICompatible, openAI, gemini }
+enum LlmProvider { ollama, openAICompatible, openAI, gemini, anthropic }
+
+/// Credential name for the OpenAI-compatible key, which has no fixed host.
+const compatibleKeyName = 'openAICompatible';
 
 extension LlmProviderInfo on LlmProvider {
-  bool get isCloud => this == LlmProvider.openAI || this == LlmProvider.gemini;
-  CloudProvider get cloud =>
-      this == LlmProvider.openAI ? CloudProvider.openAI : CloudProvider.gemini;
+  bool get isCloud =>
+      this == LlmProvider.openAI ||
+      this == LlmProvider.gemini ||
+      this == LlmProvider.anthropic;
+  CloudProvider get cloud => switch (this) {
+    LlmProvider.openAI => CloudProvider.openAI,
+    LlmProvider.gemini => CloudProvider.gemini,
+    LlmProvider.anthropic => CloudProvider.anthropic,
+    LlmProvider.ollama ||
+    LlmProvider.openAICompatible => throw StateError('$name has no fixed host'),
+  };
   String get label => switch (this) {
     LlmProvider.ollama => 'Ollama',
-    LlmProvider.openAICompatible => 'OpenAI compatible · Local',
+    LlmProvider.openAICompatible => 'OpenAI compatible',
     LlmProvider.openAI => 'OpenAI',
     LlmProvider.gemini => 'Google Gemini',
+    LlmProvider.anthropic => 'Anthropic Claude',
   };
 }
 
@@ -56,30 +68,51 @@ class LocalLlmService implements TranslationService {
   HttpClient? _client;
   Uri? _base;
   String _model = '';
+  String _key = '';
   LlmProvider _provider = LlmProvider.ollama;
   @override
   String backend = 'Ollama';
 
-  static Uri localAddress(String address) {
+  /// Ollama stays on this computer. The compatible API may also be an online
+  /// HTTPS service, where the saved key is sent; plain HTTP never leaves the
+  /// machine, so the key cannot travel unencrypted.
+  static Uri serviceAddress(String address, LlmProvider provider) {
     final uri = Uri.tryParse(address.trim());
-    if (uri == null ||
-        uri.scheme != 'http' ||
-        !['localhost', '127.0.0.1', '::1', '[::1]'].contains(uri.host) ||
+    if (uri == null || uri.host.isEmpty) {
+      throw const FormatException('localTranslationOnly');
+    }
+    final local =
+        uri.scheme == 'http' &&
+        ['localhost', '127.0.0.1', '::1', '[::1]'].contains(uri.host);
+    final online =
+        uri.scheme == 'https' && provider == LlmProvider.openAICompatible;
+    if (!(local || online) ||
         uri.userInfo.isNotEmpty ||
         uri.hasQuery ||
         uri.hasFragment ||
-        !['', '/', '/v1', '/v1/'].contains(uri.path)) {
+        (provider == LlmProvider.ollama &&
+            !['', '/', '/v1', '/v1/'].contains(uri.path))) {
       throw const FormatException('localTranslationOnly');
     }
     return uri.replace(path: uri.path.replaceFirst(RegExp(r'/$'), ''));
   }
 
-  static Uri _endpoint(Uri base, LlmProvider provider, String operation) =>
-      base.replace(
-        path: provider == LlmProvider.ollama
-            ? '/api/$operation'
-            : '/v1/$operation',
-      );
+  static bool isOnline(Uri base) => base.scheme == 'https';
+
+  /// Ollama has its own API; compatible servers take `/v1/...` under whatever
+  /// prefix the address already carries, such as `/api/v1` on some services.
+  static Uri _endpoint(Uri base, LlmProvider provider, String operation) {
+    if (provider == LlmProvider.ollama) {
+      return base.replace(path: '/api/$operation');
+    }
+    final prefix = base.path.isEmpty ? '/v1' : base.path;
+    return base.replace(path: '$prefix/$operation');
+  }
+
+  Future<String> _compatibleKey(LlmProvider provider) async =>
+      provider == LlmProvider.openAICompatible
+      ? await cloudApi?.credentials.readNamed(compatibleKeyName) ?? ''
+      : '';
 
   static const languages = {
     'auto': 'the automatically detected source language',
@@ -93,10 +126,12 @@ class LocalLlmService implements TranslationService {
     HttpClient client,
     Uri uri, {
     Map<String, Object?>? body,
+    String key = '',
     Duration timeout = const Duration(seconds: 60),
   }) async {
     final request = await client.openUrl(body == null ? 'GET' : 'POST', uri);
     request.followRedirects = false;
+    if (key.isNotEmpty) request.headers.set('Authorization', 'Bearer $key');
     if (body != null) {
       request.headers.contentType = ContentType.json;
       request.add(utf8.encode(jsonEncode(body)));
@@ -125,12 +160,14 @@ class LocalLlmService implements TranslationService {
     HttpClient client,
     Uri base,
     LlmProvider provider,
+    String key,
   ) async {
     final ollama = provider == LlmProvider.ollama;
     final data = await _request(
       client,
       _endpoint(base, provider, ollama ? 'tags' : 'models'),
-      timeout: const Duration(seconds: 5),
+      key: key,
+      timeout: Duration(seconds: isOnline(base) ? 20 : 5),
     );
     return (data[ollama ? 'models' : 'data'] as List)
         .map((item) => (item as Map)[ollama ? 'name' : 'id'] as String)
@@ -143,9 +180,6 @@ class LocalLlmService implements TranslationService {
     String address, {
     LlmProvider provider = LlmProvider.ollama,
   }) async {
-    if (Platform.isAndroid && !provider.isCloud) {
-      throw const FormatException('mobileRemoteOnly');
-    }
     if (provider.isCloud) {
       final api = cloudApi;
       if (api == null) throw StateError('cloudKeyMissing');
@@ -153,7 +187,9 @@ class LocalLlmService implements TranslationService {
         return (await api.models(provider.cloud))
             .where(
               (model) =>
-                  (model.startsWith('gpt-') || model.startsWith('gemini-')) &&
+                  (model.startsWith('gpt-') ||
+                      model.startsWith('gemini-') ||
+                      model.startsWith('claude-')) &&
                   !RegExp(
                     r'transcribe|translate|live|realtime|audio|image|omni|tts|robotics|embedding|codex|search',
                   ).hasMatch(model),
@@ -163,10 +199,14 @@ class LocalLlmService implements TranslationService {
         api.close();
       }
     }
-    final base = localAddress(address);
+    final base = serviceAddress(address, provider);
+    if (Platform.isAndroid && !isOnline(base)) {
+      throw const FormatException('mobileRemoteOnly');
+    }
+    final key = await _compatibleKey(provider);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
     try {
-      return await _models(client, base, provider);
+      return await _models(client, base, provider, key);
     } finally {
       client.close(force: true);
     }
@@ -178,9 +218,6 @@ class LocalLlmService implements TranslationService {
     String model, {
     LlmProvider provider = LlmProvider.ollama,
   }) async {
-    if (Platform.isAndroid && !provider.isCloud) {
-      throw const FormatException('mobileRemoteOnly');
-    }
     stop();
     if (provider.isCloud) {
       if (model.trim().isEmpty) {
@@ -197,20 +234,29 @@ class LocalLlmService implements TranslationService {
       backend = '${provider.label} · $model';
       return;
     }
-    final base = localAddress(address);
+    final base = serviceAddress(address, provider);
+    if (Platform.isAndroid && !isOnline(base)) {
+      throw const FormatException('mobileRemoteOnly');
+    }
     if (model.trim().isEmpty) {
       throw const FormatException('translationModelMissing');
     }
+    final key = await _compatibleKey(provider);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
     _client = client;
     try {
-      if (!(await _models(client, base, provider)).contains(model)) {
+      if (!(await _models(client, base, provider, key)).contains(model)) {
         throw const FormatException('translationModelMissing');
       }
       _base = base;
       _model = model;
+      _key = key;
       _provider = provider;
-      backend = provider == LlmProvider.ollama ? 'Ollama' : 'OpenAI compatible';
+      backend = provider == LlmProvider.ollama
+          ? 'Ollama'
+          : isOnline(base)
+          ? 'OpenAI compatible · ${base.host}'
+          : 'OpenAI compatible';
     } catch (_) {
       stop();
       rethrow;
@@ -239,6 +285,8 @@ class LocalLlmService implements TranslationService {
     final response = await _request(
       client,
       _endpoint(_base!, _provider, ollama ? 'chat' : 'chat/completions'),
+      key: _key,
+      timeout: Duration(seconds: isOnline(_base!) ? 120 : 60),
       body: {
         'model': _model,
         'stream': false,
@@ -344,6 +392,33 @@ class LocalLlmService implements TranslationService {
         for (final part in item['content'] as List? ?? []) {
           if (part['type'] == 'refusal') throw StateError('cloudRefusal');
           if (part['type'] == 'output_text') output.write(part['text']);
+        }
+      }
+      content = output.toString();
+    } else if (_provider == LlmProvider.anthropic) {
+      final response = await api.json(
+        'POST',
+        '/v1/messages',
+        body: {
+          'model': _model,
+          'max_tokens': maxTokens < 4096 ? 4096 : maxTokens,
+          'system': instruction,
+          'messages': [
+            {'role': 'user', 'content': text},
+          ],
+          if (schema != null)
+            'output_config': {
+              'format': {'type': 'json_schema', 'schema': schema},
+            },
+        },
+      );
+      final stop = response['stop_reason'];
+      if (stop == 'refusal') throw StateError('cloudRefusal');
+      if (stop != 'end_turn') throw FormatException(incompleteError);
+      final output = StringBuffer();
+      for (final block in response['content'] as List? ?? []) {
+        if (block['type'] == 'text' && block['text'] is String) {
+          output.write(block['text']);
         }
       }
       content = output.toString();
@@ -578,6 +653,7 @@ class LocalLlmService implements TranslationService {
     _client?.close(force: true);
     _client = null;
     _base = null;
+    _key = '';
     // Shared servers belong to the user; never terminate them or unload models.
   }
 }

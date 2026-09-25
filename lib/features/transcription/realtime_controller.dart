@@ -1,4 +1,5 @@
 import 'package:altranscribe/data/models/transcript_record.dart';
+import 'package:altranscribe/data/services/logging/app_log.dart';
 
 import 'dart:async';
 import 'dart:collection';
@@ -262,7 +263,7 @@ class RealtimeController extends ChangeNotifier {
               .where((item) => item.name == settings['llmProvider'])
               .firstOrNull ??
           LlmProvider.ollama;
-      if (!localInferenceAllowed && !llmProvider.isCloud) {
+      if (!localInferenceAllowed && llmProvider == LlmProvider.ollama) {
         llmProvider = LlmProvider.openAI;
       }
       generateSummary = settings['generateSummary'] as bool? ?? true;
@@ -288,7 +289,8 @@ class RealtimeController extends ChangeNotifier {
           Platform.environment.containsKey('ALTRANSCRIBE_TRANSLATION_MODEL')) {
         await saveSettings();
       }
-    } catch (e) {
+    } catch (e, s) {
+      AppLog.instance.error('settings', e, s);
       error = e.toString();
     }
     initialized = true;
@@ -630,7 +632,8 @@ class RealtimeController extends ChangeNotifier {
         if (current.status == 'error') warning = 'fileSomeFailed';
         await _reloadRecords();
       }
-    } catch (e) {
+    } catch (e, s) {
+      AppLog.instance.error('files', e, s);
       if (!_cancelled) {
         error = e is SocketException || e is TimeoutException
             ? 'llmUnavailable'
@@ -689,6 +692,16 @@ class RealtimeController extends ChangeNotifier {
     lastTranslationSeconds = 0;
     transcriptRevision++;
     phase = SessionPhase.loading;
+    AppLog.instance.info(
+      'session',
+      'Start: microphone=$microphone system=$system $language→${targetLanguage ?? '-'} '
+          'engine=${cloudSpeech
+              ? speechProvider.name
+              : remoteProcessing
+              ? 'remote'
+              : 'whisper'} '
+          'llm=${llmProvider.name}',
+    );
     _notify();
     final future = _start(
       microphone,
@@ -830,7 +843,8 @@ class RealtimeController extends ChangeNotifier {
         _polling ??= _poll().whenComplete(() => _polling = null);
       });
       _notify();
-    } catch (e) {
+    } catch (e, s) {
+      AppLog.instance.error('session', e, s);
       if (!_cancelled) error = e.toString();
       // Let start settle before stop waits for it, avoiding a lifecycle deadlock.
       scheduleMicrotask(() => unawaited(stop()));
@@ -838,9 +852,12 @@ class RealtimeController extends ChangeNotifier {
   }
 
   void _checkMobileProviders() {
+    // An online OpenAI-compatible service is checked by the translator itself,
+    // which rejects plain-HTTP addresses on a phone.
     if (!localInferenceAllowed &&
         !remoteProcessing &&
-        (speechProvider == SpeechProvider.whisper || !llmProvider.isCloud)) {
+        (speechProvider == SpeechProvider.whisper ||
+            llmProvider == LlmProvider.ollama)) {
       throw const FormatException('mobileRemoteOnly');
     }
   }
@@ -878,6 +895,7 @@ class RealtimeController extends ChangeNotifier {
         case 'gap':
           warning = 'audioGap';
         case 'error':
+          AppLog.instance.warn('audio', '$source: ${event['message']}');
           error = '$source: ${event['message']}';
           if (phase != SessionPhase.loading) unawaited(stop());
         case 'chunk':
@@ -1041,7 +1059,8 @@ class RealtimeController extends ChangeNotifier {
         if (lastInferenceSeconds > audioSeconds && _queue.isNotEmpty) {
           warning = 'fallingBehind';
         }
-      } catch (e) {
+      } catch (e, s) {
+        AppLog.instance.error('recognition', e, s);
         if (!_discarding) error = e.toString();
         _queue.clear();
         unawaited(stop());
@@ -1145,7 +1164,10 @@ class RealtimeController extends ChangeNotifier {
     }
   }
 
-  Future<void> stop() => _finishSession();
+  Future<void> stop() {
+    AppLog.instance.info('session', 'Stop requested while ${phase.name}');
+    return _finishSession();
+  }
 
   // The user can leave once capture stops and the received text is durable.
   // stop() still waits for tail responses, translations and the final summary.
@@ -1316,7 +1338,8 @@ class RealtimeController extends ChangeNotifier {
           current.status = error == null ? 'completed' : 'error';
           await store.save(current);
           await _reloadRecords();
-        } catch (e) {
+        } catch (e, s) {
+          AppLog.instance.error('save', e, s);
           error = e.toString();
           current.status = 'error';
           current.error = error;

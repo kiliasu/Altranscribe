@@ -13,15 +13,18 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.DragEvent
 import android.view.View
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 import java.lang.ref.WeakReference
 
 class MainActivity : FlutterActivity() {
     private val runtime get() = AppRuntime.get(this)
     private var capture: Pair<Map<String, Any?>, MethodChannel.Result>? = null
     private var picker: MethodChannel.Result? = null
+    private var saver: Pair<ByteArray, MethodChannel.Result>? = null
     private var overlay: (() -> Unit)? = null
     override fun provideFlutterEngine(context: Context): FlutterEngine = runtime.engine
     override fun shouldDestroyEngineWithHost() = false
@@ -52,7 +55,30 @@ class MainActivity : FlutterActivity() {
         capture?.second?.error("androidActivityClosed", "Capture authorization cancelled", null)
         capture = null
         picker?.success(emptyList<String>()); picker = null
+        saver?.second?.success(false); saver = null
         super.onDestroy()
+    }
+    fun saveDocument(name: String, mime: String, bytes: ByteArray, result: MethodChannel.Result) {
+        if (saver != null) { result.error("busy", "Save dialog already open", null); return }
+        saver = bytes to result
+        startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).setType(mime)
+            .addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, name), 105)
+    }
+    fun openDocument(uri: String, result: MethodChannel.Result) {
+        val target = Uri.parse(uri).buildUpon().fragment(null).build()
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(target, contentResolver.getType(target) ?: "*/*")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            result.success(null)
+        } catch (error: Exception) { result.error("fileOpenFailed", error.message, null) }
+    }
+    fun shareFile(path: String, mime: String, result: MethodChannel.Result) {
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.files", File(path))
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime)
+                .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null))
+            result.success(null)
+        } catch (error: Exception) { result.error("shareFailed", error.message, null) }
     }
     fun prepareCapture(options: Map<String, Any?>, result: MethodChannel.Result) {
         if (capture != null) { result.error("busy", "Capture authorization is pending", null); return }
@@ -99,6 +125,16 @@ class MainActivity : FlutterActivity() {
             }
             103 -> { picker?.success(if (resultCode == Activity.RESULT_OK && data != null) documents(data) else emptyList<String>()); picker = null }
             104 -> { val ready = overlay; overlay = null; ready?.invoke() }
+            105 -> {
+                val pending = saver; saver = null
+                val target = data?.data
+                if (pending == null) return
+                if (resultCode != Activity.RESULT_OK || target == null) { pending.second.success(false); return }
+                try {
+                    contentResolver.openOutputStream(target, "wt")?.use { it.write(pending.first) } ?: throw IllegalStateException("No output stream")
+                    pending.second.success(true)
+                } catch (error: Exception) { pending.second.error("exportFailed", error.message, null) }
+            }
         }
     }
     private fun documents(intent: Intent): List<String> {

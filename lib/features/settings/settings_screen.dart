@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/app/theme/app_theme.dart';
+import 'package:altranscribe/data/services/logging/app_log.dart';
+import 'package:altranscribe/shared/platform/mobile_platform.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
 import 'package:altranscribe/shared/ui/expressive.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
@@ -93,6 +96,32 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+
+    // Windows opens the folder; a phone offers the newest file through the share sheet.
+    Future<void> openLogs() async {
+      final log = AppLog.instance;
+      final directory = log.directory;
+      if (directory == null) return;
+      try {
+        if (MobilePlatform.android) {
+          final latest = await log.latest();
+          if (latest == null) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(t('noLogYet'))));
+            }
+            return;
+          }
+          await MobilePlatform.shareFile(latest.path, 'text/plain');
+        } else {
+          await Process.start('explorer.exe', [
+            directory.path,
+          ], mode: ProcessStartMode.detached);
+        }
+      } catch (e) {
+        log.warn('settings', 'Opening the log folder failed: $e');
+      }
+    }
 
     return pageStack([
       pageColumns(
@@ -285,6 +314,15 @@ class SettingsScreen extends StatelessWidget {
               t('storedLocally').split('。').first,
               privacyDialog,
             ),
+            if (AppLog.instance.directory != null)
+              (
+                'logs',
+                AltIcons.description,
+                MobilePlatform.android
+                    ? t('shareLog')
+                    : AppLog.instance.directory!.path,
+                openLogs,
+              ),
           ])
             ListTile(
               key: entry.$1 == 'floatingCaptions'

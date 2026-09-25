@@ -31,7 +31,7 @@ The Windows app is not code-signed, so Windows may say "Windows protected your P
 
 Pausing stops new capture while earlier speech finishes processing, and **Discard recording** deletes the current transcript. Closing the caption window only hides it.
 
-**Local models on Windows:** get `whisper-server.exe` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp), enter its path in the model settings and choose CPU or GPU. The download button next to each model fetches Tiny to Large v3 Turbo and verifies the file; the [model guide](docs/en/models.md) explains adding files yourself. For local translation and summaries, run Ollama or another OpenAI-compatible text service on the same computer.
+**Local models on Windows:** get `whisper-server.exe` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp), enter its path in the model settings and choose CPU or GPU. The download button next to each model fetches Tiny to Large v3 Turbo and verifies the file; the [model guide](docs/en/models.md) explains adding files yourself. For translation and summaries, run Ollama or another OpenAI-compatible text service on the same computer, enter an online OpenAI-compatible service with its API key, or use OpenAI, Gemini or Anthropic directly.
 
 Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a Windows host](docs/en/remote-processing.md), which also lets a phone use your computer's models.
 
@@ -42,12 +42,12 @@ Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a 
 | Local Whisper (CPU / NVIDIA GPU) | Yes | No |
 | Local Ollama / OpenAI-compatible text model | Yes | Through a Windows host |
 | Local network sharing | Host or client | Client |
-| OpenAI / Gemini | Yes | Yes |
+| OpenAI / Gemini (speech and text), Anthropic and online OpenAI-compatible services (text) | Yes | Yes |
 
 - Transcribe the microphone and system audio separately or together, with live translation.
 - Floating captions show the original, the translation or both, with adjustable font, size and opacity. Pause, resume or stop and save from the caption window.
 - Queue WAV, MP3, M4A, FLAC, OGG, Opus, AAC, WMA, MP4, MKV, WebM and MOV files for transcripts, translations, titles and summaries. Whether a file opens depends on its actual encoding.
-- Search, copy, rename and delete transcripts. Optional name, term and word corrections keep the original results.
+- Search, copy, rename and delete transcripts; export them as TXT, Markdown or an HTML page (with a player for file transcriptions) and jump to the source file. Optional name, term and word corrections keep the original results.
 - English and Simplified Chinese interface, light and dark themes, amber or baseline colors.
 
 ![Floating bilingual captions](docs/images/captions-en.png)
@@ -58,7 +58,7 @@ Recognition and translation can contain errors, and timestamps marked "≈" are 
 
 ## Privacy
 
-Live audio is processed in memory and never saved as a recording. Transcripts stay on the device that started the task: `%LOCALAPPDATA%\Altranscribe\` on Windows, the app's private storage on Android. Deleting a transcript keeps the imported files.
+Live audio is processed in memory and never saved as a recording. Transcripts stay on the device that started the task: `%LOCALAPPDATA%\Altranscribe\` on Windows, the app's private storage on Android. Deleting a transcript keeps the imported files. A diagnostic log with no transcripts or keys goes to `Documents\Altranscribe\logs` on Windows and to the app's shareable folder on Android; **Settings → Logs** opens or shares it.
 
 With a cloud service, audio and the related text go to that provider; with remote processing, to the host you chose. Fully local processing uploads nothing. API keys and host tokens are encrypted by the operating system, so enter them again on a new computer or phone. Network sharing uses unencrypted HTTP, which is why the Android app allows cleartext traffic; use it only on networks you trust. Cloud services always use HTTPS and may charge for usage.
 

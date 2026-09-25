@@ -31,7 +31,7 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 
 暂停会停止采集新音频，已收到的片段继续处理；「直接遗弃」会删除当前文稿。关闭悬浮字幕只隐藏窗口，不会停止转录。
 
-**Windows 本地模型**：从 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 获取 `whisper-server.exe`，在模型设置中填写路径并选择 CPU 或 GPU。点击模型旁的下载按钮即可下载 Tiny 到 Large v3 Turbo 并自动校验；手动放入模型的方法见 [模型说明](docs/zh-CN/models.md)。本地翻译和摘要需要在本机运行 Ollama 或其他 OpenAI 兼容的文字服务。
+**Windows 本地模型**：从 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 获取 `whisper-server.exe`，在模型设置中填写路径并选择 CPU 或 GPU。点击模型旁的下载按钮即可下载 Tiny 到 Large v3 Turbo 并自动校验；手动放入模型的方法见 [模型说明](docs/zh-CN/models.md)。翻译和摘要可以用本机运行的 Ollama 或其他 OpenAI 兼容文字服务，也可以填写在线 OpenAI 兼容服务的地址和 API Key，或直接使用 OpenAI、Gemini、Anthropic。
 
 其他用法见 [云端服务](docs/zh-CN/cloud-providers.md) 和 [连接 Windows 主机](docs/zh-CN/remote-processing.md)，后者也能让手机使用电脑上的模型。
 
@@ -42,12 +42,12 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 | 本地 Whisper（CPU / NVIDIA GPU） | 支持 | 不支持 |
 | 本地 Ollama / OpenAI 兼容文字服务 | 支持 | 通过 Windows 主机使用 |
 | 局域网共享 | 可作为主机或客户端 | 作为客户端 |
-| OpenAI / Gemini 云端服务 | 支持 | 支持 |
+| OpenAI / Gemini（语音与文字）、Anthropic 与在线 OpenAI 兼容服务（文字） | 支持 | 支持 |
 
 - 麦克风与系统音频可以分别或同时转录，并实时翻译。
 - 悬浮字幕可以显示原文、译文或双语，字体、字号和透明度可调；在字幕窗口里就能暂停、继续或停止保存。
 - 批量处理 WAV、MP3、M4A、FLAC、OGG、Opus、AAC、WMA、MP4、MKV、WebM、MOV 文件，生成文稿、译文、标题和摘要；能否读取取决于文件的实际编码。
-- 文稿支持搜索、复制、重命名和删除。可选的人名、术语和词汇修正会保留原始结果。
+- 文稿支持搜索、复制、重命名和删除，可导出为 TXT、Markdown 或网页（文件转写的网页可带播放器），也能跳转到原文件。可选的人名、术语和词汇修正会保留原始结果。
 - 简体中文 / English 界面，明暗主题，琥珀或基线配色。
 
 ![双语悬浮字幕](docs/images/captions-zh.png)
@@ -58,7 +58,7 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 
 ## 隐私
 
-实时音频只在内存中处理，不保存录音。文稿保存在发起任务的设备上：Windows 在 `%LOCALAPPDATA%\Altranscribe\`，Android 在应用私有目录。删除文稿不会删除导入的音视频文件。
+实时音频只在内存中处理，不保存录音。文稿保存在发起任务的设备上：Windows 在 `%LOCALAPPDATA%\Altranscribe\`，Android 在应用私有目录。删除文稿不会删除导入的音视频文件。诊断日志不含文稿和 Key，Windows 上写在 `文档\Altranscribe\logs`，Android 上写在应用可分享的目录；「设置 → 日志」可以打开或分享。
 
 使用云端服务时，音频和相关文字会发送给对应的提供商；使用远程主机时，发送给所选主机。全本地处理不上传任何内容。API Key 和主机令牌由操作系统加密保存，换电脑或手机后需要重新填写。局域网共享使用未加密的 HTTP（Android 版因此允许明文流量），只应在可信网络中使用。云端服务始终使用 HTTPS，并可能产生费用。
 

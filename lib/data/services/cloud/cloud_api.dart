@@ -52,10 +52,15 @@ class CloudApi {
     try {
       request = await client.openUrl(method, uri).timeout(timeout);
       request.followRedirects = false;
-      request.headers.set(
-        provider == CloudProvider.openAI ? 'Authorization' : 'x-goog-api-key',
-        provider == CloudProvider.openAI ? 'Bearer $_key' : _key,
-      );
+      switch (provider) {
+        case CloudProvider.openAI:
+          request.headers.set('Authorization', 'Bearer $_key');
+        case CloudProvider.gemini:
+          request.headers.set('x-goog-api-key', _key);
+        case CloudProvider.anthropic:
+          request.headers.set('x-api-key', _key);
+          request.headers.set('anthropic-version', '2023-06-01');
+      }
       headers.forEach(request.headers.set);
       if (bytes != null) {
         request.contentLength = bytes.length;
@@ -112,6 +117,20 @@ class CloudApi {
   Future<List<String>> models(CloudProvider provider) async {
     await prepare(provider);
     final result = <String>[];
+    if (provider == CloudProvider.anthropic) {
+      String? after;
+      do {
+        final data = await json(
+          'GET',
+          '/v1/models?limit=1000${after == null ? '' : '&after_id=${Uri.encodeQueryComponent(after)}'}',
+        );
+        final items = data['data'];
+        if (items is! List) throw StateError('cloudInvalidResponse');
+        result.addAll(items.map((item) => item['id'] as String));
+        after = data['has_more'] == true ? data['last_id'] as String? : null;
+      } while (after != null && after.isNotEmpty);
+      return result.toSet().toList()..sort();
+    }
     String? page;
     do {
       final data = await json(

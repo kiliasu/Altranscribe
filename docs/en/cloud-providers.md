@@ -2,13 +2,13 @@
 
 English | [简体中文](../zh-CN/cloud-providers.md) · [Home](../../README.md)
 
-Windows and Android support OpenAI and Google Gemini without downloading cloud models. You need a provider API key, available quota, and access to the required models.
+Windows and Android support OpenAI and Google Gemini for speech and text, and Anthropic for text, without downloading cloud models. You need a provider API key, available quota, and access to the required models. Any other service with an OpenAI-compatible API works too; see the last section.
 
 ## Setup
 
 1. Open **Settings → Whisper models**, select OpenAI or Gemini, and enter and save your API key.
 2. Choose live transcription or direct live translation. File transcription uses the file model shown in the panel.
-3. For text translation, titles, or summaries, choose a provider and text model under **Settings → Translation & LLM**. The same provider reuses the saved key.
+3. For text translation, titles, or summaries, choose a provider and text model under **Settings → Translation & LLM**: OpenAI, Gemini or Anthropic. The same provider reuses the saved key.
 4. Save, return to the home screen, choose your audio sources and languages, and start.
 
 Transcription can be followed by a separate text translation step. Direct live translation returns both source text and translation, but titles and summaries still need a text model. Turning translation off switches live audio to transcription mode. Cloud processing detects the source language automatically by default; direct live translation only takes a target language.
@@ -30,3 +30,7 @@ Long Gemini sessions switch to new connections automatically. Switching can spli
 Timestamps and the grouping of source text and translations may be approximate. Review model output. Long-running capture from both audio sources depends on network stability and service limits.
 
 API keys are encrypted with Windows DPAPI or Android Keystore and are not written to transcripts. Enter them again when changing users or devices. Audio and text are sent to the provider's official endpoints; consult the selected provider for charges and data handling terms.
+
+## Online OpenAI-compatible services
+
+Under **Settings → Translation & LLM**, choose **OpenAI compatible**, enter the service's `https://` address including any prefix it documents (for example `https://openrouter.ai/api/v1`), save its API key, and pick a model from the list. The key is sent only to that address, and plain `http://` addresses are accepted only for a server on the same computer, so a key can never travel unencrypted. Phones can use online services this way; local servers still need a Windows host.

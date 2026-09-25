@@ -13,7 +13,7 @@ Use Flutter 3.47.3 / Dart 3.13.3 and Visual Studio 2022 or its Build Tools with 
 
 `-Verify` runs the Dart analyzer, the native audio tests and the Flutter tests, `-Build` makes a debug build, and no switch runs the app. `-Build -Release` writes the release build to `build/windows/x64/runner/Release/`; use the script rather than plain `flutter build`, because it prepares the plugin links that Windows needs without Developer Mode. The GitHub workflow runs `-Verify` and `-Build` on every push to `main`.
 
-The script keeps app data in `.tools/runtime/app-data/` and Whisper models in `models/`. `-WhisperDirectory <path>` points it at a whisper.cpp build, and `scripts/setup-whisper-gpu.ps1` downloads whisper.cpp's CUDA build of `whisper-server.exe`, which `-Gpu` uses. In any run, `ALTRANSCRIBE_DATA_DIR` and `ALTRANSCRIBE_MODELS_DIR` override the data and model folders.
+The script keeps app data in `.tools/runtime/app-data/` and Whisper models in `models/`. `-WhisperDirectory <path>` points it at a whisper.cpp build, and `scripts/setup-whisper-gpu.ps1` downloads whisper.cpp's CUDA build of `whisper-server.exe`, which `-Gpu` uses. In any run, `ALTRANSCRIBE_DATA_DIR`, `ALTRANSCRIBE_MODELS_DIR` and `ALTRANSCRIBE_LOG_DIR` override the data, model and log folders (the script sends logs to `.tools/runtime/logs/`).
 
 The pinned Flutter CLI truncates analyzer messages for paths with non-ASCII characters, so `-Verify` calls the Dart analyzer from the same SDK directly. Android builds from such paths are untested.
 

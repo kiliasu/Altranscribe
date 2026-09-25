@@ -22,8 +22,14 @@ class TranslationSettingsDialog extends SettingsDialog {
 class _TranslationSettingsState
     extends SettingsDialogState<TranslationSettingsDialog> {
   late LlmProvider provider = controller.llmProvider;
+  // Phones can still reach online OpenAI-compatible services over HTTPS.
   List<LlmProvider> get providers => LlmProvider.values
-      .where((item) => controller.localInferenceAllowed || item.isCloud)
+      .where(
+        (item) =>
+            controller.localInferenceAllowed ||
+            item.isCloud ||
+            item == LlmProvider.openAICompatible,
+      )
       .toList();
   late final address = TextEditingController(
     text: controller.translationAddress,
@@ -102,7 +108,7 @@ class _TranslationSettingsState
         enabled: editable,
         onSaved: () => run(load),
       ),
-    ] else
+    ] else ...[
       TextField(
         key: const Key('llm-address'),
         controller: address,
@@ -113,6 +119,20 @@ class _TranslationSettingsState
           models = [];
         }),
       ),
+      if (provider == LlmProvider.openAICompatible) ...[
+        gap(),
+        Text(t('compatibleKeyHint')),
+        CloudKeyEditor(
+          key: const ValueKey('compatible-key'),
+          name: compatibleKeyName,
+          label: t('compatibleKeyLabel'),
+          credentials: controller.credentials,
+          english: widget.english,
+          enabled: editable,
+          onSaved: () => run(load),
+        ),
+      ],
+    ],
     gap(),
     Row(
       children: [

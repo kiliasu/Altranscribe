@@ -9,6 +9,7 @@ class MobilePlatform {
   static bool get android => Platform.isAndroid;
   static const channel = MethodChannel('altranscribe/platform');
   static String? dataDirectory;
+  static String? logDirectory;
   static String deviceName = 'Android';
   static final importedFiles = ValueNotifier<List<String>>([]);
   static Future<void> Function(String)? onSessionAction;
@@ -18,6 +19,7 @@ class MobilePlatform {
     await initializeChineseScript();
     final info = await channel.invokeMapMethod<String, Object?>('initialize');
     dataDirectory = info!['dataDirectory'] as String;
+    logDirectory = info['logDirectory'] as String?;
     deviceName = info['deviceName'] as String;
     channel.setMethodCallHandler((call) async {
       if (call.method == 'importFiles') {
@@ -33,6 +35,32 @@ class MobilePlatform {
 
   static Future<List<String>> chooseFiles() async =>
       await channel.invokeListMethod<String>('chooseFiles') ?? [];
+
+  /// Lets the user pick where to save [bytes]; false when they cancel.
+  static Future<bool> saveDocument(
+    String name,
+    String mimeType,
+    Uint8List bytes,
+  ) async =>
+      await channel.invokeMethod<bool>('saveDocument', {
+        'name': name,
+        'mime': mimeType,
+        'bytes': bytes,
+      }) ??
+      false;
+
+  /// Opens a stored document URI in the system viewer.
+  static Future<void> openDocument(String uri) =>
+      channel.invokeMethod<void>('openDocument', {'uri': uri});
+
+  /// Reads a stored document URI, for embedding media in an export.
+  static Future<Uint8List> readDocument(String uri) async =>
+      await channel.invokeMethod<Uint8List>('readDocument', {'uri': uri}) ??
+      Uint8List(0);
+
+  /// Offers a file from the app's own folders through the share sheet.
+  static Future<void> shareFile(String path, String mimeType) =>
+      channel.invokeMethod<void>('shareFile', {'path': path, 'mime': mimeType});
 
   static Future<void> backgroundWork(bool enabled, {String? language}) async {
     if (android) {

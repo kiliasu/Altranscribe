@@ -1,6 +1,8 @@
 import 'record_actions.dart';
+import 'record_export.dart';
 
 import 'package:altranscribe/data/models/transcript_record.dart';
+import 'package:altranscribe/shared/platform/mobile_platform.dart';
 
 import 'package:material_ui/material_ui.dart';
 
@@ -156,6 +158,23 @@ class RecordDetailDialog extends StatelessWidget {
             ),
           ),
           actions: [
+            if (record.inputFile != null)
+              TextButton.icon(
+                key: const Key('open-record-file'),
+                onPressed: () => openRecordFile(context, record, english),
+                icon: const Icon(AltIcons.folderOpen),
+                label: Text(
+                  t(MobilePlatform.android ? 'openFile' : 'openFileLocation'),
+                ),
+              ),
+            TextButton.icon(
+              key: const Key('export-record'),
+              onPressed: record.lines.isEmpty
+                  ? null
+                  : () => showExportDialog(context, record, english),
+              icon: const Icon(AltIcons.download),
+              label: Text(t('exportRecord')),
+            ),
             TextButton.icon(
               onPressed: live.canEditRecord(record)
                   ? () => showRenameRecordDialog(context, live, record, english)

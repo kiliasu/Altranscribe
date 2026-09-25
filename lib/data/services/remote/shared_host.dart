@@ -57,7 +57,7 @@ class SharedHost extends ChangeNotifier {
     _notify();
     try {
       if (shareTranslation) {
-        LocalLlmService.localAddress(llmAddress);
+        LocalLlmService.serviceAddress(llmAddress, llmProvider);
         await translator.prepare(llmAddress, llmModel, provider: llmProvider);
       }
       await engine.start(executable, model, directory, compute: compute);

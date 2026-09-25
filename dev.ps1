@@ -13,6 +13,7 @@ $localEnvironment = @{
     DASH__SUPPRESS_ANALYTICS = 'true'
     ALTRANSCRIBE_DATA_DIR = Join-Path $projectRoot '.tools\runtime\app-data'
     ALTRANSCRIBE_MODELS_DIR = Join-Path $projectRoot 'models'
+    ALTRANSCRIBE_LOG_DIR = Join-Path $projectRoot '.tools\runtime\logs'
     CUDA_CACHE_PATH = Join-Path $projectRoot '.tools\runtime\cuda-cache'
 }
 if ($WhisperDirectory) { $localEnvironment.ALTRANSCRIBE_WHISPER_DIR = $WhisperDirectory }

@@ -18,15 +18,15 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fakes.dart';
 
-class MemoryCredentials implements CredentialStore {
+class MemoryCredentials extends CredentialStore {
   final values = {
-    for (final provider in CloudProvider.values) provider: 'dummy-test-key',
+    for (final provider in CloudProvider.values)
+      provider.name: 'dummy-test-key',
   };
   @override
-  Future<String> read(CloudProvider provider) async => values[provider] ?? '';
+  Future<String> readNamed(String name) async => values[name] ?? '';
   @override
-  Future<void> write(CloudProvider provider, String key) async =>
-      values[provider] = key;
+  Future<void> writeNamed(String name, String key) async => values[name] = key;
 }
 
 class SocketFixture {
@@ -881,4 +881,89 @@ void main() {
     expect(await llm.translate('Test', 'auto', 'zh'), '测试译文');
     llm.stop();
   });
+
+  test(
+    'Anthropic text uses the Messages API with paged models and stop reasons',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final headers = <Map<String, String?>>[];
+      var stopReason = 'end_turn';
+      server.listen((request) async {
+        headers.add({
+          'x-api-key': request.headers.value('x-api-key'),
+          'anthropic-version': request.headers.value('anthropic-version'),
+          'authorization': request.headers.value('authorization'),
+        });
+        if (request.uri.path == '/v1/models') {
+          final second = request.uri.queryParameters['after_id'] == 'claude-a';
+          request.response.write(
+            jsonEncode({
+              'data': [
+                {'id': second ? 'claude-b' : 'claude-a'},
+                if (!second) {'id': 'claude-embedding-x'},
+              ],
+              'has_more': !second,
+              'last_id': second ? 'claude-b' : 'claude-a',
+            }),
+          );
+        } else {
+          expect(request.uri.path, '/v1/messages');
+          final body = jsonDecode(
+            await request.cast<List<int>>().transform(utf8.decoder).join(),
+          ) as Map;
+          expect(body['system'], contains('Translate the user text'));
+          expect(body['messages'], [
+            {'role': 'user', 'content': 'Test'},
+          ]);
+          expect(body['max_tokens'], 4096);
+          expect(body.containsKey('output_config'), isFalse);
+          request.response.write(
+            jsonEncode({
+              'stop_reason': stopReason,
+              'content': [
+                {'type': 'thinking', 'thinking': ''},
+                {'type': 'text', 'text': '测试'},
+                {'type': 'text', 'text': '译文'},
+              ],
+            }),
+          );
+        }
+        await request.response.close();
+      });
+      final urls = <Uri>[];
+      final llm = LocalLlmService(
+        cloudApi: CloudApi(
+          MemoryCredentials(),
+          clientFactory: () => FixtureHttpClient(server, urls),
+        ),
+      );
+      expect(await llm.models('', provider: LlmProvider.anthropic), [
+        'claude-a',
+        'claude-b',
+      ]);
+      await llm.prepare('', 'claude-b', provider: LlmProvider.anthropic);
+      expect(await llm.translate('Test', 'auto', 'zh'), '测试译文');
+      expect(llm.backend, 'Anthropic Claude · claude-b');
+      expect(urls.every((url) => url.host == 'api.anthropic.com'), isTrue);
+      expect(headers.last, {
+        'x-api-key': 'dummy-test-key',
+        'anthropic-version': '2023-06-01',
+        'authorization': null,
+      });
+      stopReason = 'max_tokens';
+      await expectLater(
+        llm.translate('Test', 'auto', 'zh'),
+        throwsA(isA<FormatException>()),
+      );
+      stopReason = 'refusal';
+      await expectLater(
+        llm.translate('Test', 'auto', 'zh'),
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'cloudRefusal'),
+        ),
+      );
+      llm.stop();
+    },
+  );
 }
