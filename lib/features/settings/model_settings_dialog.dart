@@ -133,12 +133,16 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                 ],
               ],
             ),
+            // The tile merges its semantics; the tooltip's overlay has to stay
+            // inside the button, or its node is sent detached from the tree.
             secondary: controller.catalog.downloadingModel == model
-                ? IconButton(
-                    key: const Key('cancel-model-download'),
-                    tooltip: t('cancelDownload'),
-                    onPressed: controller.catalog.cancelDownload,
-                    icon: const Icon(Icons.close_rounded),
+                ? withLocalOverlay(
+                    IconButton(
+                      key: const Key('cancel-model-download'),
+                      tooltip: t('cancelDownload'),
+                      onPressed: controller.catalog.cancelDownload,
+                      icon: const Icon(Icons.close_rounded),
+                    ),
                   )
                 : available[model.id] == ModelAvailability.available
                 ? null
@@ -210,35 +214,47 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
     ],
   );
 
+  /// Engines in display order; null stands for a remote Windows host.
+  List<SpeechProvider?> get speechOptions => [
+    if (controller.localInferenceAllowed) SpeechProvider.whisper,
+    SpeechProvider.nemotron,
+    null,
+    SpeechProvider.openAI,
+    SpeechProvider.gemini,
+  ];
+
   @override
   List<Widget> contents() => [
-    Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final option in [
-          if (controller.localInferenceAllowed) SpeechProvider.whisper,
-          SpeechProvider.nemotron,
-          null,
-          SpeechProvider.openAI,
-          SpeechProvider.gemini,
-        ])
-          ChoiceChip(
+    // One engine is chosen, so this is the app's single-choice button group,
+    // as in the translation settings, not filter chips whose check mark
+    // slides in and reflows the row.
+    AltButtonGroup(
+      key: const Key('speech-providers'),
+      height: 32,
+      stretch: true,
+      items: [
+        for (final option in speechOptions)
+          AltGroupItem(
+            option?.label ?? 'Whisper Remote',
             key: Key('speech-provider-${option?.name ?? 'remote'}'),
-            visualDensity: altChipDensity,
-            label: Text(option?.label ?? 'Whisper Remote'),
-            selected: option == null
-                ? remotePreview
-                : !remotePreview && provider == option,
-            onSelected: editable
-                ? (_) => setState(() {
-                    remotePreview = option == null;
-                    if (option != null) provider = option;
-                    cloudModels = null;
-                  })
-                : null,
           ),
       ],
+      selected: {speechOptions.indexOf(remotePreview ? null : provider)},
+      onPressed: editable
+          ? (i) {
+              final option = speechOptions[i];
+              if (option == null
+                  ? remotePreview
+                  : !remotePreview && provider == option) {
+                return;
+              }
+              setState(() {
+                remotePreview = option == null;
+                if (option != null) provider = option;
+                cloudModels = null;
+              });
+            }
+          : null,
     ),
     gap(),
     if (remotePreview) ...[

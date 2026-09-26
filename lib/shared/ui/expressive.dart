@@ -7,14 +7,18 @@ import 'package:material_ui/material_ui.dart';
 const altChipDensity = VisualDensity(vertical: -1);
 const altChipIconBounds = BoxConstraints.tightFor(width: 18, height: 18);
 
-// Keep value-indicator portals within the slider's semantic subtree. Flutter
-// 3.47.3 can otherwise serialize orphan nodes when a dialog route is pushed.
+// Keep overlay portals (slider value indicators, tooltips) within their
+// widget's semantic subtree. Flutter 3.47.3 can otherwise serialize orphan
+// nodes, which the Windows bridge reports as "will not be in the tree", when
+// the portal opens inside a dialog or a MergeSemantics tile.
 // https://github.com/flutter/flutter/issues/190357
-Widget sliderWithLocalOverlay(Slider slider) => Overlay.wrap(
+Widget withLocalOverlay(Widget child) => Overlay.wrap(
   alwaysSizeToContent: true,
   clipBehavior: Clip.none,
-  child: slider,
+  child: child,
 );
+
+Widget sliderWithLocalOverlay(Slider slider) => withLocalOverlay(slider);
 
 // Sampled spring curves and floating elevation.
 const altSpatial = _SampledCurve(
@@ -188,9 +192,36 @@ class _AltButtonGroupState extends State<AltButtonGroup> {
 
   /// One segment; [connected] segments share edges and grow while pressed.
   Widget button(BuildContext context, int i, bool connected) {
-    final colors = Theme.of(context).colorScheme;
     final count = widget.items.length;
     final selected = widget.selected.contains(i);
+    // Fill and label change together. A button's own animation would snap
+    // the fill but fade the label, flashing low-contrast text for a moment.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: selected ? 1 : 0),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      builder: (context, progress, _) =>
+          segment(context, i, connected, count, selected, progress),
+    );
+  }
+
+  Widget segment(
+    BuildContext context,
+    int i,
+    bool connected,
+    int count,
+    bool selected,
+    double progress,
+  ) {
+    final colors = Theme.of(context).colorScheme;
+    final fill = Color.lerp(colors.surfaceContainer, colors.primary, progress)!;
+    final ink = Color.lerp(
+      colors.onSurfaceVariant,
+      colors.onPrimary,
+      progress,
+    )!;
     return Semantics(
       selected: selected,
       child: Listener(
@@ -213,12 +244,8 @@ class _AltButtonGroupState extends State<AltButtonGroup> {
             padding: WidgetStatePropertyAll(
               EdgeInsets.symmetric(horizontal: connected ? 8 : horizontal),
             ),
-            backgroundColor: WidgetStatePropertyAll(
-              selected ? colors.primary : colors.surfaceContainer,
-            ),
-            foregroundColor: WidgetStatePropertyAll(
-              selected ? colors.onPrimary : colors.onSurfaceVariant,
-            ),
+            backgroundColor: WidgetStatePropertyAll(fill),
+            foregroundColor: WidgetStatePropertyAll(ink),
             textStyle: WidgetStatePropertyAll(labelStyle(context)),
             tapTargetSize: connected ? null : MaterialTapTargetSize.shrinkWrap,
             shape: WidgetStateProperty.resolveWith((states) {
@@ -249,6 +276,7 @@ class _AltButtonGroupState extends State<AltButtonGroup> {
                   widget.items[i].icon,
                   size: medium ? 24 : 20,
                   fill: selected ? 1 : 0,
+                  color: ink,
                 ),
                 const SizedBox(width: 8),
               ],
@@ -257,6 +285,7 @@ class _AltButtonGroupState extends State<AltButtonGroup> {
                   widget.items[i].label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: ink),
                 ),
               ),
             ],
