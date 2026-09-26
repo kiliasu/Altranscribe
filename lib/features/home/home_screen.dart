@@ -610,7 +610,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     return 'Whisper · ${model?.label ?? (filename.isEmpty ? t('noModelConfigured') : filename)} · ${live.computeMode.name == 'automatic' ? t('automatic') : live.computeMode.name.toUpperCase()}';
   }
 
-  String get llmSummary => live.remoteProcessing
+  String get llmSummary => live.remoteLlm
       ? 'Remote · ${live.sessionLlmModel.isEmpty ? t('remoteHostLlm') : live.sessionLlmModel}'
       : '${live.llmProvider.label} · ${live.translationModel.isEmpty ? t('translationModelMissing') : live.translationModel}';
   String get audioSummary =>

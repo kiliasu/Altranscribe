@@ -75,8 +75,8 @@ const strings = <String, List<String>>{
     'Sharing supports local Whisper and local Ollama / OpenAI-compatible LLMs only. Cloud models are not forwarded.',
   ],
   'remoteLlmUnavailable': [
-    '主机未提供 LLM。请在主机配置本地翻译，或关闭本次任务的翻译、标题摘要和文件优化。',
-    'No LLM is shared. Configure a local LLM on the host, or turn off translation, summaries and file refinement for this task.',
+    '主机没有共享文字模型。请在主机的共享设置里勾选「同时提供本地 LLM」，或在「翻译选择」中改用自行配置的服务，或关闭本次任务的翻译、标题摘要和文件优化。',
+    'The host shares no text model. Enable “Also share the local LLM” on the host, choose your own service under Translation, or turn off translation, summaries and file refinement for this task.',
   ],
   'remoteHostFailed': [
     '共享服务未能启动或已中断。请检查本机模型、Whisper 程序、LLM 服务和端口是否可用。',
@@ -817,5 +817,23 @@ const strings = <String, List<String>>{
   "forgetHostHint": [
     "断开并删除保存的主机和凭据。主机上仍会列出这台设备，可在那里移除。",
     "Disconnect and delete the saved host and credential. The host still lists this device until you remove it there.",
+  ],
+  "llmSourceHint": [
+    "已连接主机时，翻译、整理、标题与摘要可以交给主机共享的文字模型，也可以改用自行配置的服务。",
+    "While a host is connected, translation, refinement, titles and summaries can use the host's shared text model or a service you configure yourself.",
+  ],
+  "llmFromHost": ["主机共享的模型", "The host's shared model"],
+  "llmOwnService": ["自行配置的服务", "Your own service"],
+  "llmOwnServiceHint": [
+    "使用下面选择的引擎和模型，文本会发送到该服务。",
+    "Uses the engine and model chosen below; text goes to that service.",
+  ],
+  "hostLlmNone": [
+    "主机没有共享文字模型。选择自行配置的服务，或在主机的共享设置里勾选「同时提供本地 LLM」。",
+    "The host shares no text model. Choose your own service, or enable “Also share the local LLM” in the host's sharing settings.",
+  ],
+  "hostLlmUnknown": [
+    "连接主机后显示模型信息。",
+    "Model details appear once the host is connected.",
   ],
 };

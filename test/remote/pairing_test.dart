@@ -84,6 +84,8 @@ void main() {
   test(
     'discovery answers probes on loopback and rejects forged answers',
     () async {
+      // A private port keeps hosts started by other test files out of the picture.
+      const port = 47661;
       final responder = DiscoveryResponder();
       var busy = false;
       await responder.start(
@@ -93,11 +95,13 @@ void main() {
           'address': 'http://127.0.0.1:8178',
           'busy': busy,
         },
+        port: port,
       );
       addTearDown(responder.stop);
       final hosts = await discoverHosts(
         targets: [InternetAddress.loopbackIPv4],
         timeout: const Duration(milliseconds: 600),
+        port: port,
       );
       expect(hosts.map((host) => host.id), ['host-1']);
       expect(hosts.single.name, 'Study PC');
@@ -107,6 +111,7 @@ void main() {
       final again = await discoverHosts(
         targets: [InternetAddress.loopbackIPv4],
         timeout: const Duration(milliseconds: 600),
+        port: port,
       );
       expect(again.single.busy, isTrue);
       responder.stop();
@@ -114,6 +119,7 @@ void main() {
         await discoverHosts(
           targets: [InternetAddress.loopbackIPv4],
           timeout: const Duration(milliseconds: 400),
+          port: port,
         ),
         isEmpty,
       );

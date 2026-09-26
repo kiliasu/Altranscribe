@@ -22,6 +22,12 @@ class TranslationSettingsDialog extends SettingsDialog {
 class _TranslationSettingsState
     extends SettingsDialogState<TranslationSettingsDialog> {
   late LlmProvider provider = controller.llmProvider;
+
+  /// While a host recognizes speech, its shared text model is the default and
+  /// the user's own service is an explicit alternative.
+  late bool fromHost = controller.useRemoteLlm;
+  bool get hostMode => controller.remoteProcessing;
+  bool get usingHost => hostMode && fromHost;
   // Phones can still reach online OpenAI-compatible services over HTTPS.
   List<LlmProvider> get providers => LlmProvider.values
       .where(
@@ -53,6 +59,13 @@ class _TranslationSettingsState
         models = [];
       });
     }
+    // The host's model needs no lookup, and a key check would only confuse.
+    if (usingHost) {
+      if (controller.remoteConnection.info == null) {
+        await controller.probeHost(discover: false);
+      }
+      return;
+    }
     try {
       final result = await controller.localTranslator.models(
         address.text,
@@ -69,8 +82,49 @@ class _TranslationSettingsState
     }
   }
 
-  @override
-  List<Widget> contents() => [
+  String get hostLlmText {
+    final info = controller.remoteConnection.info;
+    final model = controller.hostLlmModel;
+    if (info == null) return t('hostLlmUnknown');
+    if (model == null) return t('hostLlmNone');
+    final name = controller.remoteConnection.name;
+    return '${name.isEmpty ? t('noRemote') : name} · ${info['llmProvider']} · $model';
+  }
+
+  List<Widget> sourceSection() => [
+    Text(t('llmSourceHint')),
+    gap(),
+    RadioGroup<bool>(
+      groupValue: fromHost,
+      onChanged: (value) {
+        if (value == null || !editable || value == fromHost) return;
+        setState(() => fromHost = value);
+        run(load);
+      },
+      child: choices([
+        RadioListTile<bool>(
+          key: const Key('llm-source-host'),
+          value: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          controlAffinity: ListTileControlAffinity.leading,
+          title: Text(t('llmFromHost')),
+          subtitle: Text(hostLlmText),
+          enabled: editable,
+        ),
+        RadioListTile<bool>(
+          key: const Key('llm-source-own'),
+          value: false,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          controlAffinity: ListTileControlAffinity.leading,
+          title: Text(t('llmOwnService')),
+          subtitle: Text(t('llmOwnServiceHint')),
+          enabled: editable,
+        ),
+      ]),
+    ),
+  ];
+
+  List<Widget> ownServiceSection() => [
     Text(t('llmPanelHint')),
     gap(),
     AltButtonGroup(
@@ -180,8 +234,20 @@ class _TranslationSettingsState
     if (connected && selected.isNotEmpty && !models.contains(selected))
       Text(t('translationModelMissing')),
   ];
+
+  @override
+  List<Widget> contents() => [
+    if (hostMode) ...[...sourceSection(), gap()],
+    if (!usingHost) ...ownServiceSection(),
+  ];
+
   @override
   Future<void> save() async {
+    if (usingHost) {
+      controller.useRemoteLlm = true;
+      await controller.saveSettings();
+      return;
+    }
     final currentModels = await controller.localTranslator.models(
       address.text,
       provider: provider,
@@ -189,6 +255,7 @@ class _TranslationSettingsState
     if (!currentModels.contains(selected)) {
       throw const FormatException('translationModelMissing');
     }
+    controller.useRemoteLlm = fromHost;
     controller.llmProvider = provider;
     controller.translationAddress = address.text.trim();
     controller.translationModel = selected;

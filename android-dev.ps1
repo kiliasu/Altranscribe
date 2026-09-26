@@ -41,6 +41,9 @@ try {
     if ($Test -and $Device) {
         & $flutter test $Target -d $Device --reporter expanded --no-uninstall
     } elseif ($Build) {
+        # flutter test regenerates this file with dev-only plugins such as integration_test,
+        # which a release build cannot compile; flutter build recreates it correctly when absent.
+        Remove-Item -LiteralPath (Join-Path $projectRoot 'android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java') -Force -ErrorAction SilentlyContinue
         & $flutter build apk $(if ($Release) { '--release' } else { '--debug' }) --target-platform android-arm64 -t $Target
     } elseif ($Device) {
         & $flutter run -d $Device --debug -t $Target

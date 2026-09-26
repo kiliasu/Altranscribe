@@ -94,9 +94,9 @@ class RealtimeController extends ChangeNotifier {
   final TranslationService localTranslator;
   final TranslationService localRecordSummarizer;
   TranslationService get translator =>
-      remoteProcessing ? remoteTranslator : localTranslator;
+      remoteLlm ? remoteTranslator : localTranslator;
   TranslationService get recordSummarizer =>
-      remoteProcessing ? remoteSummarizer : localRecordSummarizer;
+      remoteLlm ? remoteSummarizer : localRecordSummarizer;
   final SharedHost? _providedHost;
   late final sharedHost =
       _providedHost ??
@@ -122,17 +122,23 @@ class RealtimeController extends ChangeNotifier {
   late final remoteTranslator = RemoteTranslationService(remoteConnection);
   late final remoteSummarizer = RemoteTranslationService(remoteConnection);
   bool useRemote = MobilePlatform.android;
+
+  /// While a host recognizes speech, its shared text model handles LLM work
+  /// unless the user chose their own service under Translation.
+  bool useRemoteLlm = true;
   bool get localInferenceAllowed => !MobilePlatform.android;
   bool get remoteProcessing =>
       useRemote && speechProvider == SpeechProvider.whisper;
+  bool get remoteLlm => remoteProcessing && useRemoteLlm;
+
+  /// The text model the host reported sharing, if any.
+  String? get hostLlmModel => remoteConnection.info?['llmModel'] as String?;
   String get sessionModel => remoteProcessing
       ? (remoteConnection.info?['model'] as String? ?? 'Whisper Remote')
       : model.split(RegExp(r'[/\\]')).last;
-  String get sessionLlmModel => remoteProcessing
-      ? (remoteConnection.info?['llmModel'] as String? ?? '')
-      : translationModel;
-  String get sessionLlmProvider =>
-      remoteProcessing ? 'remote' : llmProvider.name;
+  String get sessionLlmModel =>
+      remoteLlm ? (hostLlmModel ?? '') : translationModel;
+  String get sessionLlmProvider => remoteLlm ? 'remote' : llmProvider.name;
   final ModelCatalog catalog;
   final AudioFileDecoder fileDecoder;
   final CredentialStore credentials;
@@ -233,6 +239,7 @@ class RealtimeController extends ChangeNotifier {
           settings['cloudDirectTranslation'] as bool? ?? true;
       cloudAutoLanguage = settings['cloudAutoLanguage'] as bool? ?? true;
       useRemote = settings['useRemote'] == true;
+      useRemoteLlm = settings['remoteLlm'] as bool? ?? true;
       if (!localInferenceAllowed && speechProvider == SpeechProvider.whisper) {
         useRemote = true;
       }
@@ -315,6 +322,8 @@ class RealtimeController extends ChangeNotifier {
     }
     initialized = true;
     _notify();
+    // A saved host's model details are only known after one look at it.
+    if (remoteConnection.address.isNotEmpty) unawaited(probeHost());
   }
 
   Future<void> saveSettings() async {
@@ -338,6 +347,7 @@ class RealtimeController extends ChangeNotifier {
       'cloudDirectTranslation': cloudDirectTranslation,
       'cloudAutoLanguage': cloudAutoLanguage,
       'useRemote': useRemote,
+      'remoteLlm': useRemoteLlm,
       'remoteAddress': remoteConnection.address,
       'remoteName': remoteConnection.name,
       'remoteHostId': remoteConnection.hostId,
@@ -474,6 +484,7 @@ class RealtimeController extends ChangeNotifier {
     }
     _probingHost = true;
     var moved = false;
+    var renamed = false;
     try {
       final client = RemoteClient(
         RemoteConnection(
@@ -488,6 +499,12 @@ class RealtimeController extends ChangeNotifier {
         remoteConnection.info = info;
         if (info['hostId'] is String) {
           remoteConnection.hostId = info['hostId'] as String;
+        }
+        // The host owns its name; a rename on its sharing panel shows up here.
+        final reported = (info['name'] as String? ?? '').trim();
+        if (reported.isNotEmpty && reported != remoteConnection.name) {
+          remoteConnection.name = reported;
+          renamed = true;
         }
         hostStatus = info['busy'] == true ? HostStatus.busy : HostStatus.online;
         hostSeen = DateTime.now();
@@ -510,10 +527,8 @@ class RealtimeController extends ChangeNotifier {
     } finally {
       _probingHost = false;
     }
-    if (moved) {
-      await saveSettings();
-      return probeHost(discover: false);
-    }
+    if (moved || renamed) await saveSettings();
+    if (moved) return probeHost(discover: false);
     _notify();
   }
 
@@ -865,7 +880,7 @@ class RealtimeController extends ChangeNotifier {
               : remoteProcessing
               ? 'remote'
               : 'whisper'} '
-          'llm=${llmProvider.name}',
+          'llm=${remoteLlm ? 'remote' : llmProvider.name}',
     );
     _notify();
     final future = _start(
@@ -1020,9 +1035,8 @@ class RealtimeController extends ChangeNotifier {
     // An online OpenAI-compatible service is checked by the translator itself,
     // which rejects plain-HTTP addresses on a phone.
     if (!localInferenceAllowed &&
-        !remoteProcessing &&
-        (speechProvider == SpeechProvider.whisper ||
-            llmProvider == LlmProvider.ollama)) {
+        ((!remoteProcessing && speechProvider == SpeechProvider.whisper) ||
+            (!remoteLlm && llmProvider == LlmProvider.ollama))) {
       throw const FormatException('mobileRemoteOnly');
     }
   }

@@ -29,11 +29,14 @@ class DiscoveryResponder {
   RawDatagramSocket? _socket;
   bool get running => _socket != null;
 
-  Future<void> start(Map<String, Object?> Function() describe) async {
+  Future<void> start(
+    Map<String, Object?> Function() describe, {
+    int port = discoveryPort,
+  }) async {
     stop();
     final socket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
-      discoveryPort,
+      port,
       reuseAddress: true,
     );
     socket.broadcastEnabled = true;
