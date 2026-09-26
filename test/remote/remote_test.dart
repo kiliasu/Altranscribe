@@ -137,6 +137,7 @@ void main() {
     expect(jsonDecode(info.$2)['hostId'], host.devices.hostId);
     expect(jsonDecode(info.$2)['busy'], false);
     expect(jsonDecode(info.$2)['device'], 'Test client');
+    expect(jsonDecode(info.$2)['llmModels'], ['test-llm', 'test-model']);
     expect(host.devices.devices.single.lastSeen, isNotNull);
     expect(
       (await request(
@@ -154,6 +155,17 @@ void main() {
         bytes: utf8.encode('{"text":7}'),
       )).$1,
       400,
+    );
+    expect(
+      (await request(
+        'translate',
+        token: token,
+        bytes: utf8.encode(
+          '{"text":"x","source":"en","target":"zh","model":"unlisted"}',
+        ),
+      )).$1,
+      400,
+      reason: 'only models the host listed may be requested',
     );
 
     // Pairing: a code from the host's screen becomes a device token.
@@ -209,7 +221,16 @@ void main() {
   test('real HTTP client routes speech, translation/context, summary and cleanup to local host only', () async {
     final engine = FakeEngine();
     final translator = FakeTranslator();
-    final host = SharedHost(engine: engine, translator: translator);
+    final extras = <FakeTranslator>[];
+    final host = SharedHost(
+      engine: engine,
+      translator: translator,
+      createTranslator: () {
+        final extra = FakeTranslator();
+        extras.add(extra);
+        return extra;
+      },
+    );
     await startHost(host);
     addTearDown(() async {
       await host.stop();
@@ -246,6 +267,32 @@ void main() {
       (await llm.cleanUp(['Hello'], const CleanupOptions(names: true))).texts,
       ['Hello'],
     );
+    // Another listed model gets its own service on the host, prepared once.
+    await llm.prepare('', 'test-model');
+    expect(llm.backend, 'Remote · ollama · test-model');
+    expect(await llm.translate('Other model.', 'en', 'zh'), '测试译文');
+    expect(await llm.translate('Again.', 'en', 'zh'), '测试译文');
+    expect(extras.single.calls.map((call) => call.$1), [
+      'Other model.',
+      'Again.',
+    ]);
+    expect(extras.single.prepared, 1);
+    expect(
+      translator.calls.map((call) => call.$1),
+      isNot(contains('Other model.')),
+    );
+    await expectLater(
+      llm.prepare('', 'unlisted'),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          'remoteLlmModelMissing',
+        ),
+      ),
+    );
+    await llm.prepare('', '');
+    expect(llm.backend, 'Remote · ollama · test-llm');
     await speech.stop();
     expect(await llm.translate('Still running.', 'en', 'zh'), isNotEmpty);
     expect(host.running, true);

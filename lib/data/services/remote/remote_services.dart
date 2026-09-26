@@ -41,6 +41,9 @@ class RemoteTranslationService implements TranslationService {
   RemoteTranslationService(RemoteConnection connection)
     : client = RemoteClient(connection);
   final RemoteClient client;
+
+  /// One of the models the host lists; empty means the host's default.
+  String model = '';
   @override
   String backend = 'LLM · Remote';
   @override
@@ -63,7 +66,16 @@ class RemoteTranslationService implements TranslationService {
       stop();
       throw const FormatException('remoteLlmUnavailable');
     }
-    backend = 'Remote · ${info['llmProvider']} · ${info['llmModel']}';
+    final listed =
+        (info['llmModels'] as List?)?.cast<String>() ??
+        [info['llmModel'] as String];
+    if (model.isNotEmpty && !listed.contains(model)) {
+      stop();
+      throw const FormatException('remoteLlmModelMissing');
+    }
+    this.model = model;
+    backend =
+        'Remote · ${info['llmProvider']} · ${model.isEmpty ? info['llmModel'] : model}';
   }
 
   @override
@@ -82,6 +94,7 @@ class RemoteTranslationService implements TranslationService {
               'context': TranslationContextPolicy.bound(context)
                   .map((item) => item.toJson())
                   .toList(),
+              if (model.isNotEmpty) 'model': model,
             },
           ))['text']
           as String;
@@ -89,7 +102,11 @@ class RemoteTranslationService implements TranslationService {
   Future<RecordSummary> summarize(List<String> texts, String language) async {
     final result = await client.request(
       'summarize',
-      json: {'texts': texts, 'language': language},
+      json: {
+        'texts': texts,
+        'language': language,
+        if (model.isNotEmpty) 'model': model,
+      },
     );
     return RecordSummary(
       result['title'] as String,
@@ -104,7 +121,11 @@ class RemoteTranslationService implements TranslationService {
   ) async {
     final result = await client.request(
       'cleanup',
-      json: {'texts': texts, 'options': options.toJson()},
+      json: {
+        'texts': texts,
+        'options': options.toJson(),
+        if (model.isNotEmpty) 'model': model,
+      },
     );
     // The client repeats the same evidence checks; it never blindly replaces
     // the source document with a host-provided edited document.

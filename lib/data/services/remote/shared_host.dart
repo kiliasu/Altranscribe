@@ -17,9 +17,17 @@ class SharedHost extends ChangeNotifier {
     required this.engine,
     required this.translator,
     PairedDevices? devices,
-  }) : devices = devices ?? PairedDevices();
+    TranslationService Function()? createTranslator,
+  }) : devices = devices ?? PairedDevices(),
+       _createTranslator = createTranslator ?? LocalLlmService.new;
   final SpeechEngine engine;
+
+  /// Serves the host's own model; other listed models get their own service.
   final TranslationService translator;
+  final TranslationService Function() _createTranslator;
+  final _extraTranslators = <String, Future<TranslationService>>{};
+  String _llmAddress = '';
+  LlmProvider _llmProvider = LlmProvider.ollama;
 
   /// Who may connect; pairing codes and revocation live here.
   final PairedDevices devices;
@@ -68,9 +76,23 @@ class SharedHost extends ChangeNotifier {
     error = null;
     _notify();
     try {
+      var llmModels = const <String>[];
       if (shareTranslation) {
         LocalLlmService.serviceAddress(llmAddress, llmProvider);
         await translator.prepare(llmAddress, llmModel, provider: llmProvider);
+        _llmAddress = llmAddress;
+        _llmProvider = llmProvider;
+        // Clients may pick any model the service lists; the host's own
+        // choice stays the default.
+        try {
+          final listed = await translator.models(
+            llmAddress,
+            provider: llmProvider,
+          );
+          llmModels = [llmModel, ...listed.where((item) => item != llmModel)];
+        } catch (_) {
+          llmModels = [llmModel];
+        }
       }
       await engine.start(executable, model, directory, compute: compute);
       if (_disposed) throw const FormatException('remoteCancelled');
@@ -95,6 +117,7 @@ class SharedHost extends ChangeNotifier {
         'backend': engine.backend,
         'llmProvider': shareTranslation ? llmProvider.name : null,
         'llmModel': shareTranslation ? llmModel : null,
+        'llmModels': llmModels,
       };
       server.listen(
         (request) {
@@ -272,10 +295,35 @@ class SharedHost extends ChangeNotifier {
     }
   }
 
+  /// A prepared service for one of the other listed models, made on first use.
+  Future<TranslationService> _translatorFor(String model) =>
+      _extraTranslators[model] ??= () async {
+        final service = _createTranslator();
+        try {
+          await service.prepare(_llmAddress, model, provider: _llmProvider);
+        } catch (_) {
+          service.stop();
+          _extraTranslators.remove(model);
+          rethrow;
+        }
+        return service;
+      }();
+
   Future<Map<String, Object?>> _text(
     String operation,
     Map<String, dynamic> data,
   ) async {
+    var service = translator;
+    final requested = data['model'];
+    if (requested != null && requested != '') {
+      final listed = info['llmModels'] as List? ?? const [];
+      if (requested is! String || !listed.contains(requested)) {
+        throw const FormatException('remoteInvalidRequest');
+      }
+      if (requested != info['llmModel']) {
+        service = await _translatorFor(requested);
+      }
+    }
     if (operation == '/v1/translate') {
       final text = data['text'] as String;
       final source = data['source'] as String,
@@ -291,7 +339,7 @@ class SharedHost extends ChangeNotifier {
           )
           .toList();
       return {
-        'text': await translator.translate(
+        'text': await service.translate(
           text,
           source,
           target,
@@ -303,7 +351,7 @@ class SharedHost extends ChangeNotifier {
     if (operation == '/v1/summarize') {
       final language = data['language'] as String;
       _language(language);
-      final result = await translator.summarize(texts, language);
+      final result = await service.summarize(texts, language);
       return {'title': result.title, 'summary': result.summary};
     }
     final values = data['options'] as Map;
@@ -313,7 +361,7 @@ class SharedHost extends ChangeNotifier {
       corrections: values['corrections'] == true,
       spellings: (values['spellings'] as List? ?? []).cast<String>(),
     );
-    final result = await translator.cleanUp(texts, options);
+    final result = await service.cleanUp(texts, options);
     return {
       'edits': [
         for (final edits in result.edits)
@@ -357,6 +405,12 @@ class SharedHost extends ChangeNotifier {
     try {
       await server?.close(force: true);
       translator.stop();
+      for (final pending in _extraTranslators.values) {
+        unawaited(
+          pending.then((service) => service.stop(), onError: (Object _) {}),
+        );
+      }
+      _extraTranslators.clear();
       await engine.stop();
       await Future.wait(_requests.toList());
     } finally {

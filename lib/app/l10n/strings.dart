@@ -836,4 +836,15 @@ const strings = <String, List<String>>{
     "连接主机后显示模型信息。",
     "Model details appear once the host is connected.",
   ],
+  "hostModels": ["主机上的模型", "Models on the host"],
+  "hostDefaultModel": ["主机默认", "Host default"],
+  "refreshHostModels": ["刷新", "Refresh"],
+  "remoteLlmModelMissing": [
+    "在主机上选择的模型已不可用，请在「翻译选择」中重新选择。",
+    "The host model you chose is no longer available. Pick another under Translation.",
+  ],
+  "shareTranslationHint": [
+    "客户端默认使用这个模型，也可以改选该服务上的其他模型。",
+    "Clients use this model by default and may switch to any other model the service lists.",
+  ],
 };

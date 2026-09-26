@@ -271,6 +271,13 @@ class _SharedHostState extends State<SharedHostDialog> {
     super.dispose();
   }
 
+  /// " · 3 models available" when the shared service lists more than one.
+  String sharedModelCount(Object? listed) {
+    final count = listed is List ? listed.length : 0;
+    if (count < 2) return '';
+    return widget.english ? ' · $count models available' : ' · 共 $count 个模型可选';
+  }
+
   PairingInvite invite(String code) => PairingInvite(
     address: host.address,
     code: code,
@@ -382,7 +389,8 @@ class _SharedHostState extends State<SharedHostDialog> {
                 Text(
                   host.info['llmModel'] == null
                       ? t('remoteLlmUnavailable')
-                      : '${host.info['llmProvider']} · ${host.info['llmModel']}',
+                      : '${host.info['llmProvider']} · ${host.info['llmModel']}'
+                            '${sharedModelCount(host.info['llmModels'])}',
                 ),
                 const SizedBox(height: 16),
                 Text(t('remoteAddress')),
@@ -459,10 +467,11 @@ class _SharedHostState extends State<SharedHostDialog> {
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(t('shareTranslation')),
+                  isThreeLine: !widget.controller.llmProvider.isCloud,
                   subtitle: Text(
                     widget.controller.llmProvider.isCloud
                         ? t('remoteLocalOnly')
-                        : '${widget.controller.llmProvider.label} · ${widget.controller.translationModel}',
+                        : '${widget.controller.llmProvider.label} · ${widget.controller.translationModel}\n${t('shareTranslationHint')}',
                   ),
                   value: translation,
                   onChanged:

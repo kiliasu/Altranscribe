@@ -28,7 +28,11 @@ void main() {
       live.remoteConnection
         ..address = 'http://192.168.1.20:8178'
         ..name = 'Study PC'
-        ..info = {'llmProvider': 'ollama', 'llmModel': 'gemma-test'};
+        ..info = {
+          'llmProvider': 'ollama',
+          'llmModel': 'gemma-test',
+          'llmModels': ['gemma-test', 'other-model'],
+        };
       addTearDown(live.dispose);
       expect(live.remoteLlm, isTrue);
       expect(live.translator, same(live.remoteTranslator));
@@ -38,8 +42,16 @@ void main() {
       expect(find.text('Remote · gemma-test'), findsOneWidget);
 
       await openTranslation(tester);
-      expect(find.text('Study PC · ollama · gemma-test'), findsOneWidget);
+      expect(find.text('Study PC · ollama'), findsOneWidget);
       expect(find.byKey(const Key('llm-source-host')), findsOneWidget);
+      // Every model the host lists can be chosen; its own is marked as default.
+      expect(
+        find.byKey(const ValueKey('host-model-gemma-test')),
+        findsOneWidget,
+      );
+      expect(find.text('主机默认'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('host-model-other-model')));
+      await tester.pumpAndSettle();
       // The host's model is in use, so no provider or key controls and no
       // cloud lookup that would complain about a missing API key.
       expect(find.byKey(const Key('provider-openAI')), findsNothing);
@@ -49,6 +61,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(TranslationSettingsDialog), findsNothing);
       expect(live.useRemoteLlm, isTrue);
+      expect(live.remoteLlmModel, 'other-model');
+      expect(live.sessionLlmModel, 'other-model');
+      expect(find.text('Remote · other-model'), findsOneWidget);
 
       await openTranslation(tester);
       await tester.tap(find.byKey(const Key('llm-source-own')));
@@ -85,7 +100,17 @@ void main() {
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
       expect(live.useRemoteLlm, isTrue);
+      expect(live.remoteLlmModel, 'other-model', reason: 'the choice is kept');
       expect(live.translator, same(live.remoteTranslator));
+
+      // Picking the host's own model again means following its default.
+      await openTranslation(tester);
+      await tester.tap(find.byKey(const ValueKey('host-model-gemma-test')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(live.remoteLlmModel, isEmpty);
+      expect(find.text('Remote · gemma-test'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },

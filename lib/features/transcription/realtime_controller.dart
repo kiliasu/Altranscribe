@@ -131,13 +131,30 @@ class RealtimeController extends ChangeNotifier {
       useRemote && speechProvider == SpeechProvider.whisper;
   bool get remoteLlm => remoteProcessing && useRemoteLlm;
 
-  /// The text model the host reported sharing, if any.
+  /// One of the host's listed models to use instead of its default.
+  String remoteLlmModel = '';
+
+  /// The host's default text model, if it shares one.
   String? get hostLlmModel => remoteConnection.info?['llmModel'] as String?;
+
+  /// Every text model the host offers, the default first.
+  List<String> get hostLlmModels {
+    final listed = remoteConnection.info?['llmModels'];
+    if (listed is List) return listed.cast<String>();
+    final fallback = hostLlmModel;
+    return fallback == null ? const [] : [fallback];
+  }
+
+  /// What the active translator is prepared with.
+  String get _llmAddress =>
+      remoteLlm ? remoteConnection.address : translationAddress;
+  String get _llmModel => remoteLlm ? remoteLlmModel : translationModel;
   String get sessionModel => remoteProcessing
       ? (remoteConnection.info?['model'] as String? ?? 'Whisper Remote')
       : model.split(RegExp(r'[/\\]')).last;
-  String get sessionLlmModel =>
-      remoteLlm ? (hostLlmModel ?? '') : translationModel;
+  String get sessionLlmModel => remoteLlm
+      ? (remoteLlmModel.isNotEmpty ? remoteLlmModel : hostLlmModel ?? '')
+      : translationModel;
   String get sessionLlmProvider => remoteLlm ? 'remote' : llmProvider.name;
   final ModelCatalog catalog;
   final AudioFileDecoder fileDecoder;
@@ -240,6 +257,7 @@ class RealtimeController extends ChangeNotifier {
       cloudAutoLanguage = settings['cloudAutoLanguage'] as bool? ?? true;
       useRemote = settings['useRemote'] == true;
       useRemoteLlm = settings['remoteLlm'] as bool? ?? true;
+      remoteLlmModel = settings['remoteLlmModel'] as String? ?? '';
       if (!localInferenceAllowed && speechProvider == SpeechProvider.whisper) {
         useRemote = true;
       }
@@ -348,6 +366,7 @@ class RealtimeController extends ChangeNotifier {
       'cloudAutoLanguage': cloudAutoLanguage,
       'useRemote': useRemote,
       'remoteLlm': useRemoteLlm,
+      'remoteLlmModel': remoteLlmModel,
       'remoteAddress': remoteConnection.address,
       'remoteName': remoteConnection.name,
       'remoteHostId': remoteConnection.hostId,
@@ -653,8 +672,8 @@ class RealtimeController extends ChangeNotifier {
     if (updated.lines.every((line) => line.text.trim().isEmpty)) {
       throw const FormatException('noSpeechRecorded');
     }
-    final address = translationAddress;
-    final modelName = translationModel;
+    final address = _llmAddress;
+    final modelName = _llmModel;
     final provider = llmProvider;
     updated.summaryStatus = 'pending';
     updated.summaryError = null;
@@ -749,11 +768,7 @@ class RealtimeController extends ChangeNotifier {
       await saveSettings();
       if (_cancelled) return;
       if (needsLlm) {
-        await translator.prepare(
-          translationAddress,
-          translationModel,
-          provider: llmProvider,
-        );
+        await translator.prepare(_llmAddress, _llmModel, provider: llmProvider);
       }
       if (_cancelled) return;
       await fileEngine.start(
@@ -913,8 +928,8 @@ class RealtimeController extends ChangeNotifier {
               targetLanguage != language)) {
         try {
           await translator.prepare(
-            translationAddress,
-            translationModel,
+            _llmAddress,
+            _llmModel,
             provider: llmProvider,
           );
         } on SocketException {

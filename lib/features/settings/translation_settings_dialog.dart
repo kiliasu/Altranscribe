@@ -26,6 +26,9 @@ class _TranslationSettingsState
   /// While a host recognizes speech, its shared text model is the default and
   /// the user's own service is an explicit alternative.
   late bool fromHost = controller.useRemoteLlm;
+
+  /// One of the host's listed models; empty follows the host's default.
+  late String hostModel = controller.remoteLlmModel;
   bool get hostMode => controller.remoteProcessing;
   bool get usingHost => hostMode && fromHost;
   // Phones can still reach online OpenAI-compatible services over HTTPS.
@@ -88,7 +91,7 @@ class _TranslationSettingsState
     if (info == null) return t('hostLlmUnknown');
     if (model == null) return t('hostLlmNone');
     final name = controller.remoteConnection.name;
-    return '${name.isEmpty ? t('noRemote') : name} · ${info['llmProvider']} · $model';
+    return '${name.isEmpty ? t('noRemote') : name} · ${info['llmProvider']}';
   }
 
   List<Widget> sourceSection() => [
@@ -122,6 +125,56 @@ class _TranslationSettingsState
         ),
       ]),
     ),
+    if (usingHost && controller.hostLlmModels.isNotEmpty) ...[
+      gap(),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              t('hostModels'),
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ),
+          TextButton.icon(
+            key: const Key('refresh-host-models'),
+            onPressed: busy
+                ? null
+                : () => run(() => controller.probeHost(discover: false)),
+            icon: const Icon(AltIcons.refresh, size: 18),
+            label: Text(t('refreshHostModels')),
+          ),
+        ],
+      ),
+      RadioGroup<String>(
+        groupValue: hostModel.isEmpty
+            ? controller.hostLlmModel ?? ''
+            : hostModel,
+        onChanged: (value) {
+          if (value == null || !editable) return;
+          setState(
+            () => hostModel = value == controller.hostLlmModel ? '' : value,
+          );
+        },
+        child: choices([
+          for (final name in controller.hostLlmModels)
+            RadioListTile<String>(
+              key: ValueKey('host-model-$name'),
+              value: name,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              minTileHeight: 56,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(
+                name,
+                style: const TextStyle(fontSize: 16, letterSpacing: .5),
+              ),
+              subtitle: name == controller.hostLlmModel
+                  ? Text(t('hostDefaultModel'))
+                  : null,
+              enabled: editable,
+            ),
+        ]),
+      ),
+    ],
   ];
 
   List<Widget> ownServiceSection() => [
@@ -244,7 +297,12 @@ class _TranslationSettingsState
   @override
   Future<void> save() async {
     if (usingHost) {
+      if (hostModel.isNotEmpty &&
+          !controller.hostLlmModels.contains(hostModel)) {
+        throw const FormatException('remoteLlmModelMissing');
+      }
       controller.useRemoteLlm = true;
+      controller.remoteLlmModel = hostModel;
       await controller.saveSettings();
       return;
     }
