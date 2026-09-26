@@ -18,7 +18,7 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 
 1. 从 [Releases](https://github.com/kiliasu/Altranscribe/releases) 下载 Windows zip 或 Android APK。
 2. **Windows x64**：解压后运行 `Altranscribe.exe`。请保持文件夹完整，程序依赖同目录下的 DLL 和 `data/`。如果提示缺少 DLL，请安装 [Visual C++ x64 运行库](https://aka.ms/vs/17/release/vc_redist.x64.exe)。文件转录还需要安装 [FFmpeg](https://ffmpeg.org/download.html) 并加入 PATH。
-3. **Android 10 及以上（ARM64）**：安装 APK，按提示允许安装来自该来源的应用。音频解码组件已包含在包内。首次使用相应功能时，应用会申请麦克风、通知（转录期间后台服务会显示一条通知）和「显示在其他应用上层」（悬浮字幕）权限；系统音频采集每次都需要确认。音视频文件也可以从系统分享菜单发送给应用。
+3. **Android 10 及以上（ARM64）**：安装 APK，按提示允许安装来自该来源的应用。音频解码组件已包含在包内。首次使用相应功能时，应用会申请麦克风、相机（扫描主机的配对码）、通知（转录期间后台服务会显示一条通知）和「显示在其他应用上层」（悬浮字幕）权限；系统音频采集每次都需要确认。音视频文件也可以从系统分享菜单发送给应用。
 
 程序没有代码签名，首次运行时 Windows 可能提示"已保护你的电脑"，点"更多信息 → 仍要运行"即可。
 
@@ -33,7 +33,7 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 
 **Windows 本地模型**：从 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 获取 `whisper-server.exe`，在模型设置中填写路径并选择 CPU 或 GPU。点击模型旁的下载按钮即可下载 Tiny 到 Large v3 Turbo 并自动校验；手动放入模型的方法见 [模型说明](docs/zh-CN/models.md)。翻译和摘要可以用本机运行的 Ollama 或其他 OpenAI 兼容文字服务，也可以填写在线 OpenAI 兼容服务的地址和 API Key，或直接使用 OpenAI、Gemini、Anthropic。
 
-其他用法见 [云端服务](docs/zh-CN/cloud-providers.md) 和 [连接 Windows 主机](docs/zh-CN/remote-processing.md)，后者也能让手机使用电脑上的模型：在电脑上开启共享，用手机扫描它显示的二维码，主机就会出现在手机的「设备」页并显示在线状态。
+其他用法见 [云端服务](docs/zh-CN/cloud-providers.md) 和 [连接 Windows 主机](docs/zh-CN/remote-processing.md)，后者能让手机使用电脑上的模型：在电脑上开启共享，用手机扫描它显示的二维码，主机就会出现在手机的「设备」页。手机也可以用 Nemotron 自己转录，只把翻译和摘要交给电脑。
 
 ## 功能
 
@@ -55,13 +55,13 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 
 ![保存后的文稿，带 AI 生成的标题和摘要](docs/images/record-zh.png)
 
-识别和翻译可能出错，带「≈」的时间码是估算值。目前没有讲者区分、原始录音保存、音频回听和 TXT / SRT / VTT 导出，文字可以从文稿界面复制。字幕设置会保存，主界面的语言和主题只在本次运行内有效。
+识别和翻译可能出错，带「≈」的时间码是估算值。目前没有讲者区分、SRT / VTT 字幕和应用内回听。字幕设置会保存，主界面的语言和主题只在本次运行内有效。
 
 ## 隐私
 
 实时音频只在内存中处理，不保存录音。文稿保存在发起任务的设备上：Windows 在 `%LOCALAPPDATA%\Altranscribe\`，Android 在应用私有目录。删除文稿不会删除导入的音视频文件。诊断日志不含文稿和 Key，Windows 上写在 `文档\Altranscribe\logs`，Android 上写在应用可分享的目录；「设置 → 日志」可以打开或分享。
 
-使用云端服务时，音频和相关文字会发送给对应的提供商；使用远程主机时，发送给所选主机。全本地处理不上传任何内容。API Key 和主机令牌由操作系统加密保存，换电脑或手机后需要重新填写。局域网共享使用未加密的 HTTP（Android 版因此允许明文流量），只应在可信网络中使用。云端服务始终使用 HTTPS，并可能产生费用。
+使用云端服务时，音频和相关文字会发送给对应的提供商；交给主机处理的内容会发送给该主机。全本地处理不上传任何内容。API Key 和主机凭据由操作系统加密保存，换电脑或手机后需要重新填写。局域网共享使用未加密的 HTTP（Android 版因此允许明文流量），只应在可信网络中使用。云端服务始终使用 HTTPS，并可能产生费用。
 
 ## 从源码构建
 

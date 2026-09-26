@@ -11,9 +11,9 @@ Use Flutter 3.47.3 / Dart 3.13.3 and Visual Studio 2022 or its Build Tools with 
 ./dev.ps1 -Build -Release
 ```
 
-`-Verify` runs the Dart analyzer, the native audio tests and the Flutter tests, `-Build` makes a debug build, and no switch runs the app. `-Build -Release` writes the release build to `build/windows/x64/runner/Release/`; use the script rather than plain `flutter build`, because it prepares the plugin links that Windows needs without Developer Mode. The GitHub workflow runs `-Verify` and `-Build` on every push to `main`.
+`-Verify` runs the Dart analyzer, the native audio tests and the Flutter tests, `-Build` makes a debug build, and no switch runs the app. `-Build -Release` writes the release build to `build/windows/x64/runner/Release/`; use the script rather than plain `flutter build`, because it prepares the plugin links that Windows needs without Developer Mode. The GitHub workflow runs `-Verify` and `-Build` on pushes to `main` and on pull requests.
 
-The script keeps app data in `.tools/runtime/app-data/` and Whisper models in `models/`. `-WhisperDirectory <path>` points it at a whisper.cpp build, and `scripts/setup-whisper-gpu.ps1` downloads whisper.cpp's CUDA build of `whisper-server.exe`, which `-Gpu` uses. In any run, `ALTRANSCRIBE_DATA_DIR`, `ALTRANSCRIBE_MODELS_DIR` and `ALTRANSCRIBE_LOG_DIR` override the data, model and log folders (the script sends logs to `.tools/runtime/logs/`).
+The script keeps app data in `.tools/runtime/app-data/` and models in `models/`. `-WhisperDirectory <path>` points it at a whisper.cpp build, and `scripts/setup-whisper-gpu.ps1` downloads whisper.cpp's CUDA build of `whisper-server.exe`, which `-Gpu` uses. In any run, `ALTRANSCRIBE_DATA_DIR`, `ALTRANSCRIBE_MODELS_DIR` and `ALTRANSCRIBE_LOG_DIR` override the data, model and log folders (the script sends logs to `.tools/runtime/logs/`).
 
 The pinned Flutter CLI truncates analyzer messages for paths with non-ASCII characters, so `-Verify` calls the Dart analyzer from the same SDK directly. Android builds from such paths are untested.
 
@@ -56,4 +56,4 @@ Release builds still record one absolute path: Flutter compiles the generated `.
 
 The Android app includes FFmpeg shared libraries under LGPL 2.1+, built without GPL, non-free or network components. When you distribute the APK, include the FFmpeg license and offer the matching source. The pinned version, checksums and build options are in `scripts/setup-android-ffmpeg.ps1` and `scripts/build-android-ffmpeg.sh`. RNNoise and SpeexDSP sources and licenses are in `native/third_party/`. The license texts of everything bundled are packaged as Flutter assets (listed in `pubspec.yaml`), and the Android build adds FFmpeg's; add new ones there when a component is added.
 
-Fonts, the OpenCC dictionaries, the small Silero and RNNoise models and their licenses are committed on purpose, so don't ignore every `*.bin`. Whisper models, `.tools/`, `build/`, `.env` files and credentials stay out of Git.
+Fonts, the OpenCC dictionaries, the small Silero and RNNoise models and their licenses are committed on purpose, so don't ignore every `*.bin`. Downloaded models, `.tools/`, `build/`, `.env` files and credentials stay out of Git.

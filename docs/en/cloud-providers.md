@@ -6,7 +6,7 @@ Windows and Android support OpenAI and Google Gemini for speech and text, and An
 
 ## Setup
 
-1. Open **Settings → Whisper models**, select OpenAI or Gemini, and enter and save your API key.
+1. Open **Settings → Speech models**, select OpenAI or Gemini, and enter and save your API key.
 2. Choose live transcription or direct live translation. File transcription uses the file model shown in the panel.
 3. For text translation, titles, or summaries, choose a provider and text model under **Settings → Translation & LLM**: OpenAI, Gemini or Anthropic. The same provider reuses the saved key.
 4. Save, return to the home screen, choose your audio sources and languages, and start.

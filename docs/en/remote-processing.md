@@ -2,17 +2,17 @@
 
 English | [简体中文](../zh-CN/remote-processing.md) · [Home](../../README.md)
 
-A Windows computer can share local Whisper and text models with another Windows computer or an Android phone. The client handles capture, captions, and transcript storage; the host handles recognition, translation, and summaries.
+A Windows computer can share local Whisper and text models with another Windows computer or an Android phone. The client handles capture, captions, and transcript storage; the host handles recognition, translation, and summaries, or only the text work while the client recognizes speech itself.
 
 ## Pairing a device
 
 1. Prepare Whisper and a model on the host. For translation or summaries, start and configure Ollama or a local OpenAI-compatible text service.
 2. On the host's **Devices** page, turn on sharing: choose a network address, port (8178 by default), model, and CPU or GPU, optionally share the text service, then start. A shared text service offers every model it lists; the host's own choice is the default. The panel then shows a QR code and a six-digit pairing code; **Add device** on the same page reopens it later.
-3. On an Android phone, open **Devices → Scan to pair** and point the camera at the QR code. On a Windows client, or without a camera, choose **Connect to host**: hosts sharing on the same network are listed under *Hosts nearby*, so pick one or type the address, then enter the pairing code. An invite link copied from the host's panel can be pasted into the address field instead.
+3. On an Android phone, open **Devices → Scan to pair** and point the camera at the QR code. On a Windows client, or without a camera, choose **Connect manually** and enter the host's address and pairing code; hosts sharing on the same network are also listed under *Hosts nearby*, where **Pair** fills in the address. An invite link copied from the host's panel can be pasted into the address field instead.
 4. The host becomes the processing engine right away. Return to the home screen and start live or file transcription. While a host is saved, **Settings → Translation & LLM** offers a choice between the host's shared text service (chosen when you connect, with any of the models it lists) and a service of your own, such as OpenAI or an online OpenAI-compatible service. The choice holds whatever recognizes speech, so a phone can transcribe with Nemotron and still translate with the host's model. If the host shares no text model, pick your own service there or turn off translation, title/summary generation, and file cleanup.
-5. To return to local or cloud processing, save a different engine under **Settings → Whisper models**.
+5. To return to local or cloud processing, save a different engine under **Settings → Speech models**.
 
-A pairing code lasts ten minutes and works once; closing the host's sharing panel ends it, and **New code** makes another. Each paired device receives its own credential, which stays valid across restarts of sharing until the device is removed from the host's *Paired devices* list. Hosts running 0.6.1 or older have no pairing codes; they still accept the token they display.
+A pairing code lasts ten minutes and works once; closing the host's sharing panel ends it. **New code** replaces it, and **Refresh** makes one after it ran out. Each paired device receives its own credential, which stays valid across restarts of sharing until the device is removed from the host's *Paired devices* list. Hosts running 0.6.1 or older have no pairing codes; they still accept the token they display.
 
 The client does not need Whisper or model weights. Windows file transcription still requires local FFmpeg; Android includes decoding components.
 

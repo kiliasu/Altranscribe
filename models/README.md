@@ -1,4 +1,4 @@
-# Whisper models / Whisper 模型
+# Models / 模型
 
 Development downloads are stored here; model files are ignored by Git. See the [English model guide](../docs/en/models.md).
 

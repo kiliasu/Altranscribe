@@ -372,7 +372,7 @@ const strings = <String, List<String>>{
   "remoteButton": ["手动连接", "Connect manually"],
   "noModelConfigured": ["尚未配置模型", "No models configured"],
   "translationToggle": ["翻译", "Translate"],
-  "modelsEntry": ["模型选择", "Whisper models"],
+  "modelsEntry": ["模型选择", "Speech models"],
   "transcribe": ["转录", "Transcribe"],
   "library": ["记录", "Library"],
   "devices": ["设备", "Devices"],

@@ -18,13 +18,13 @@ Real-time transcription and translation for Windows and Android. Microphone inpu
 
 1. Download the Windows zip or the Android APK from [Releases](https://github.com/kiliasu/Altranscribe/releases).
 2. **Windows x64**: extract the zip and run `Altranscribe.exe`. Keep the folder intact: the app needs the DLLs and `data/` beside it. If Windows reports missing DLLs, install the [Visual C++ x64 runtime](https://aka.ms/vs/17/release/vc_redist.x64.exe). File transcription also needs [FFmpeg](https://ffmpeg.org/download.html) on your PATH.
-3. **Android 10 or later (ARM64)**: install the APK and allow installs from that source when asked. Audio decoding is built in. The app asks for the microphone, for notifications (its background service shows one while transcribing) and for permission to draw over other apps (floating captions) the first time each feature is used; system audio capture is confirmed every time. Audio and video files can also be sent to the app from the share menu.
+3. **Android 10 or later (ARM64)**: install the APK and allow installs from that source when asked. Audio decoding is built in. The app asks for the microphone, the camera (to scan a host's pairing code), notifications (its background service shows one while transcribing) and permission to draw over other apps (floating captions) the first time each feature is used; system audio capture is confirmed every time. Audio and video files can also be sent to the app from the share menu.
 
 The Windows app is not code-signed, so Windows may say "Windows protected your PC" on first run; choose "More info → Run anyway".
 
 ## Getting started
 
-1. Under **Settings → Whisper models**, choose how speech is recognized: local Whisper on this computer, local Nemotron streaming models on the CPU (also on the phone), a Windows host on your network, or OpenAI / Gemini.
+1. Under **Settings → Speech models**, choose how speech is recognized: local Whisper on this computer, local Nemotron streaming models on the CPU (also on the phone), a Windows host on your network, or OpenAI / Gemini.
 2. For translations, titles and summaries, choose a text model under **Settings → Translation & LLM**, or turn them off on the home screen.
 3. Pick the microphone, system audio or both, set the languages and start. For recordings, open **Files** and add one or more audio or video files; they are processed in order.
 4. **Stop & save** moves the transcript to the **Library**. The last sentences, translations and the summary finish in the background; wait for them before starting the next task.
@@ -33,7 +33,7 @@ Pausing stops new capture while earlier speech finishes processing, and **Discar
 
 **Local models on Windows:** get `whisper-server.exe` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp), enter its path in the model settings and choose CPU or GPU. The download button next to each model fetches Tiny to Large v3 Turbo and verifies the file; the [model guide](docs/en/models.md) explains adding files yourself. For translation and summaries, run Ollama or another OpenAI-compatible text service on the same computer, enter an online OpenAI-compatible service with its API key, or use OpenAI, Gemini or Anthropic directly.
 
-Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a Windows host](docs/en/remote-processing.md), which also lets a phone use your computer's models: turn on sharing on the computer, scan its QR code with the phone, and the host appears on the phone's **Devices** page with its status.
+Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a Windows host](docs/en/remote-processing.md), which lets a phone use your computer's models: turn on sharing on the computer, scan its QR code with the phone, and the host appears on the phone's **Devices** page. The phone can also transcribe with Nemotron itself and leave only translation and summaries to the computer.
 
 ## Features
 
@@ -55,13 +55,13 @@ Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a 
 
 ![A saved transcript with its AI title and summary](docs/images/record-en.png)
 
-Recognition and translation can contain errors, and timestamps marked "≈" are estimates. Speaker labels, saving the raw audio, playback and TXT / SRT / VTT export are not available; copy text from the transcript view. Caption settings are remembered, but the interface language and theme reset when the app closes.
+Recognition and translation can contain errors, and timestamps marked "≈" are estimates. Speaker labels, SRT / VTT subtitles and playback inside the app are not available. Caption settings are remembered, but the interface language and theme reset when the app closes.
 
 ## Privacy
 
 Live audio is processed in memory and never saved as a recording. Transcripts stay on the device that started the task: `%LOCALAPPDATA%\Altranscribe\` on Windows, the app's private storage on Android. Deleting a transcript keeps the imported files. A diagnostic log with no transcripts or keys goes to `Documents\Altranscribe\logs` on Windows and to the app's shareable folder on Android; **Settings → Logs** opens or shares it.
 
-With a cloud service, audio and the related text go to that provider; with remote processing, to the host you chose. Fully local processing uploads nothing. API keys and host tokens are encrypted by the operating system, so enter them again on a new computer or phone. Network sharing uses unencrypted HTTP, which is why the Android app allows cleartext traffic; use it only on networks you trust. Cloud services always use HTTPS and may charge for usage.
+With a cloud service, audio and the related text go to that provider; work handed to a host goes to that host. Fully local processing uploads nothing. API keys and host credentials are encrypted by the operating system, so enter them again on a new computer or phone. Network sharing uses unencrypted HTTP, which is why the Android app allows cleartext traffic; use it only on networks you trust. Cloud services always use HTTPS and may charge for usage.
 
 ## Build from source
 
