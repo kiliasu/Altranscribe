@@ -207,7 +207,6 @@ class _TranslationSettingsState
             }
           : null,
     ),
-    if (provider == LlmProvider.openAICompatible) Text(t('compatibleProvider')),
     gap(),
     if (provider.isCloud) ...[
       Text(t('cloudTextNotice')),

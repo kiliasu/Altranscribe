@@ -388,7 +388,7 @@ class _SharedHostState extends State<SharedHostDialog> {
                 Text('${host.info['model']} · ${host.info['backend']}'),
                 Text(
                   host.info['llmModel'] == null
-                      ? t('remoteLlmUnavailable')
+                      ? t('llmNotShared')
                       : '${host.info['llmProvider']} · ${host.info['llmModel']}'
                             '${sharedModelCount(host.info['llmModels'])}',
                 ),

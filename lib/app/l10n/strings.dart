@@ -12,8 +12,8 @@ const strings = <String, List<String>>{
     'Open Altranscribe before starting capture.',
   ],
   'mobileRemoteOnly': [
-    '手机上只能使用云端服务、在线的 OpenAI 兼容服务（https:// 地址）或远程主机。',
-    'On a phone, use a cloud service, an online OpenAI-compatible service (https:// address) or a remote host.',
+    '手机上只能使用云端服务、在线 OpenAI 兼容服务或远程主机。',
+    'On a phone, use a cloud service, an online OpenAI-compatible service or a remote host.',
   ],
   'mobileDeviceHint': [
     '由手机采集音频，远程主机或云端完成转录与翻译。',
@@ -75,9 +75,10 @@ const strings = <String, List<String>>{
     'Sharing supports local Whisper and local Ollama / OpenAI-compatible LLMs only. Cloud models are not forwarded.',
   ],
   'remoteLlmUnavailable': [
-    '主机没有共享文字模型。请在主机的共享设置里勾选「同时提供本地 LLM」，或在「翻译选择」中改用自行配置的服务，或关闭本次任务的翻译、标题摘要和文件优化。',
-    'The host shares no text model. Enable “Also share the local LLM” on the host, choose your own service under Translation, or turn off translation, summaries and file refinement for this task.',
+    '主机没有共享文字模型。请在主机勾选「同时提供本地 LLM」，或在「翻译选择」中改用自己的服务。',
+    'The host shares no text model. Enable “Also share the local LLM” on the host, or use your own service under Translation & LLM.',
   ],
+  'llmNotShared': ['未共享文字模型', 'No text model shared'],
   'remoteHostFailed': [
     '共享服务未能启动或已中断。请检查本机模型、Whisper 程序、LLM 服务和端口是否可用。',
     'Sharing failed to start or was interrupted. Check the local model, Whisper program, LLM service and port.',
@@ -98,8 +99,8 @@ const strings = <String, List<String>>{
   'remoteSaved': ['已保存，可连接并使用', 'Saved; connect to use'],
   'remoteAddressConnection': ['通过地址连接', 'Connect by address'],
   'remoteConnectionGuide': [
-    '在电脑上的 Altranscribe 中开启共享，然后扫描它显示的二维码，或输入地址和配对码。同一网络里的主机会自动列出。',
-    'Turn on sharing in Altranscribe on the computer, then scan the QR code it shows or enter its address and pairing code. Hosts on the same network are listed automatically.',
+    '在电脑上开启共享，然后扫码，或输入地址和配对码。同一网络的主机会自动列出。',
+    'Turn on sharing on the computer, then scan its QR code or enter the address and pairing code. Hosts on this network are listed automatically.',
   ],
   'connectNetwork': ['网络中的主机', 'Network hosts'],
   'connectHost': ['连接主机', 'Connect to host'],
@@ -115,8 +116,8 @@ const strings = <String, List<String>>{
   'shareTranslation': ['同时提供本地 LLM', 'Also share the local LLM'],
   'pairingCode': ['配对码', 'Pairing code'],
   'pairingCodeHint': [
-    '用手机扫描二维码，或在客户端「手动连接」中输入地址和配对码。配对码 10 分钟内有效，用过一次即失效；每台设备各有自己的凭据，可在设备页单独移除。',
-    'Scan the QR code with the phone, or enter the address and code under Connect manually. A code lasts 10 minutes and works once; each device gets its own credential, which you can remove on the Devices page.',
+    '用手机扫码，或在「手动连接」中输入地址和配对码。配对码 10 分钟内有效，只能用一次。',
+    'Scan with the phone, or enter the address and code under Connect manually. A code lasts 10 minutes and works once.',
   ],
   'startSharing': ['启动共享', 'Start sharing'],
   'stopSharing': ['关闭共享', 'Stop sharing'],
@@ -607,8 +608,8 @@ const strings = <String, List<String>>{
     "LLM model not found. Load and select a model in Translation & LLM settings.",
   ],
   "localTranslationOnly": [
-    "Ollama 只能填本机地址（http://127.0.0.1:端口）。OpenAI 兼容服务可填本机 HTTP 地址，或在线服务的 https:// 地址（可带 /v1 等前缀）并保存 API Key。另一台电脑上的模型请在「设备」页连接主机使用。",
-    "Ollama takes a local address only (http://127.0.0.1:port). An OpenAI-compatible service can be a local HTTP address or an online https:// address (with a prefix such as /v1) plus its API key. Models on another computer are used by connecting to that host from the Devices page.",
+    "请填本机地址，例如 http://127.0.0.1:端口；OpenAI 兼容服务也可填 https:// 在线地址。其他电脑上的模型请在「设备」页连接。",
+    "Enter a local address such as http://127.0.0.1:port; an OpenAI-compatible service may also use an online https:// address. Use models on another computer through the Devices page.",
   ],
   "settingsLocked": [
     "转录期间设置只读，停止后可修改。",
@@ -657,13 +658,9 @@ const strings = <String, List<String>>{
     "勾选一个引擎和一个模型，用于文字翻译、整理、标题与摘要。本地引擎需要先启动服务；云端引擎需要 API Key。",
     "Select one engine and model for text translation, cleanup, titles and summaries. Local engines require a running server; cloud engines require an API key.",
   ],
-  "compatibleProvider": [
-    "OpenAI 兼容服务：本机服务或在线服务均可。",
-    "OpenAI-compatible service: a local server or an online service.",
-  ],
   "compatibleKeyHint": [
-    "在线服务需要 API Key，地址用 https://；本机服务留空即可。Key 只发送给上面填写的地址。",
-    "Online services need an API key and an https:// address; leave it empty for a local server. The key is sent only to the address above.",
+    "在线服务填 https:// 地址和 API Key，本机服务不用填 Key。Key 只发送到上面的地址。",
+    "Online services need an https:// address and an API key; local servers need no key. The key goes only to the address above.",
   ],
   "compatibleKeyLabel": ["API Key（在线服务）", "API key (online services)"],
   "llmAddress": ["服务地址", "Server address"],
@@ -729,8 +726,8 @@ const strings = <String, List<String>>{
   "exportAudio": ["网页中的播放器", "Player in the page"],
   "exportAudioNone": ["不包含音频", "No audio"],
   "exportAudioLink": [
-    "引用原文件（只在这台电脑上能播放）",
-    "Link the original file (plays only on this computer)",
+    "引用原文件（仅本机可播放）",
+    "Link the original file (plays on this device only)",
   ],
   "exportAudioEmbed": ["嵌入音频（文件会变大）", "Embed the audio (larger file)"],
   "exportSaved": ["已导出到", "Exported to"],
@@ -760,19 +757,19 @@ const strings = <String, List<String>>{
   "copyInvite": ["复制邀请链接", "Copy invite link"],
   "copied": ["已复制", "Copied"],
   "discoveryUnavailable": [
-    "局域网发现端口被占用，其他设备无法自动找到这台电脑；扫码和手动连接仍然可用。",
+    "发现端口被占用，其他设备无法自动找到本机；扫码和手动连接不受影响。",
     "The discovery port is in use, so other devices cannot find this computer automatically. Scanning and manual connection still work.",
   ],
   "codeOrToken": ["配对码", "Pairing code"],
   "codeOrTokenHint": [
-    "主机共享面板上显示的 6 位数字。也可以粘贴邀请链接到地址栏，或输入旧版主机的令牌。",
-    "The six digits shown on the host's sharing panel. You can also paste an invite link into the address field, or a token from an older host.",
+    "主机共享面板上的 6 位数字，也可把邀请链接粘贴到地址栏。",
+    "The six digits on the host's sharing panel. An invite link can go in the address field.",
   ],
   "scanToPair": ["扫码配对", "Scan to pair"],
   "scanHint": ["对准电脑屏幕上的配对二维码", "Point at the pairing QR code on the computer"],
   "cameraDenied": [
-    "没有相机权限，无法扫码。可以改用手动连接。",
-    "Camera access was denied, so scanning is unavailable. Use manual connection instead.",
+    "没有相机权限，请改用手动连接。",
+    "Camera access was denied. Connect manually instead.",
   ],
   "pairingQrInvalid": [
     "这不是 Altranscribe 的配对二维码。",
@@ -789,14 +786,14 @@ const strings = <String, List<String>>{
   "pairedWith": ["已配对并选用主机：", "Paired with host:"],
   "pairedDevices": ["已配对设备", "Paired devices"],
   "noPairedDevices": [
-    "还没有配对的设备。开启共享后点「添加设备」显示二维码和配对码。",
-    "No paired devices yet. Turn on sharing and choose Add device to show a QR code and pairing code.",
+    "还没有配对的设备。开启共享后点「添加设备」。",
+    "No paired devices yet. Turn on sharing, then choose Add device.",
   ],
   "addDevice": ["添加设备", "Add device"],
   "removeDevice": ["移除设备", "Remove device"],
   "removeDeviceHint": [
-    "移除后，这台设备需要重新配对才能继续使用这台电脑。",
-    "After removal, the device has to pair again before it can use this computer.",
+    "移除后，这台设备需重新配对才能连接。",
+    "It must pair again to reconnect.",
   ],
   "neverConnected": ["尚未连接", "Never connected"],
   "seenJustNow": ["刚刚在线", "Seen just now"],
@@ -808,29 +805,29 @@ const strings = <String, List<String>>{
   "findHosts": ["查找", "Search"],
   "searching": ["正在查找…", "Searching…"],
   "noHostsFound": [
-    "没有找到正在共享的主机。确认电脑已开启共享，并与本机在同一网络。",
-    "No sharing host found. Make sure the computer is sharing and on the same network.",
+    "没有找到共享中的主机。请确认电脑已开启共享，且在同一网络。",
+    "No sharing host found. Check that the computer is sharing and on the same network.",
   ],
   "pairAction": ["配对", "Pair"],
   "pairedLabel": ["已配对", "Paired"],
   "forgetHost": ["忘记主机", "Forget host"],
   "forgetHostHint": [
-    "断开并删除保存的主机和凭据。主机上仍会列出这台设备，可在那里移除。",
-    "Disconnect and delete the saved host and credential. The host still lists this device until you remove it there.",
+    "断开并删除保存的主机和凭据；主机上的配对需在主机上移除。",
+    "Disconnects and deletes the saved host and credential. Remove the pairing on the host separately.",
   ],
   "llmSourceHint": [
-    "已连接主机时，翻译、整理、标题与摘要可以交给主机共享的文字模型，也可以改用自行配置的服务。",
-    "While a host is connected, translation, refinement, titles and summaries can use the host's shared text model or a service you configure yourself.",
+    "选择翻译、整理和摘要使用的文字模型。",
+    "Choose the text model for translation, refinement and summaries.",
   ],
   "llmFromHost": ["主机共享的模型", "The host's shared model"],
   "llmOwnService": ["自行配置的服务", "Your own service"],
   "llmOwnServiceHint": [
-    "使用下面选择的引擎和模型，文本会发送到该服务。",
-    "Uses the engine and model chosen below; text goes to that service.",
+    "文本会发送到下面选择的服务。",
+    "Text goes to the service chosen below.",
   ],
   "hostLlmNone": [
-    "主机没有共享文字模型。选择自行配置的服务，或在主机的共享设置里勾选「同时提供本地 LLM」。",
-    "The host shares no text model. Choose your own service, or enable “Also share the local LLM” in the host's sharing settings.",
+    "主机没有共享文字模型，可在主机勾选「同时提供本地 LLM」。",
+    "The host shares no text model; enable “Also share the local LLM” on it.",
   ],
   "hostLlmUnknown": [
     "连接主机后显示模型信息。",
@@ -840,28 +837,28 @@ const strings = <String, List<String>>{
   "hostDefaultModel": ["主机默认", "Host default"],
   "refreshHostModels": ["刷新", "Refresh"],
   "remoteLlmModelMissing": [
-    "在主机上选择的模型已不可用，请在「翻译选择」中重新选择。",
-    "The host model you chose is no longer available. Pick another under Translation.",
+    "所选的主机模型已不可用，请在「翻译选择」中重选。",
+    "The chosen host model is no longer available. Pick another under Translation & LLM.",
   ],
   "shareTranslationHint": [
-    "客户端默认使用这个模型，也可以改选该服务上的其他模型。",
-    "Clients use this model by default and may switch to any other model the service lists.",
+    "客户端默认使用这个模型，也可改选服务上的其他模型。",
+    "Clients use this model by default and can pick another from the service.",
   ],
   "remoteUnverified": [
-    "主机没有通过身份验证，已停止连接，凭据没有发送出去。",
-    "The host failed identity verification, so the connection stopped and no credential was sent.",
+    "主机未通过身份验证，已停止连接，凭据未发送。",
+    "The host failed verification; the connection stopped and no credential was sent.",
   ],
   "nemotronHint": [
-    "Nemotron 流式模型在本机 CPU 上运行，边说边出字，不需要 whisper-server 或显卡；安静或较远的声音会先自动增益。英文模型只识别英语；3.5 多语言模型支持 35 种语言，中文效果一般。每个模型约 650 MB，按 NVIDIA 的许可证提供，下载即表示接受。",
-    "Nemotron streaming models run on this device's CPU and produce text as you speak, with no whisper-server or GPU; quiet or distant speech is brought up first. The English model recognizes English only; the 3.5 multilingual model covers 35 languages, Mandarin only broadly. Each model is about 650 MB and comes under NVIDIA's license, which downloading accepts.",
+    "在本机 CPU 上流式识别，边说边出字。英文模型只识别英语；多语言模型支持 35 种语言，中文较弱。下载即表示接受所示许可证。",
+    "Runs on this device's CPU and shows text as you speak. The English model recognizes English only; the multilingual one covers 35 languages, with weaker Chinese. Downloading accepts the license shown.",
   ],
   "nemotronModelMissing": [
     "请先下载一个 Nemotron 模型。",
     "Download a Nemotron model first.",
   ],
   "nemotronEnglishOnly": [
-    "英文 Nemotron 模型只识别英语；其他语言请改用 3.5 多语言模型。",
-    "The English Nemotron model recognizes English only; use the 3.5 multilingual model for other languages.",
+    "英文 Nemotron 模型只识别英语，其他语言请改用多语言模型。",
+    "The English Nemotron model recognizes English only; use the multilingual model for other languages.",
   ],
   "nemotronNotRunning": [
     "Nemotron 引擎未启动。",
