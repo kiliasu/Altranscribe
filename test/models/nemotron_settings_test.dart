@@ -45,7 +45,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('speech-provider-nemotron')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('在本机 CPU 上流式识别'), findsOneWidget);
+      expect(find.textContaining('在本地 CPU 上实时识别'), findsOneWidget);
       expect(
         find.byKey(const Key('nemotron-nemotron-en-0.6b')),
         findsOneWidget,

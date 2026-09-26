@@ -849,8 +849,8 @@ const strings = <String, List<String>>{
     "The host failed verification; the connection stopped and no credential was sent.",
   ],
   "nemotronHint": [
-    "在本机 CPU 上流式识别，边说边出字。英文模型只识别英语；多语言模型支持 35 种语言，中文较弱。下载即表示接受所示许可证。",
-    "Runs on this device's CPU and shows text as you speak. The English model recognizes English only; the multilingual one covers 35 languages, with weaker Chinese. Downloading accepts the license shown.",
+    "在本地 CPU 上实时识别，英文模型只识别英语，多语言模型虽支持 35 种语言，但精度较差。",
+    "Real-time recognition on the local CPU. The English model recognizes English only; the multilingual model supports 35 languages but is less accurate.",
   ],
   "nemotronModelMissing": [
     "请先下载一个 Nemotron 模型。",
