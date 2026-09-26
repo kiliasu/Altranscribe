@@ -41,6 +41,10 @@ class SharedHost extends ChangeNotifier {
   /// by address.
   bool discoveryUnavailable = false;
   String address = '';
+
+  /// The address and port this host listens on, which challenge proofs are
+  /// bound to; never taken from a request, which anyone could have relayed.
+  String _endpoint = '';
   Map<String, Object?> info = {};
   final _speech = _HostQueue();
   final _llm = _HostQueue();
@@ -102,6 +106,7 @@ class SharedHost extends ChangeNotifier {
         throw const FormatException('remoteCancelled');
       }
       server.idleTimeout = const Duration(seconds: 30);
+      _endpoint = PairedDevices.endpoint(bindAddress, server.port);
       _server = server;
       await devices.load();
       address = Uri(
@@ -199,8 +204,9 @@ class SharedHost extends ChangeNotifier {
     );
   }
 
-  /// Answers a client's nonce with one keyed hash per paired device, so the
-  /// client can confirm this host holds its credential before sending it.
+  /// Answers a client's nonce with one keyed hash per paired device, bound
+  /// to this host's own endpoint, so the client can confirm the machine it
+  /// dialled holds its credential before sending it.
   void _challenge(HttpRequest request, HttpResponse response) {
     final nonce = request.uri.queryParameters['nonce'] ?? '';
     if (!PairedDevices.noncePattern.hasMatch(nonce)) {
@@ -208,7 +214,10 @@ class SharedHost extends ChangeNotifier {
       return;
     }
     response.write(
-      jsonEncode({'hostId': devices.hostId, 'proofs': devices.proofs(nonce)}),
+      jsonEncode({
+        'hostId': devices.hostId,
+        'proofs': devices.proofs(nonce, _endpoint),
+      }),
     );
   }
 

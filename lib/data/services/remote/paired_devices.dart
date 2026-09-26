@@ -210,15 +210,28 @@ class PairedDevices extends ChangeNotifier {
   static final noncePattern = RegExp(r'^[0-9a-f]{32,64}$');
 
   /// Proves this host holds its devices' credentials without revealing them:
-  /// one keyed hash per device over the caller's nonce. A client checks for
-  /// the proof of its own token before sending that token anywhere.
-  List<String> proofs(String nonce) => [
-    for (final device in devices) proof(device.tokenHash, nonce),
+  /// one keyed hash per device over the caller's nonce and the [endpoint]
+  /// this host listens on. A client checks for its own token's proof, bound
+  /// to the endpoint it dialled, before sending that token anywhere; a
+  /// machine relaying the challenge to the real host only obtains proofs
+  /// for the host's endpoint, never for its own.
+  List<String> proofs(String nonce, String endpoint) => [
+    for (final device in devices) proof(device.tokenHash, nonce, endpoint),
   ];
-  static String proof(String tokenHash, String nonce) => Hmac(
-    sha256,
-    utf8.encode(tokenHash),
-  ).convert(utf8.encode(nonce)).toString();
+  static String proof(String tokenHash, String nonce, String endpoint) =>
+      Hmac(sha256, utf8.encode(tokenHash))
+          .convert(utf8.encode('altranscribe-host-proof\n$nonce\n$endpoint'))
+          .toString();
+
+  /// An address and port as both sides of a challenge write them: from the
+  /// address's raw bytes, so no two spellings of one address can differ.
+  static String endpoint(InternetAddress address, int port) {
+    final bytes = [
+      for (final byte in address.rawAddress)
+        byte.toRadixString(16).padLeft(2, '0'),
+    ];
+    return '${bytes.join()}:$port';
+  }
 
   static String randomToken(int bytes) {
     final random = Random.secure();

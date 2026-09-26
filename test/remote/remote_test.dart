@@ -145,9 +145,30 @@ void main() {
     final challenge = await request('challenge?nonce=$nonce');
     expect(challenge.$1, 200);
     expect(jsonDecode(challenge.$2)['hostId'], host.devices.hostId);
+    final port = Uri.parse(host.address).port;
+    final proofs = jsonDecode(challenge.$2)['proofs'] as List;
     expect(
-      jsonDecode(challenge.$2)['proofs'],
-      contains(PairedDevices.proof(PairedDevices.hash(token), nonce)),
+      proofs,
+      contains(
+        PairedDevices.proof(
+          PairedDevices.hash(token),
+          nonce,
+          PairedDevices.endpoint(InternetAddress.loopbackIPv4, port),
+        ),
+      ),
+    );
+    // Proofs speak for the endpoint the host listens on, not another one.
+    expect(
+      proofs,
+      isNot(
+        contains(
+          PairedDevices.proof(
+            PairedDevices.hash(token),
+            nonce,
+            PairedDevices.endpoint(InternetAddress.loopbackIPv4, port + 1),
+          ),
+        ),
+      ),
     );
     expect(challenge.$2, isNot(contains(token)));
     expect((await request('challenge?nonce=short')).$1, 400);
@@ -299,6 +320,57 @@ void main() {
     }
     expect(headers, isNotEmpty);
     expect(headers.every((value) => value == null), isTrue);
+
+    // A relay passes the challenge, and anything after it, on to the real
+    // host. Its answer is genuine but speaks for the host's endpoint, so the
+    // relay is refused before it can collect the token.
+    final relayed = <String?>[];
+    final relay = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => relay.close(force: true));
+    final onward = HttpClient();
+    addTearDown(() => onward.close(force: true));
+    relay.listen((request) async {
+      final authorization = request.headers.value(
+        HttpHeaders.authorizationHeader,
+      );
+      relayed.add(authorization);
+      final forwarded = await onward.openUrl(
+        request.method,
+        Uri.parse(host.address).replace(
+          path: request.uri.path,
+          query: request.uri.hasQuery ? request.uri.query : null,
+        ),
+      );
+      if (authorization != null) {
+        forwarded.headers.set(HttpHeaders.authorizationHeader, authorization);
+      }
+      await forwarded.addStream(request);
+      final answer = await forwarded.close();
+      request.response.statusCode = answer.statusCode;
+      request.response.headers.contentType = ContentType.json;
+      await request.response.addStream(answer);
+      await request.response.close();
+    });
+    final relayedClient = RemoteClient(
+      RemoteConnection(
+        address: 'http://127.0.0.1:${relay.port}',
+        token: token,
+        hostId: host.devices.hostId,
+      ),
+    );
+    await expectLater(
+      relayedClient.connect(),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          'remoteUnverified',
+        ),
+      ),
+    );
+    relayedClient.close();
+    expect(relayed, hasLength(1), reason: 'only the challenge went through');
+    expect(relayed.single, isNull);
 
     // A controller following discovery keeps its saved address when the
     // host at the new one fails the challenge.

@@ -117,6 +117,9 @@ class RemoteClient {
   final RemoteConnection connection;
   HttpClient? _client;
   Uri? _base;
+
+  /// The pinned address and port, as a host's challenge proof is bound to.
+  String _endpoint = '';
   String _token = '';
   int _generation = 0;
 
@@ -146,6 +149,7 @@ class RemoteClient {
             .firstOrNull ??
         addresses.first;
     _base = uri.replace(host: address.address);
+    _endpoint = PairedDevices.endpoint(address, uri.port);
     _client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 5)
       ..findProxy = (_) => 'DIRECT';
@@ -182,8 +186,12 @@ class RemoteClient {
   }
 
   /// Sends a fresh nonce and expects, among the host's answers, the keyed hash
-  /// only a holder of this device's credential can produce.
+  /// only a holder of this device's credential can produce, over the nonce
+  /// and the endpoint dialled here. A host computes it for the endpoint it
+  /// listens on, so an impostor passing the challenge on to the real host
+  /// returns proofs for another endpoint and is refused.
   Future<void> _verifyHost() async {
+    final endpoint = _endpoint;
     final random = Random.secure();
     final nonce = List.generate(
       32,
@@ -197,6 +205,7 @@ class RemoteClient {
     final expected = PairedDevices.proof(
       PairedDevices.hash(connection.token.trim()),
       nonce,
+      endpoint,
     );
     final proofs = answer['proofs'];
     if (answer['hostId'] != connection.hostId ||
@@ -295,6 +304,7 @@ class RemoteClient {
     _client?.close(force: true);
     _client = null;
     _base = null;
+    _endpoint = '';
     _token = '';
   }
 }
