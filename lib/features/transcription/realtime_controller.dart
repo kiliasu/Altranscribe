@@ -203,6 +203,9 @@ class RealtimeController extends ChangeNotifier {
   final _cloudLive = <String, CloudLiveSession>{};
   final _cloudLines = <String, TranscriptLine>{};
   final _cloudFinalized = <String>{};
+
+  /// Sentence lines each finished streaming segment produced, by segment id.
+  final _finalLines = <String, List<TranscriptLine>>{};
   Timer? _cloudSaveTimer;
   CloudFileEngine? _cloudFile;
   bool _directForSession = false;
@@ -935,6 +938,7 @@ class RealtimeController extends ChangeNotifier {
         cloudSpeech && cloudDirectTranslation && targetLanguage != null;
     _cloudLines.clear();
     _cloudFinalized.clear();
+    _finalLines.clear();
     _sentences = TranscriptAssembler();
     error = warning = null;
     record = null;
@@ -1051,6 +1055,7 @@ class RealtimeController extends ChangeNotifier {
             source: source,
             language: language,
             onText: _cloudText,
+            onAmend: _amendLine,
           );
         }
       }
@@ -1265,6 +1270,7 @@ class RealtimeController extends ChangeNotifier {
         text: line.text,
         continues: update.continues,
       );
+      _finalLines[update.id] = completedLines;
     } else if (line.text.isNotEmpty || line.translation?.isNotEmpty == true) {
       current.lines.add(line);
     }
@@ -1285,6 +1291,38 @@ class RealtimeController extends ChangeNotifier {
         }
       }
     }
+    transcriptRevision++;
+    _notify();
+    _cloudSaveTimer ??= Timer(const Duration(seconds: 1), () {
+      _cloudSaveTimer = null;
+      unawaited(
+        store.save(current).catchError((Object e) {
+          error = e.toString();
+          unawaited(stop());
+        }),
+      );
+    });
+  }
+
+  /// Appends punctuation a streaming engine settled after the segment was
+  /// finished. The line keeps its identity, so a translation already under
+  /// way or done stays attached to it.
+  void _amendLine(String id, String suffix) {
+    final current = record;
+    if (current == null || _disposed || _discarding) return;
+    TranscriptLine? line;
+    for (final candidate in (_finalLines[id] ?? const []).reversed) {
+      if (current.lines.contains(candidate)) {
+        line = candidate;
+        break;
+      }
+    }
+    if (line == null) return;
+    final text = line.text.trimRight();
+    if (text.isEmpty || text.endsWith(suffix)) return;
+    // A comma cannot follow a full stop the model already wrote.
+    if (RegExp(r'[.!?。！？]$').hasMatch(text)) return;
+    line.text = '$text$suffix';
     transcriptRevision++;
     _notify();
     _cloudSaveTimer ??= Timer(const Duration(seconds: 1), () {

@@ -67,6 +67,12 @@ void main() {
       transcriptSentences('See https://example.com/a.b for details.\nNext.'),
       ['See https://example.com/a.b for details.', 'Next.'],
     );
+    // A piece of zero-width marks alone would become an empty-looking line.
+    expect(transcriptSentences('we have an input. \u200b\u200d'), [
+      'we have an input.',
+    ]);
+    expect(transcriptSentences('\u200b'), isEmpty);
+    expect(transcriptSentences('♪'), ['♪']);
   });
 
   test('snapshots revise the same audio window; final sentences retain timing and reload', () {

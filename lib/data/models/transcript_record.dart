@@ -21,7 +21,10 @@ class TranscriptLine {
   final String source;
   final int startMs;
   final int endMs;
-  final String text;
+
+  /// Recognized text. A streaming engine may still append punctuation it
+  /// settles late, so the line object (and its translation) stays the same.
+  String text;
   String transcriptionStatus;
   final bool continuous;
   final bool timingEstimated;

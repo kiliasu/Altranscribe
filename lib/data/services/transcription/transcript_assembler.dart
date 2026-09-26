@@ -10,6 +10,10 @@ final _abbreviation = RegExp(
 final _cjk = RegExp(r'[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]');
 final _complete = RegExp(r'''[。！？.!?][”’"）)\]」』》】]*$''');
 
+/// Something a reader can see: a piece made only of invisible characters,
+/// such as zero-width marks from a model, is not a sentence.
+final _visible = RegExp(r'[\p{L}\p{N}\p{P}\p{S}]', unicode: true);
+
 /// Punctuation boundaries, with a soft reading limit for unpunctuated speech.
 /// No words/punctuation are invented and decimal points/abbreviations stay intact.
 List<String> transcriptSentences(String text) {
@@ -42,7 +46,7 @@ List<String> transcriptSentences(String text) {
       result.add(String.fromCharCodes(runes.take(cut)).trim());
       rest = String.fromCharCodes(runes.skip(cut)).trim();
     }
-    if (rest.isNotEmpty) result.add(rest);
+    if (_visible.hasMatch(rest)) result.add(rest);
   }
 
   var start = 0;
