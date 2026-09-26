@@ -148,7 +148,11 @@ class RealtimeController extends ChangeNotifier {
   DateTime? hostSeen;
   Timer? _hostTimer;
   int _hostWatchers = 0;
-  bool _probingHost = false;
+
+  /// Bumped whenever the saved host changes: a probe of the previous host
+  /// that answers late is dropped instead of written over the new one.
+  int _hostGeneration = 0;
+  int? _probingGeneration;
   late final remoteEngine = RemoteSpeechEngine(remoteConnection);
   late final remoteTranslator = RemoteTranslationService(remoteConnection);
   late final remoteSummarizer = RemoteTranslationService(remoteConnection);
@@ -444,6 +448,7 @@ class RealtimeController extends ChangeNotifier {
     try {
       final info = await client.connect();
       await credentials.writeNamed('remote-host', token);
+      _hostGeneration++;
       remoteConnection.address = remoteUri(address).toString();
       remoteConnection.token = token.trim();
       remoteConnection.name = name.trim().isEmpty
@@ -497,6 +502,7 @@ class RealtimeController extends ChangeNotifier {
 
   Future<void> forgetHost() async {
     if (active || updatingRecordId != null) throw StateError('recordBusy');
+    _hostGeneration++;
     remoteConnection
       ..address = ''
       ..token = ''
@@ -535,26 +541,40 @@ class RealtimeController extends ChangeNotifier {
 
   /// One health check of the saved host. When it is silent, discovery may
   /// offer a new address for the same identity; that address is adopted only
-  /// after the host there proves it holds this device's credential.
+  /// after the host there proves it holds this device's credential. Answers
+  /// are kept only while the saved host is still the one that was probed.
   Future<void> probeHost({bool discover = true}) async {
-    if (_probingHost ||
+    final generation = _hostGeneration;
+    if (_probingGeneration == generation ||
         _disposed ||
         remoteConnection.address.isEmpty ||
         remoteConnection.token.isEmpty) {
       return;
     }
-    _probingHost = true;
+    _probingGeneration = generation;
+    final saved = RemoteConnection(
+      address: remoteConnection.address,
+      token: remoteConnection.token,
+      name: remoteConnection.name,
+      hostId: remoteConnection.hostId,
+    );
+    bool current() => !_disposed && generation == _hostGeneration;
     var changed = false;
     try {
-      changed = await _probeAddress(remoteConnection.address);
+      final info = await _probeAddress(saved.address, saved);
+      if (!current()) return;
+      changed = _adoptHostInfo(info);
     } catch (_) {
+      if (!current()) return;
       hostStatus = HostStatus.offline;
-      if (discover && remoteConnection.hostId.isNotEmpty) {
-        final found = await _findSavedHost();
-        if (found != null && found.address != remoteConnection.address) {
+      if (discover && saved.hostId.isNotEmpty) {
+        final found = await _findHost(saved.hostId);
+        if (found != null && found.address != saved.address && current()) {
           try {
-            await _probeAddress(found.address);
+            final info = await _probeAddress(found.address, saved);
+            if (!current()) return;
             remoteConnection.address = found.address;
+            _adoptHostInfo(info);
             changed = true;
             AppLog.instance.info(
               'remote',
@@ -569,47 +589,51 @@ class RealtimeController extends ChangeNotifier {
         }
       }
     } finally {
-      _probingHost = false;
+      if (_probingGeneration == generation) _probingGeneration = null;
     }
     if (changed) await saveSettings();
     _notify();
   }
 
-  /// Connects with the saved credential and records what the host reported;
-  /// true when the saved name changed.
-  Future<bool> _probeAddress(String address) async {
+  /// Connects to [address] with the saved host's credential and identity.
+  Future<Map<String, dynamic>> _probeAddress(
+    String address,
+    RemoteConnection saved,
+  ) async {
     final client = RemoteClient(
       RemoteConnection(
         address: address,
-        token: remoteConnection.token,
-        name: remoteConnection.name,
-        hostId: remoteConnection.hostId,
+        token: saved.token,
+        name: saved.name,
+        hostId: saved.hostId,
       ),
     );
     try {
-      final info = await client.connect();
-      remoteConnection.info = info;
-      if (info['hostId'] is String) {
-        remoteConnection.hostId = info['hostId'] as String;
-      }
-      hostStatus = info['busy'] == true ? HostStatus.busy : HostStatus.online;
-      hostSeen = DateTime.now();
-      // The host owns its name; a rename on its sharing panel shows up here.
-      final reported = (info['name'] as String? ?? '').trim();
-      if (reported.isNotEmpty && reported != remoteConnection.name) {
-        remoteConnection.name = reported;
-        return true;
-      }
-      return false;
+      return await client.connect();
     } finally {
       client.close();
     }
   }
 
-  Future<DiscoveredHost?> _findSavedHost() async {
+  /// Records what the saved host reported; true when its name changed.
+  bool _adoptHostInfo(Map<String, dynamic> info) {
+    remoteConnection.info = info;
+    if (info['hostId'] is String) {
+      remoteConnection.hostId = info['hostId'] as String;
+    }
+    hostStatus = info['busy'] == true ? HostStatus.busy : HostStatus.online;
+    hostSeen = DateTime.now();
+    // The host owns its name; a rename on its sharing panel shows up here.
+    final reported = (info['name'] as String? ?? '').trim();
+    if (reported.isEmpty || reported == remoteConnection.name) return false;
+    remoteConnection.name = reported;
+    return true;
+  }
+
+  Future<DiscoveredHost?> _findHost(String hostId) async {
     try {
       return (await discoverHosts())
-          .where((host) => host.id == remoteConnection.hostId)
+          .where((host) => host.id == hostId)
           .firstOrNull;
     } catch (_) {
       return null;
