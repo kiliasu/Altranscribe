@@ -24,7 +24,7 @@ The Windows app is not code-signed, so Windows may say "Windows protected your P
 
 ## Getting started
 
-1. Under **Settings → Whisper models**, choose how speech is recognized: local Whisper on this computer, a Windows host on your network, or OpenAI / Gemini.
+1. Under **Settings → Whisper models**, choose how speech is recognized: local Whisper on this computer, local Nemotron streaming models on the CPU (also on the phone), a Windows host on your network, or OpenAI / Gemini.
 2. For translations, titles and summaries, choose a text model under **Settings → Translation & LLM**, or turn them off on the home screen.
 3. Pick the microphone, system audio or both, set the languages and start. For recordings, open **Files** and add one or more audio or video files; they are processed in order.
 4. **Stop & save** moves the transcript to the **Library**. The last sentences, translations and the summary finish in the background; wait for them before starting the next task.
@@ -40,6 +40,7 @@ Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a 
 | Processing | Windows x64 | Android 10+ ARM64 |
 | --- | --- | --- |
 | Local Whisper (CPU / NVIDIA GPU) | Yes | No |
+| Local Nemotron streaming (CPU, sherpa-onnx) | Yes | Yes |
 | Local Ollama / OpenAI-compatible text model | Yes | Through a Windows host |
 | Local network sharing | Host or client | Client |
 | OpenAI / Gemini (speech and text), Anthropic and online OpenAI-compatible services (text) | Yes | Yes |

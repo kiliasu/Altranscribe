@@ -24,3 +24,15 @@ Sources: the [official whisper.cpp model instructions](https://github.com/ggml-o
 App downloads verify the pinned version's file size and SHA-256. Manually added files are checked only for filename, size, and file header. Downloading a model does not install the Whisper program; configure `whisper-server.exe` separately. Android uses remote or cloud inference and does not offer local model downloads.
 
 The bundled [Silero VAD](third-party.md#silero-vad) is copied to the model directory when local Whisper starts. It detects speech and is not a selectable transcription model.
+
+## Nemotron streaming models
+
+Besides Whisper, the same panel offers two NVIDIA Nemotron streaming transducers, run on the CPU through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). They decode as audio arrives, so live captions appear within about a second and do not flicker; quiet or distant speech is brought up to a working level before decoding. Both are about 650 MB and are stored as folders next to the Whisper files, on Windows and on Android.
+
+| Model | Languages | License |
+| --- | --- | --- |
+| [Nemotron Speech Streaming EN 0.6B](https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b) | English only | [NVIDIA Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/) |
+| [Nemotron 3.5 ASR Streaming 0.6B](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b) | 35 languages, automatic detection; Mandarin covered only broadly | [OpenMDW 1.1](https://openmdw.ai/license/1-1/) |
+
+The files are the int8 exports from the sherpa-onnx `asr-models` release (560 ms chunks), fetched from their Hugging Face mirror at a pinned revision and verified by SHA-256. On the quiet lecture recording used while developing this feature, Whisper Large v3 Turbo still produced the more complete transcript; the English Nemotron model was close after the automatic gain, while the multilingual model trailed. Nemotron needs no GPU and no whisper-server, and it is the only local engine on Android.
+

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:altranscribe/shared/platform/mobile_platform.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
 import 'package:altranscribe/shared/ui/expressive.dart';
 import 'package:altranscribe/data/services/cloud/cloud_api.dart';
@@ -33,6 +34,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       controller.updatingRecordId == null &&
       (!remotePreview || controller.remoteConnection.address.isNotEmpty);
   late SpeechProvider provider = controller.speechProvider;
+  late String? nemotronSelected = controller.nemotronModel;
   late bool direct = controller.cloudDirectTranslation;
   late bool autoLanguage = controller.cloudAutoLanguage;
   List<String>? cloudModels;
@@ -60,10 +62,16 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
     if (controller.catalog.downloadingModel == null) unawaited(run(load));
   }
 
-  Future<void> download(WhisperModel model) async {
+  Future<void> download(SpeechModel model) async {
     final success = await controller.catalog.download(model);
     if (success && mounted) {
-      setState(() => selected = model.id);
+      setState(() {
+        if (model is NemotronModel) {
+          nemotronSelected = model.id;
+        } else {
+          selected = model.id;
+        }
+      });
     }
   }
 
@@ -80,6 +88,128 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
     if (mounted) setState(() => available = result);
   }
 
+  /// One radio tile per model with size, state, download progress and, for
+  /// Nemotron, the license it is offered under.
+  List<Widget> modelTiles(
+    List<SpeechModel> models,
+    String keyPrefix,
+    String? value,
+    ValueChanged<String?> onChanged,
+  ) => [
+    RadioGroup<String>(
+      groupValue: value,
+      onChanged: onChanged,
+      child: choices([
+        for (final model in models)
+          RadioListTile<String>(
+            key: Key('$keyPrefix-${model.id}'),
+            contentPadding: const EdgeInsets.fromLTRB(8, 0, 16, 0),
+            minTileHeight: 56,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: Text(
+              model.label,
+              style: const TextStyle(fontSize: 16, letterSpacing: .5),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${model.size} · ${t(controller.catalog.downloadingModel == model ? 'modelDownloading' : 'model_${(available[model.id] ?? ModelAvailability.missing).name}')}',
+                  style: const TextStyle(fontSize: 14, letterSpacing: .25),
+                ),
+                if (model is NemotronModel)
+                  Text(
+                    '${t('modelLicense')}: ${model.licenseName}',
+                    style: const TextStyle(fontSize: 12, letterSpacing: .25),
+                  ),
+                if (controller.catalog.downloadingModel == model) ...[
+                  LinearProgressIndicator(
+                    key: const Key('model-download-progress'),
+                    value: controller.catalog.receivedBytes / model.bytes,
+                  ),
+                  Text(
+                    '${(controller.catalog.receivedBytes / 1000000).toStringAsFixed(1)} MB / ${model.size}',
+                  ),
+                ],
+              ],
+            ),
+            secondary: controller.catalog.downloadingModel == model
+                ? IconButton(
+                    key: const Key('cancel-model-download'),
+                    tooltip: t('cancelDownload'),
+                    onPressed: controller.catalog.cancelDownload,
+                    icon: const Icon(Icons.close_rounded),
+                  )
+                : available[model.id] == ModelAvailability.available
+                ? null
+                : TextButton(
+                    key: Key('download-${model.id}'),
+                    onPressed:
+                        editable && controller.catalog.downloadingModel == null
+                        ? () => download(model)
+                        : null,
+                    child: Text(t('downloadModel')),
+                  ),
+            value: model.id,
+            enabled:
+                editable && available[model.id] == ModelAvailability.available,
+          ),
+      ]),
+    ),
+    if (controller.catalog.downloadingModel != null)
+      Text(t('modelDownloadBackground')),
+    if (controller.catalog.downloadError case final downloadError?)
+      Text(
+        t(downloadError),
+        key: const Key('model-download-error'),
+        style: TextStyle(color: Theme.of(context).colorScheme.error),
+      ),
+  ];
+
+  /// Links to the model source, a rescan and the folder on disk.
+  Widget folderRow({String? sourceUrl}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Wrap(
+        spacing: 8,
+        children: [
+          if (sourceUrl != null)
+            TextButton.icon(
+              onPressed: () => run(() async {
+                await Process.start('rundll32.exe', [
+                  'url.dll,FileProtocolHandler',
+                  sourceUrl,
+                ]);
+              }),
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: Text(t('modelSource')),
+            ),
+          TextButton.icon(
+            onPressed: busy ? null : () => run(load),
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(t('refreshModels')),
+          ),
+          TextButton.icon(
+            onPressed: busy
+                ? null
+                : () => run(() async {
+                    await controller.catalog.directory.create(recursive: true);
+                    await Process.start('explorer.exe', [
+                      controller.catalog.directory.absolute.path,
+                    ]);
+                  }),
+            icon: const Icon(Icons.folder_open_rounded),
+            label: Text(t('openModelsFolder')),
+          ),
+        ],
+      ),
+      SelectableText(
+        controller.catalog.directory.path,
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ],
+  );
+
   @override
   List<Widget> contents() => [
     Wrap(
@@ -88,6 +218,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       children: [
         for (final option in [
           if (controller.localInferenceAllowed) SpeechProvider.whisper,
+          SpeechProvider.nemotron,
           null,
           SpeechProvider.openAI,
           SpeechProvider.gemini,
@@ -137,7 +268,17 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
               }
             : null,
       ),
-    ] else if (provider != SpeechProvider.whisper) ...[
+    ] else if (provider == SpeechProvider.nemotron) ...[
+      Text(t('nemotronHint')),
+      gap(),
+      ...modelTiles(
+        ModelCatalog.nemotronModels,
+        'nemotron',
+        nemotronSelected,
+        (value) => setState(() => nemotronSelected = value),
+      ),
+      if (!MobilePlatform.android) ...[gap(), folderRow()],
+    ] else if (provider.isCloud) ...[
       Text(t('cloudAudioNotice')),
       CloudKeyEditor(
         key: ValueKey(provider.cloud),
@@ -208,107 +349,13 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
     ] else ...[
       Text(t('modelCatalogHint')),
       gap(),
-      RadioGroup<String>(
-        groupValue: selected,
-        onChanged: (value) => setState(() => selected = value),
-        child: choices([
-          for (final model in ModelCatalog.models)
-            RadioListTile<String>(
-              key: Key('whisper-${model.id}'),
-              contentPadding: const EdgeInsets.fromLTRB(8, 0, 16, 0),
-              minTileHeight: 56,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Text(
-                model.label,
-                style: const TextStyle(fontSize: 16, letterSpacing: .5),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${model.size} · ${t(controller.catalog.downloadingModel == model ? 'modelDownloading' : 'model_${(available[model.id] ?? ModelAvailability.missing).name}')}',
-                    style: const TextStyle(fontSize: 14, letterSpacing: .25),
-                  ),
-                  if (controller.catalog.downloadingModel == model) ...[
-                    LinearProgressIndicator(
-                      key: const Key('model-download-progress'),
-                      value: controller.catalog.receivedBytes / model.bytes,
-                    ),
-                    Text(
-                      '${(controller.catalog.receivedBytes / 1000000).toStringAsFixed(1)} MB / ${model.size}',
-                    ),
-                  ],
-                ],
-              ),
-              secondary: controller.catalog.downloadingModel == model
-                  ? IconButton(
-                      key: const Key('cancel-model-download'),
-                      tooltip: t('cancelDownload'),
-                      onPressed: controller.catalog.cancelDownload,
-                      icon: const Icon(Icons.close_rounded),
-                    )
-                  : available[model.id] == ModelAvailability.available
-                  ? null
-                  : TextButton(
-                      key: Key('download-${model.id}'),
-                      onPressed:
-                          editable &&
-                              controller.catalog.downloadingModel == null
-                          ? () => download(model)
-                          : null,
-                      child: Text(t('downloadModel')),
-                    ),
-              value: model.id,
-              enabled:
-                  editable &&
-                  available[model.id] == ModelAvailability.available,
-            ),
-        ]),
+      ...modelTiles(
+        ModelCatalog.models,
+        'whisper',
+        selected,
+        (value) => setState(() => selected = value),
       ),
-      if (controller.catalog.downloadingModel != null)
-        Text(t('modelDownloadBackground')),
-      if (controller.catalog.downloadError case final downloadError?)
-        Text(
-          t(downloadError),
-          key: const Key('model-download-error'),
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
-        ),
-      Wrap(
-        spacing: 8,
-        children: [
-          TextButton.icon(
-            onPressed: () => run(() async {
-              await Process.start('rundll32.exe', [
-                'url.dll,FileProtocolHandler',
-                ModelCatalog.sourceUrl,
-              ]);
-            }),
-            icon: const Icon(Icons.open_in_new_rounded),
-            label: Text(t('modelSource')),
-          ),
-          TextButton.icon(
-            onPressed: busy ? null : () => run(load),
-            icon: const Icon(Icons.refresh_rounded),
-            label: Text(t('refreshModels')),
-          ),
-          TextButton.icon(
-            onPressed: busy
-                ? null
-                : () => run(() async {
-                    await controller.catalog.directory.create(recursive: true);
-                    await Process.start('explorer.exe', [
-                      controller.catalog.directory.absolute.path,
-                    ]);
-                  }),
-            icon: const Icon(Icons.folder_open_rounded),
-            label: Text(t('openModelsFolder')),
-          ),
-        ],
-      ),
-      SelectableText(
-        controller.catalog.directory.path,
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
+      folderRow(sourceUrl: ModelCatalog.sourceUrl),
       gap(),
       Text(t('computeBackend')),
       const SizedBox(height: 8),
@@ -364,7 +411,19 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       await controller.saveSettings();
       return;
     }
-    if (provider != SpeechProvider.whisper) {
+    if (provider == SpeechProvider.nemotron) {
+      final result = await controller.catalog.scan();
+      final chosen = nemotronSelected;
+      if (chosen == null || result[chosen] != ModelAvailability.available) {
+        throw const FormatException('nemotronModelMissing');
+      }
+      controller.nemotronModel = chosen;
+      controller.useRemote = false;
+      controller.speechProvider = provider;
+      await controller.saveSettings();
+      return;
+    }
+    if (provider.isCloud) {
       controller.useRemote = false;
       controller.speechProvider = provider;
       controller.cloudDirectTranslation = direct;

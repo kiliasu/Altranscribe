@@ -851,4 +851,25 @@ const strings = <String, List<String>>{
     "主机没有通过身份验证，已停止连接，凭据没有发送出去。",
     "The host failed identity verification, so the connection stopped and no credential was sent.",
   ],
+  "nemotronHint": [
+    "Nemotron 流式模型在本机 CPU 上运行，边说边出字，不需要 whisper-server 或显卡；安静或较远的声音会先自动增益。英文模型只识别英语；3.5 多语言模型支持 35 种语言，中文效果一般。每个模型约 650 MB，按 NVIDIA 的许可证提供，下载即表示接受。",
+    "Nemotron streaming models run on this device's CPU and produce text as you speak, with no whisper-server or GPU; quiet or distant speech is brought up first. The English model recognizes English only; the 3.5 multilingual model covers 35 languages, Mandarin only broadly. Each model is about 650 MB and comes under NVIDIA's license, which downloading accepts.",
+  ],
+  "nemotronModelMissing": [
+    "请先下载一个 Nemotron 模型。",
+    "Download a Nemotron model first.",
+  ],
+  "nemotronEnglishOnly": [
+    "英文 Nemotron 模型只识别英语；其他语言请改用 3.5 多语言模型。",
+    "The English Nemotron model recognizes English only; use the 3.5 multilingual model for other languages.",
+  ],
+  "nemotronNotRunning": [
+    "Nemotron 引擎未启动。",
+    "The Nemotron engine is not running.",
+  ],
+  "nemotronLibraryMissing": [
+    "无法加载 sherpa-onnx 运行库，请重新安装应用。",
+    "The sherpa-onnx runtime could not be loaded; reinstall the app.",
+  ],
+  "modelLicense": ["许可证", "License"],
 };

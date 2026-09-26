@@ -27,3 +27,8 @@ Android bundles FFmpeg 8.1.2 shared libraries under LGPL 2.1+, built from the [o
 ## QR pairing
 
 The Windows host draws pairing QR codes with the [qr](https://pub.dev/packages/qr) Dart package (BSD 3-Clause); its license text is included in the app's license list. Android scans them with [ZXing](https://github.com/zxing/zxing) core and Jetpack [CameraX](https://developer.android.com/media/camera/camerax), both under Apache 2.0 with no modifications.
+
+## sherpa-onnx and ONNX Runtime
+
+Nemotron streaming recognition uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) through its Dart package, which bundles [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT). The models themselves are downloaded on request and are not part of the app: the English model under the [NVIDIA Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/) and the 3.5 multilingual model under [OpenMDW 1.1](https://openmdw.ai/license/1-1/), as listed in the [model guide](models.md).
+

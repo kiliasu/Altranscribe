@@ -25,7 +25,7 @@ class DownloadCatalog extends FakeModelCatalog {
   };
 
   @override
-  Future<bool> download(WhisperModel model) async {
+  Future<bool> download(SpeechModel model) async {
     downloadingModel = model;
     receivedBytes = model.bytes ~/ 2;
     pending = Completer<bool>();

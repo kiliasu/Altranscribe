@@ -24,6 +24,7 @@ import 'package:altranscribe/data/services/cloud/credential_store.dart';
 import 'package:altranscribe/data/services/audio/audio_service.dart';
 import 'package:altranscribe/data/services/transcription/chinese_script.dart';
 import 'package:altranscribe/data/repositories/record_store.dart';
+import 'package:altranscribe/data/services/transcription/nemotron_engine.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
@@ -50,8 +51,10 @@ class RealtimeController extends ChangeNotifier {
     CredentialStore? credentials,
     this.cloudSocketConnector,
     SharedHost? sharedHost,
+    NemotronEngine? nemotron,
   }) : localEngine = engine,
        _providedHost = sharedHost,
+       _providedNemotron = nemotron,
        credentials = credentials ?? WindowsCredentialStore(store.directory),
        localTranslator =
            translator ??
@@ -90,7 +93,30 @@ class RealtimeController extends ChangeNotifier {
   }
   final AudioService audio;
   final SpeechEngine localEngine;
-  SpeechEngine get engine => remoteProcessing ? remoteEngine : localEngine;
+  final NemotronEngine? _providedNemotron;
+
+  /// The on-device streaming engine; it loads its model per session.
+  late final NemotronEngine nemotronEngine =
+      _providedNemotron ?? NemotronEngine();
+  final _nemotronLive = <String, NemotronLive>{};
+
+  /// Which Nemotron model a session uses, by catalog id.
+  String nemotronModel = ModelCatalog.nemotronModels.first.id;
+  SpeechEngine get engine => remoteProcessing
+      ? remoteEngine
+      : speechProvider == SpeechProvider.nemotron
+      ? nemotronEngine
+      : localEngine;
+  bool get nemotronSpeech =>
+      !remoteProcessing && speechProvider == SpeechProvider.nemotron;
+
+  /// The model argument for `engine.start`: a Whisper file or a Nemotron folder.
+  String get engineModel => nemotronSpeech
+      ? catalog.folder(
+          ModelCatalog.nemotron(nemotronModel) ??
+              ModelCatalog.nemotronModels.first,
+        )
+      : model;
   final RecordStore store;
   final TranslationService localTranslator;
   final TranslationService localRecordSummarizer;
@@ -156,6 +182,8 @@ class RealtimeController extends ChangeNotifier {
   String get _llmModel => remoteLlm ? remoteLlmModel : translationModel;
   String get sessionModel => remoteProcessing
       ? (remoteConnection.info?['model'] as String? ?? 'Whisper Remote')
+      : nemotronSpeech
+      ? (ModelCatalog.nemotron(nemotronModel)?.label ?? nemotronModel)
       : model.split(RegExp(r'[/\\]')).last;
   String get sessionLlmModel => remoteLlm
       ? (remoteLlmModel.isNotEmpty ? remoteLlmModel : hostLlmModel ?? '')
@@ -168,7 +196,7 @@ class RealtimeController extends ChangeNotifier {
   SpeechProvider speechProvider = SpeechProvider.whisper;
   bool cloudDirectTranslation = true;
   bool cloudAutoLanguage = true;
-  bool get cloudSpeech => speechProvider != SpeechProvider.whisper;
+  bool get cloudSpeech => speechProvider.isCloud;
   String get speechBackend => cloudSpeech
       ? '${speechProvider.label} · ${record?.speechModel ?? (processingFiles ? speechProvider.fileModel : speechProvider.liveModel(cloudDirectTranslation))}'
       : engine.backend;
@@ -306,6 +334,10 @@ class RealtimeController extends ChangeNotifier {
               .where((mode) => mode.name == compute)
               .firstOrNull ??
           ComputeMode.automatic;
+      nemotronModel =
+          ModelCatalog.nemotron(settings['nemotronModel'] as String? ?? '')
+              ?.id ??
+          nemotronModel;
       translationAddress =
           settings['translationAddress'] as String? ?? translationAddress;
       llmProvider =
@@ -354,6 +386,7 @@ class RealtimeController extends ChangeNotifier {
       'executable': executable,
       'model': model,
       'computeMode': computeMode.name,
+      'nemotronModel': nemotronModel,
       'translationAddress': translationAddress,
       'translationModel': translationModel,
       'llmProvider': llmProvider.name,
@@ -794,10 +827,11 @@ class RealtimeController extends ChangeNotifier {
       if (needsLlm) {
         await translator.prepare(_llmAddress, _llmModel, provider: llmProvider);
       }
+      if (nemotronSpeech) _warnNemotronLanguage(language);
       if (_cancelled) return;
       await fileEngine.start(
         executable,
-        model,
+        engineModel,
         store.directory,
         compute: computeMode,
       );
@@ -918,6 +952,8 @@ class RealtimeController extends ChangeNotifier {
               ? speechProvider.name
               : remoteProcessing
               ? 'remote'
+              : nemotronSpeech
+              ? 'nemotron'
               : 'whisper'} '
           'llm=${remoteLlm ? 'remote' : llmProvider.name}',
     );
@@ -966,7 +1002,7 @@ class RealtimeController extends ChangeNotifier {
       if (!cloudSpeech) {
         await engine.start(
           executable,
-          model,
+          engineModel,
           store.directory,
           compute: computeMode,
         );
@@ -1007,6 +1043,17 @@ class RealtimeController extends ChangeNotifier {
       );
       await store.save(record!);
       if (_cancelled) return;
+      if (nemotronSpeech) {
+        _warnNemotronLanguage(language);
+        for (final source in record!.sources) {
+          if (_cancelled) return;
+          _nemotronLive[source] = await nemotronEngine.openLive(
+            source: source,
+            language: language,
+            onText: _cloudText,
+          );
+        }
+      }
       if (cloudSpeech) {
         for (final source in record!.sources) {
           if (_cancelled) return;
@@ -1043,8 +1090,9 @@ class RealtimeController extends ChangeNotifier {
         'microphoneAutoGain': microphoneAutoGain,
         'systemDenoise': systemDenoise,
         'systemAutoGain': systemAutoGain,
-        if (cloudSpeech) 'streaming': true,
-        if (cloudSpeech)
+        // Frames instead of windows: the cloud and Nemotron decode as audio arrives.
+        if (cloudSpeech || nemotronSpeech) 'streaming': true,
+        if (cloudSpeech || nemotronSpeech)
           'sampleRate': speechProvider == SpeechProvider.openAI ? 24000 : 16000,
       });
       final deadline = DateTime.now().add(const Duration(seconds: 10));
@@ -1067,6 +1115,14 @@ class RealtimeController extends ChangeNotifier {
       if (!_cancelled) error = e.toString();
       // Let start settle before stop waits for it, avoiding a lifecycle deadlock.
       scheduleMicrotask(() => unawaited(stop()));
+    }
+  }
+
+  /// The English model transcribes whatever it hears as English.
+  void _warnNemotronLanguage(String language) {
+    final entry = ModelCatalog.nemotron(nemotronModel);
+    if (entry != null && !entry.multilingual && language != 'en') {
+      warning ??= 'nemotronEnglishOnly';
     }
   }
 
@@ -1140,6 +1196,11 @@ class RealtimeController extends ChangeNotifier {
             event['startMs'] as int,
             event['endMs'] as int,
           );
+          _nemotronLive[source]?.add(
+            event['pcm'] as Uint8List,
+            event['startMs'] as int,
+            event['endMs'] as int,
+          );
         case 'paused':
           // Native emits this after its final frame, so silence cannot overtake
           // the last spoken audio when the user pauses capture.
@@ -1147,6 +1208,14 @@ class RealtimeController extends ChangeNotifier {
           if (connection != null) {
             final end = event['endMs'] as int;
             connection.add(Uint8List(connection.sampleRate * 2), end, end);
+          }
+          final live = _nemotronLive[source];
+          if (live != null) {
+            unawaited(
+              live.flush().catchError((Object e) {
+                AppLog.instance.warn('session', 'Nemotron flush failed: $e');
+              }),
+            );
           }
       }
     }
@@ -1450,6 +1519,9 @@ class RealtimeController extends ChangeNotifier {
         for (final connection in _cloudLive.values) {
           connection.cancel();
         }
+        for (final live in _nemotronLive.values) {
+          unawaited(live.cancel());
+        }
         translator.stop();
         await engine.stop();
       }
@@ -1484,6 +1556,15 @@ class RealtimeController extends ChangeNotifier {
           }
         }),
       );
+      await Future.wait(
+        _nemotronLive.values.map((live) async {
+          try {
+            await live.finish();
+          } catch (e) {
+            error ??= e.toString();
+          }
+        }),
+      );
       await _processing;
       await _translations;
     } catch (e, stack) {
@@ -1497,6 +1578,10 @@ class RealtimeController extends ChangeNotifier {
         connection.cancel();
       }
       _cloudLive.clear();
+      for (final live in _nemotronLive.values) {
+        unawaited(live.cancel());
+      }
+      _nemotronLive.clear();
       await engine.stop();
       if (_discarding) {
         // Even if capture shutdown failed, no writer may outlive deletion.

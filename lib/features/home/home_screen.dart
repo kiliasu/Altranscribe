@@ -600,6 +600,9 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
       }
       return 'Whisper Remote · ${live.remoteConnection.name.isEmpty ? t('noRemote') : live.remoteConnection.name} · ${live.sessionModel}';
     }
+    if (live.speechProvider == SpeechProvider.nemotron) {
+      return 'Nemotron · ${ModelCatalog.nemotron(live.nemotronModel)?.shortLabel ?? live.nemotronModel} · CPU';
+    }
     if (live.cloudSpeech) {
       return '${live.speechProvider.label} · ${fileMode ? live.speechProvider.fileModel : live.speechProvider.liveModel(directTranslation)}';
     }

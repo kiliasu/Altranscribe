@@ -24,7 +24,7 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 
 ## 开始使用
 
-1. 在「设置 → 模型选择」中选择识别方式：本机 Whisper、局域网里的 Windows 主机，或 OpenAI / Gemini。
+1. 在「设置 → 模型选择」中选择识别方式：本机 Whisper、本机 CPU 上的 Nemotron 流式模型（手机也能用）、局域网里的 Windows 主机，或 OpenAI / Gemini。
 2. 如需翻译、标题和摘要，在「设置 → 翻译选择」配置文字模型；暂不需要时可以在首页关闭。
 3. 选择麦克风、系统音频或两者，设置源语言和目标语言后开始。转录音视频文件时切换到文件入口，可以一次选择多个，按队列处理。
 4. 点击「停止并保存」后，文稿进入「记录」。尾句、译文和摘要会在后台补齐，完成后才能开始下一次任务。
@@ -40,6 +40,7 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 | 处理方式 | Windows x64 | Android 10+ ARM64 |
 | --- | --- | --- |
 | 本地 Whisper（CPU / NVIDIA GPU） | 支持 | 不支持 |
+| 本地 Nemotron 流式（CPU，sherpa-onnx） | 支持 | 支持 |
 | 本地 Ollama / OpenAI 兼容文字服务 | 支持 | 通过 Windows 主机使用 |
 | 局域网共享 | 可作为主机或客户端 | 作为客户端 |
 | OpenAI / Gemini（语音与文字）、Anthropic 与在线 OpenAI 兼容服务（文字） | 支持 | 支持 |

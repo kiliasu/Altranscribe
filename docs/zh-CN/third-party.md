@@ -27,3 +27,8 @@ Android 随包提供 FFmpeg 8.1.2 共享库（LGPL 2.1+），由[官方源码包
 ## 二维码配对
 
 Windows 主机使用 Dart 包 [qr](https://pub.dev/packages/qr)（BSD 3-Clause）绘制配对二维码，其许可文本包含在应用的许可列表中。Android 使用 [ZXing](https://github.com/zxing/zxing) core 和 Jetpack [CameraX](https://developer.android.com/media/camera/camerax) 扫描，两者均为 Apache 2.0，未做修改。
+
+## sherpa-onnx 与 ONNX Runtime
+
+Nemotron 流式识别通过 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache 2.0）的 Dart 包实现，其中附带 [ONNX Runtime](https://github.com/microsoft/onnxruntime)（MIT）。模型本身按需下载，不随应用分发：英文模型采用 [NVIDIA Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/)，3.5 多语言模型采用 [OpenMDW 1.1](https://openmdw.ai/license/1-1/)，见[模型说明](models.md)。
+
