@@ -871,6 +871,10 @@ const strings = <String, List<String>>{
     "无法加载 sherpa-onnx 运行库，请重新安装应用。",
     "The sherpa-onnx runtime could not be loaded; reinstall the app.",
   ],
+  "nemotronStopped": [
+    "Nemotron 引擎在识别完成前停止了。",
+    "The Nemotron engine stopped before recognition finished.",
+  ],
   "modelLicense": ["许可证", "License"],
   "tagRecognizing": ["识别中", "Recognizing"],
   "tagUnconfirmed": ["待确认", "Unconfirmed"],

@@ -5,6 +5,8 @@ import 'package:altranscribe/data/services/audio/audio_service.dart';
 import 'package:altranscribe/data/services/cloud/cloud_live.dart';
 import 'package:altranscribe/data/services/models/model_catalog.dart';
 import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
+import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
+import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/transcription/nemotron_engine.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,6 +56,26 @@ Future<void> play(
     if ((ms + 100 - fromMs) % every == 0) await live.idle;
   }
 }
+
+/// Decodes a file to one long stretch of the clip, so a cancel lands while
+/// the engine is still working on it.
+class ClipDecoder extends AudioFileDecoder {
+  ClipDecoder(this.pcm);
+  final Uint8List pcm;
+  bool started = false;
+  @override
+  Stream<FileAudioChunk> decode(String path, {int chunkSeconds = 20}) async* {
+    started = true;
+    yield FileAudioChunk(pcm, 0, pcm.length ~/ 32);
+  }
+
+  @override
+  Future<void> cancel() async {}
+}
+
+Matcher stoppedError() => throwsA(
+  isA<StateError>().having((e) => e.message, 'message', 'nemotronStopped'),
+);
 
 Future<NemotronEngine> englishEngine(String library, String model) async {
   final engine = NemotronEngine(libraryPath: library);
@@ -270,6 +292,111 @@ void main() {
         ? false
         : 'needs the sherpa-onnx library, a model and build/spike/clip.wav',
     timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  test(
+    'stopping fails a waiting window at once and frees the model',
+    () async {
+      final engine = await englishEngine(library!, model!);
+      addTearDown(engine.stop);
+      final loaded = ProcessInfo.currentRss;
+      final wave = await clip.readAsBytes();
+      // Eighty seconds keep the worker busy well past the stop.
+      final window = expectLater(
+        engine.transcribe(pcmToWave(pcmSlice(wave, 0, 80000)), 'en'),
+        stoppedError(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final clock = Stopwatch()..start();
+      await engine.stop();
+      await window;
+      expect(clock.elapsed, lessThan(const Duration(seconds: 1)));
+      // The next start waits until the old worker has freed its model, so
+      // memory holds one model instead of one more per session.
+      await engine.start('', model, Directory('unused'));
+      expect(ProcessInfo.currentRss - loaded, lessThan(300 << 20));
+    },
+    skip: ready
+        ? false
+        : 'needs the sherpa-onnx library, a model and build/spike/clip.wav',
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'a live stream whose engine stops fails its finish instead of waiting',
+    () async {
+      final engine = await englishEngine(library!, model!);
+      addTearDown(engine.stop);
+      final live = await engine.openLive(
+        source: 'system',
+        language: 'en',
+        onText: (_) {},
+      );
+      final wave = await clip.readAsBytes();
+      for (var ms = 13000; ms < 33000; ms += 100) {
+        live.add(pcmSlice(wave, ms, ms + 100), ms, ms + 100);
+      }
+      await engine.stop();
+      await expectLater(live.finish(), stoppedError());
+      await live.idle;
+      // Audio after the failure is dropped, not queued behind it.
+      live.add(pcmSlice(wave, 33000, 33100), 33000, 33100);
+      expect(live.backlogMs, 0);
+      await live.cancel();
+    },
+    skip: ready
+        ? false
+        : 'needs the sherpa-onnx library, a model and build/spike/clip.wav',
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'cancelling a file while Nemotron decodes it returns to idle at once',
+    () async {
+      final wave = await clip.readAsBytes();
+      final decoder = ClipDecoder(
+        Uint8List.sublistView(wave, 44, 44 + 80000 * 32),
+      );
+      final controller =
+          RealtimeController(
+              audio: FakeAudio(),
+              engine: FakeEngine(),
+              store: MemoryStore(),
+              translator: FakeTranslator(),
+              recordSummarizer: FakeTranslator(),
+              catalog: SpikeCatalog(model!),
+              nemotron: NemotronEngine(libraryPath: library),
+              fileDecoder: decoder,
+            )
+            ..initialized = true
+            ..generateSummary = false
+            ..speechProvider = SpeechProvider.nemotron;
+      addTearDown(controller.dispose);
+      final run = controller.startFiles(
+        paths: ['lecture.wav'],
+        language: 'en',
+        targetLanguage: 'zh',
+        summaryLanguage: 'zh',
+        options: const CleanupOptions(),
+      );
+      final deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (!decoder.started) {
+        if (DateTime.now().isAfter(deadline)) fail('decoding did not start');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final clock = Stopwatch()..start();
+      await controller.stop().timeout(const Duration(seconds: 10));
+      await run;
+      expect(clock.elapsed, lessThan(const Duration(seconds: 2)));
+      expect(controller.phase, SessionPhase.idle);
+      expect(controller.error, isNull);
+      expect(controller.record!.status, 'interrupted');
+    },
+    skip: ready
+        ? false
+        : 'needs the sherpa-onnx library, a model and build/spike/clip.wav',
+    timeout: const Timeout(Duration(minutes: 2)),
   );
 
   test(

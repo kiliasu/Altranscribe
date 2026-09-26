@@ -31,6 +31,9 @@ class NemotronEngine implements SpeechEngine {
   NemotronModel? model;
   int _streamIds = 0;
 
+  /// Completes once the last stopped worker has freed its model.
+  Future<void> _retiring = Future.value();
+
   bool get running => _worker != null;
 
   /// Half the cores, within two and eight: enough for real time without
@@ -70,6 +73,9 @@ class NemotronEngine implements SpeechEngine {
     final multilingual =
         entry?.multilingual ??
         await File('${folder.path}/tokens.txt').length() > 40000;
+    // A stopped worker may still be finishing a step; two models at once
+    // may not fit in a phone's memory, so the old one goes first.
+    await _retiring;
     final worker = await _Worker.spawn(libraryPath);
     try {
       await worker.call({
@@ -79,7 +85,7 @@ class NemotronEngine implements SpeechEngine {
         'multilingual': multilingual,
       });
     } catch (_) {
-      worker.kill();
+      _retiring = worker.retire();
       rethrow;
     }
     _worker = worker;
@@ -117,12 +123,14 @@ class NemotronEngine implements SpeechEngine {
     return NemotronLive._(worker, id, source, onText, onAmend);
   }
 
+  /// Returns at once: calls still waiting fail, and the worker frees the
+  /// model in the background once the step in progress is done.
   @override
   Future<void> stop() async {
     final worker = _worker;
     _worker = null;
     model = null;
-    worker?.kill();
+    if (worker != null) _retiring = worker.retire();
   }
 }
 
@@ -153,6 +161,9 @@ class NemotronLive {
   final _queue = Queue<Object>();
   Future<void>? _draining;
   bool _closed = false;
+
+  /// Why decoding ended early, as when the engine was stopped underneath.
+  Object? _failure;
   int _segment = 0;
   String? _lastFinalId;
   String _lastPartial = '';
@@ -174,7 +185,7 @@ class NemotronLive {
   );
 
   void add(Uint8List pcm, int startMs, int endMs) {
-    if (_closed) return;
+    if (_closed || _failure != null) return;
     _queue.add(_Frame(pcm, startMs));
     _pump();
   }
@@ -183,13 +194,15 @@ class NemotronLive {
   Future<void> flush() => _mark('flush');
 
   /// Delivers whatever is still buffered as a final line and frees the stream.
+  /// Fails when decoding ended early, so lost audio is never a clean stop.
   Future<void> finish() => _mark('finish');
 
   Future<void> _mark(String op) {
     if (_closed) return Future.value();
+    if (op == 'finish') _closed = true;
+    if (_failure case final failure?) return Future.error(failure);
     final marker = _Marker(op);
     _queue.add(marker);
-    if (op == 'finish') _closed = true;
     _pump();
     return marker.done.future;
   }
@@ -201,41 +214,50 @@ class NemotronLive {
   Future<void> _drain() async {
     while (_queue.isNotEmpty) {
       final head = _queue.removeFirst();
-      if (head is _Marker) {
-        try {
-          final result = await _worker.call({'op': head.op, 'id': id});
-          _handle(result);
-          // The next audio starts a new stream at stream time zero.
-          _anchors.clear();
-          _streamMs = 0;
-          head.done.complete();
-        } catch (e, s) {
-          head.done.completeError(e, s);
+      final Map<Object?, Object?> result;
+      try {
+        result = await _worker.call(
+          head is _Marker ? {'op': head.op, 'id': id} : _feed(head as _Frame),
+        );
+      } catch (e, s) {
+        // The worker is gone or the stream closed: nothing queued can be
+        // decoded any more, and whoever waits on a marker hears why.
+        _failure = e;
+        for (final item in [head, ..._queue]) {
+          if (item is _Marker && !item.done.isCompleted) {
+            item.done.completeError(e, s);
+          }
         }
-        continue;
+        _queue.clear();
+        return;
       }
-      // Consecutive frames go in one call; the worker still decides in
-      // fixed 100 ms steps, so how frames are grouped changes nothing.
-      final frames = <_Frame>[head as _Frame];
-      while (_queue.isNotEmpty && _queue.first is _Frame) {
-        frames.add(_queue.removeFirst() as _Frame);
-      }
-      final builder = BytesBuilder(copy: false);
-      for (final frame in frames) {
-        if (_anchors.isEmpty || (frame.startMs - _expectedStartMs).abs() > 40) {
-          _anchors.add((_streamMs, frame.startMs));
-        }
-        _streamMs += frame.durationMs;
-        _expectedStartMs = frame.startMs + frame.durationMs;
-        builder.add(frame.pcm);
-      }
-      final result = await _worker.call({
-        'op': 'feed',
-        'id': id,
-        'pcm': builder.takeBytes(),
-      });
       _handle(result);
+      if (head is _Marker) {
+        // The next audio starts a new stream at stream time zero.
+        _anchors.clear();
+        _streamMs = 0;
+        head.done.complete();
+      }
     }
+  }
+
+  /// Consecutive frames go in one call; the worker still decides in fixed
+  /// 100 ms steps, so how frames are grouped changes nothing.
+  Map<String, Object?> _feed(_Frame head) {
+    final frames = <_Frame>[head];
+    while (_queue.isNotEmpty && _queue.first is _Frame) {
+      frames.add(_queue.removeFirst() as _Frame);
+    }
+    final builder = BytesBuilder(copy: false);
+    for (final frame in frames) {
+      if (_anchors.isEmpty || (frame.startMs - _expectedStartMs).abs() > 40) {
+        _anchors.add((_streamMs, frame.startMs));
+      }
+      _streamMs += frame.durationMs;
+      _expectedStartMs = frame.startMs + frame.durationMs;
+      builder.add(frame.pcm);
+    }
+    return {'op': 'feed', 'id': id, 'pcm': builder.takeBytes()};
   }
 
   int _sessionMs(Object? seconds) {
@@ -364,38 +386,102 @@ Float32List _toFloat(Uint8List pcm) {
   return samples;
 }
 
+/// The decoding isolate. Once it is retired or has died, waiting and later
+/// calls fail at once: a stopped engine never leaves a caller waiting for
+/// audio that will not be decoded.
 class _Worker {
-  _Worker._(this._isolate, this._port);
-  final Isolate _isolate;
+  _Worker._(this._port);
   final SendPort _port;
+  final _calls = <Completer<Object?>>{};
+  final _exited = Completer<void>();
+  bool _stopped = false;
 
   static Future<_Worker> spawn(String? libraryPath) async {
-    final ready = ReceivePort();
-    final isolate = await Isolate.spawn(
-      _workerMain,
-      (ready.sendPort, libraryPath),
-      errorsAreFatal: true,
-      debugName: 'nemotron',
-    );
-    final first = await ready.first;
-    if (first is! SendPort) {
+    // One port hears the worker's first message and, later, its exit, so an
+    // isolate that ends while starting cannot leave this waiting.
+    final inbox = ReceivePort();
+    final first = Completer<Object?>();
+    _Worker? worker;
+    var exited = false;
+    inbox.listen((message) {
+      if (!first.isCompleted) {
+        first.complete(message);
+      } else {
+        inbox.close();
+        exited = true;
+        worker?._exit();
+      }
+    });
+    final Isolate isolate;
+    try {
+      isolate = await Isolate.spawn(
+        _workerMain,
+        (inbox.sendPort, libraryPath),
+        errorsAreFatal: true,
+        onExit: inbox.sendPort,
+        debugName: 'nemotron',
+      );
+    } catch (_) {
+      inbox.close();
+      rethrow;
+    }
+    final port = await first.future;
+    if (port is! SendPort) {
+      inbox.close();
       isolate.kill(priority: Isolate.immediate);
       throw StateError('nemotronLibraryMissing');
     }
-    return _Worker._(isolate, first);
+    final created = worker = _Worker._(port);
+    // An exit heard before the worker object existed still counts.
+    if (exited) created._exit();
+    return created;
   }
 
   Future<Map<Object?, Object?>> call(Map<String, Object?> message) async {
+    if (_stopped) throw StateError('nemotronStopped');
     final reply = ReceivePort();
+    final answer = Completer<Object?>();
+    _calls.add(answer);
+    reply.listen((value) {
+      if (!answer.isCompleted) answer.complete(value);
+    });
     _port.send({...message, 'reply': reply.sendPort});
-    final answer = await reply.first as Map<Object?, Object?>;
-    if (answer['error'] case final String error) {
-      throw StateError(error);
+    try {
+      final result = await answer.future as Map<Object?, Object?>;
+      if (result['error'] case final String error) {
+        throw StateError(error);
+      }
+      return result;
+    } finally {
+      _calls.remove(answer);
+      reply.close();
     }
-    return answer;
   }
 
-  void kill() => _isolate.kill(priority: Isolate.immediate);
+  void _failCalls() {
+    _stopped = true;
+    for (final answer in [..._calls]) {
+      if (!answer.isCompleted) {
+        answer.completeError(StateError('nemotronStopped'));
+      }
+    }
+  }
+
+  void _exit() {
+    _failCalls();
+    if (!_exited.isCompleted) _exited.complete();
+  }
+
+  /// Fails the waiting calls at once; the worker then frees the model and
+  /// its streams after the step in progress and exits. It is asked, not
+  /// killed: a killed isolate never returns the model's native memory.
+  Future<void> retire() {
+    if (!_stopped) {
+      _failCalls();
+      _port.send(const {'op': 'dispose'});
+    }
+    return _exited.future;
+  }
 }
 
 /// A live stream inside the worker. Tokens are never cleared while the
@@ -619,6 +705,18 @@ void _workerMain((SendPort, String?) boot) {
 
   port.listen((message) {
     final request = message as Map<Object?, Object?>;
+    if (request['op'] == 'dispose') {
+      // sherpa-onnx has no finalizers: only free() returns native memory.
+      for (final state in streams.values) {
+        state.stream.free();
+      }
+      streams.clear();
+      recognizer?.free();
+      recognizer = null;
+      // With its port closed the isolate has nothing left and exits.
+      port.close();
+      return;
+    }
     final reply = request['reply'] as SendPort;
     try {
       switch (request['op']) {
