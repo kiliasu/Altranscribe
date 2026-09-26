@@ -158,13 +158,14 @@ class RealtimeController extends ChangeNotifier {
   late final remoteSummarizer = RemoteTranslationService(remoteConnection);
   bool useRemote = MobilePlatform.android;
 
-  /// While a host recognizes speech, its shared text model handles LLM work
-  /// unless the user chose their own service under Translation.
-  bool useRemoteLlm = true;
+  /// With a host saved, its shared text model handles translation, cleanup,
+  /// titles and summaries, whichever engine recognizes speech, unless the
+  /// user chose their own service under Translation.
+  bool hostLlm = true;
   bool get localInferenceAllowed => !MobilePlatform.android;
   bool get remoteProcessing =>
       useRemote && speechProvider == SpeechProvider.whisper;
-  bool get remoteLlm => remoteProcessing && useRemoteLlm;
+  bool get remoteLlm => hostLlm && remoteConnection.address.isNotEmpty;
 
   /// One of the host's listed models to use instead of its default.
   String remoteLlmModel = '';
@@ -296,11 +297,15 @@ class RealtimeController extends ChangeNotifier {
           settings['cloudDirectTranslation'] as bool? ?? true;
       cloudAutoLanguage = settings['cloudAutoLanguage'] as bool? ?? true;
       useRemote = settings['useRemote'] == true;
-      useRemoteLlm = settings['remoteLlm'] as bool? ?? true;
       remoteLlmModel = settings['remoteLlmModel'] as String? ?? '';
       if (!localInferenceAllowed && speechProvider == SpeechProvider.whisper) {
         useRemote = true;
       }
+      // A host used to lend its text model only while it recognized speech;
+      // older settings keep their own service with any other engine.
+      hostLlm =
+          settings['hostLlm'] as bool? ??
+          ((settings['remoteLlm'] as bool? ?? true) && remoteProcessing);
       remoteConnection.address = settings['remoteAddress'] as String? ?? '';
       remoteConnection.name = settings['remoteName'] as String? ?? '';
       remoteConnection.hostId = settings['remoteHostId'] as String? ?? '';
@@ -410,7 +415,7 @@ class RealtimeController extends ChangeNotifier {
       'cloudDirectTranslation': cloudDirectTranslation,
       'cloudAutoLanguage': cloudAutoLanguage,
       'useRemote': useRemote,
-      'remoteLlm': useRemoteLlm,
+      'hostLlm': hostLlm,
       'remoteLlmModel': remoteLlmModel,
       'remoteAddress': remoteConnection.address,
       'remoteName': remoteConnection.name,
@@ -460,6 +465,8 @@ class RealtimeController extends ChangeNotifier {
       hostSeen = DateTime.now();
       useRemote = true;
       speechProvider = SpeechProvider.whisper;
+      // Connecting means using the host, for text too when it shares a model.
+      if (info['llmModel'] is String) hostLlm = true;
       await saveSettings();
       _scheduleHostProbes();
     } finally {

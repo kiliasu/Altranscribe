@@ -314,7 +314,7 @@ class _SharedHostState extends State<SharedHostDialog> {
           child: FilledButton.tonalIcon(
             onPressed: offerCode,
             icon: const Icon(AltIcons.refresh, size: 20),
-            label: Text(t('newPairingCode')),
+            label: Text(t('refreshCode')),
           ),
         )
       else ...[

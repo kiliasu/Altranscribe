@@ -87,6 +87,14 @@ void main() {
             .data,
         '${code!.substring(0, 3)} ${code.substring(3)}',
       );
+      // A code that ran out, or was used, is replaced from the same place.
+      host.devices.cancelPairing();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byKey(const Key('pairing-qr')), findsNothing);
+      await tester.tap(find.text('刷新'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(host.devices.pairingCode, isNotNull);
+      expect(find.byKey(const Key('pairing-qr')), findsOneWidget);
       await tester.tap(find.text('完成'));
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
@@ -97,7 +105,7 @@ void main() {
 
       // A client pairs by typing the code the host displayed.
       host.devices.beginPairing();
-      final client = controllerWithHost(null);
+      final client = controllerWithHost(null)..hostLlm = false;
       addTearDown(client.dispose);
       await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(AltranscribeApp(realtime: client));
@@ -139,11 +147,16 @@ void main() {
       expect(client.remoteConnection.name, 'Study PC');
       expect(client.hostStatus, HostStatus.online);
       expect(client.useRemote, isTrue);
+      // The host shares a text model, so connecting uses it as well.
+      expect(client.hostLlm, isTrue);
       expect(host.devices.devices.single.name, Platform.localHostname);
       expect(host.devices.devices.single.platform, 'windows');
       expect(find.textContaining('已配对并选用主机'), findsOneWidget);
       expect(find.text('Study PC'), findsWidgets);
-      expect(find.textContaining('在线'), findsWidgets);
+      // The host this device now uses is marked connected, and the pairing
+      // panel offers other hosts rather than this one again.
+      expect(find.text('已连接'), findsOneWidget);
+      expect(find.text('连接其他主机'), findsOneWidget);
 
       // The host lists the device and can remove it, which ends its access.
       await tester.pumpWidget(const SizedBox());

@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:altranscribe/app/app.dart';
+import 'package:altranscribe/data/repositories/record_store.dart';
+import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
+import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:altranscribe/features/settings/translation_settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,7 +65,7 @@ void main() {
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
       expect(find.byType(TranslationSettingsDialog), findsNothing);
-      expect(live.useRemoteLlm, isTrue);
+      expect(live.hostLlm, isTrue);
       expect(live.remoteLlmModel, 'other-model');
       expect(live.sessionLlmModel, 'other-model');
       expect(find.text('Remote · other-model'), findsOneWidget);
@@ -79,7 +84,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
-      expect(live.useRemoteLlm, isFalse);
+      expect(live.hostLlm, isFalse);
       expect(live.remoteLlm, isFalse);
       expect(live.remoteProcessing, isTrue, reason: 'speech stays on the host');
       expect(live.translator, same(live.localTranslator));
@@ -99,7 +104,7 @@ void main() {
       expect(find.byKey(const Key('provider-openAICompatible')), findsNothing);
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
-      expect(live.useRemoteLlm, isTrue);
+      expect(live.hostLlm, isTrue);
       expect(live.remoteLlmModel, 'other-model', reason: 'the choice is kept');
       expect(live.translator, same(live.remoteTranslator));
 
@@ -138,7 +143,9 @@ void main() {
       await tester.pumpAndSettle();
 
       live.useRemote = false;
-      live.remoteConnection.info = null;
+      live.remoteConnection
+        ..address = ''
+        ..info = null;
       await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(AltranscribeApp(realtime: live));
       await tester.pumpAndSettle();
@@ -153,4 +160,99 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+
+  testWidgets('a local engine can use the host\'s text model', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final live = fakeController()
+      ..speechProvider = SpeechProvider.nemotron
+      ..hostLlm = false;
+    live.remoteConnection
+      ..address = 'http://192.168.1.20:8178'
+      ..name = 'Study PC'
+      ..info = {
+        'llmProvider': 'ollama',
+        'llmModel': 'gemma-test',
+        'llmModels': ['gemma-test'],
+      };
+    addTearDown(live.dispose);
+    expect(live.remoteProcessing, isFalse);
+    expect(live.remoteLlm, isFalse);
+    await tester.pumpWidget(AltranscribeApp(realtime: live));
+    await tester.pumpAndSettle();
+
+    await openTranslation(tester);
+    expect(find.byKey(const Key('llm-source-own')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('llm-source-host')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(live.hostLlm, isTrue);
+    expect(live.remoteLlm, isTrue);
+    expect(live.remoteProcessing, isFalse, reason: 'speech stays here');
+    expect(live.engine, same(live.nemotronEngine));
+    expect(live.translator, same(live.remoteTranslator));
+    expect(live.recordSummarizer, same(live.remoteSummarizer));
+    expect(live.sessionLlmProvider, 'remote');
+    expect(find.text('Remote · gemma-test'), findsOneWidget);
+
+    // Forgetting the host returns the text work to the own service.
+    live.remoteConnection.address = '';
+    expect(live.remoteLlm, isFalse);
+    expect(live.translator, same(live.localTranslator));
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  test('older settings keep what the text model did before', () async {
+    final root = Directory('build/test-data');
+    await root.create(recursive: true);
+    Future<bool> hostLlmAfter(Map<String, Object?> settings) async {
+      final directory = await root.createTemp('llm-source-');
+      addTearDown(() => directory.delete(recursive: true));
+      final store = RecordStore(directory);
+      await store.initialize();
+      await store.saveSettings(settings);
+      final live = RealtimeController(
+        audio: FakeAudio(),
+        engine: FakeEngine(),
+        store: store,
+        translator: FakeTranslator(),
+        catalog: FakeModelCatalog(),
+      );
+      addTearDown(live.dispose);
+      await live.initialize();
+      return live.hostLlm;
+    }
+
+    // A host that recognized speech lent its text model, and still does.
+    expect(
+      await hostLlmAfter({'speechProvider': 'whisper', 'useRemote': true}),
+      isTrue,
+    );
+    expect(
+      await hostLlmAfter({
+        'speechProvider': 'whisper',
+        'useRemote': true,
+        'remoteLlm': false,
+      }),
+      isFalse,
+    );
+    // Other engines used this device's own service, and still do.
+    expect(
+      await hostLlmAfter({
+        'speechProvider': 'nemotron',
+        'useRemote': true,
+        'remoteLlm': true,
+      }),
+      isFalse,
+    );
+    expect(await hostLlmAfter({'speechProvider': 'openAI'}), isFalse);
+    // Once chosen, the source stays whatever the engine.
+    expect(
+      await hostLlmAfter({'speechProvider': 'nemotron', 'hostLlm': true}),
+      isTrue,
+    );
+  });
 }

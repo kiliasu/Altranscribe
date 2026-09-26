@@ -21,8 +21,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('nav-2')));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('连接主机'));
-      await tester.tap(find.text('连接主机'));
+      expect(find.text('连接主机'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('connect-manually')));
+      await tester.tap(find.byKey(const Key('connect-manually')));
       await tester.pumpAndSettle();
       expect(find.byType(RemoteConnectionDialog), findsOneWidget);
       expect(tester.takeException(), isNull);

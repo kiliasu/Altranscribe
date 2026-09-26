@@ -554,7 +554,7 @@ void main() {
     },
   );
 
-  test('network failure preserves finished text and cloud choice never uses remote services', () async {
+  test('network failure preserves finished text and cloud speech never runs on the host', () async {
     final host = SharedHost(engine: FakeEngine(), translator: FakeTranslator());
     await startHost(host);
     addTearDown(() async {
@@ -577,8 +577,11 @@ void main() {
     expect(live.records.single.status, 'error');
     live.speechProvider = SpeechProvider.openAI;
     expect(live.remoteProcessing, false);
-    expect(live.translator, same(live.localTranslator));
     expect(live.engine, same(live.localEngine));
+    // The text model follows its own choice, whatever recognizes speech.
+    expect(live.translator, same(live.remoteTranslator));
+    live.hostLlm = false;
+    expect(live.translator, same(live.localTranslator));
   });
 
   test(

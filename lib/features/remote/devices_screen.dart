@@ -28,6 +28,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
   List<DiscoveredHost>? nearby;
   bool searching = false;
   bool pairing = false;
+  bool checking = false;
   String? issue;
   RealtimeController get live => widget.live;
   bool get english => widget.english;
@@ -64,10 +65,26 @@ class _DevicesScreenState extends State<DevicesScreen> {
     try {
       final found = await live.findHosts();
       if (mounted) setState(() => nearby = found);
+      final id = live.remoteConnection.hostId;
+      if (id.isNotEmpty &&
+          found.any((host) => host.id == id) &&
+          !hostConnected) {
+        unawaited(recheck());
+      }
     } catch (_) {
       if (mounted) setState(() => nearby = []);
     } finally {
       if (mounted) setState(() => searching = false);
+    }
+  }
+
+  Future<void> recheck() async {
+    if (checking) return;
+    setState(() => checking = true);
+    try {
+      await live.probeHost();
+    } finally {
+      if (mounted) setState(() => checking = false);
     }
   }
 
@@ -154,19 +171,29 @@ class _DevicesScreenState extends State<DevicesScreen> {
     return english ? 'Seen ${elapsed.inDays} d ago' : '${elapsed.inDays} 天前在线';
   }
 
-  String statusText(HostStatus status) => t(switch (status) {
-    HostStatus.online => 'hostOnline',
-    HostStatus.busy => 'hostBusy',
-    HostStatus.offline => 'hostOffline',
-    HostStatus.unknown => 'hostUnknown',
-  });
+  bool get hostConnected =>
+      live.hostStatus == HostStatus.online ||
+      live.hostStatus == HostStatus.busy;
 
-  Color statusColor(ColorScheme colors, HostStatus status) => switch (status) {
-    HostStatus.online => colors.primary,
-    HostStatus.busy => colors.tertiary,
-    HostStatus.offline => colors.error,
-    HostStatus.unknown => colors.onSurfaceVariant,
-  };
+  /// Whether the saved host answered the last search on this network.
+  bool get hostNearby {
+    final id = live.remoteConnection.hostId;
+    return id.isNotEmpty && (nearby ?? const []).any((host) => host.id == id);
+  }
+
+  /// What the saved host does for this device.
+  String get hostRole {
+    final speech = live.remoteProcessing, text = live.remoteLlm;
+    return t(
+      speech && text
+          ? 'hostForBoth'
+          : speech
+          ? 'hostForSpeech'
+          : text
+          ? 'hostForText'
+          : 'hostUnused',
+    );
+  }
 
   Widget localCard(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -316,16 +343,158 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
   }
 
+  /// The host this device uses. While it answers, the card takes the colours
+  /// of this device's own card above, so the connected pair reads at a glance.
+  Widget hostCard(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final connection = live.remoteConnection;
+    final connected = hostConnected;
+    final foreground = connected
+        ? colors.onSecondaryContainer
+        : colors.onSurface;
+    final address =
+        Uri.tryParse(connection.address)?.authority ?? connection.address;
+    // Where a connected host was also found: on this network.
+    final place = hostNearby ? ' · ${t('sameNetwork')}' : '';
+    final (label, fill, ink) = switch (live.hostStatus) {
+      HostStatus.online => (
+        '${t('hostConnected')}$place',
+        colors.secondary,
+        colors.onSecondary,
+      ),
+      HostStatus.busy => (
+        '${t('hostConnected')} · ${t('hostBusy')}$place',
+        colors.secondary,
+        colors.onSecondary,
+      ),
+      HostStatus.offline => (
+        // After a restart the last sighting is unknown, not "never".
+        live.hostSeen == null
+            ? t('hostOffline')
+            : '${t('hostOffline')} · ${seenText(live.hostSeen)}',
+        colors.errorContainer,
+        colors.onErrorContainer,
+      ),
+      HostStatus.unknown => (
+        t('hostChecking'),
+        colors.surfaceContainerHighest,
+        colors.onSurfaceVariant,
+      ),
+    };
+    return pagePanel(
+      context,
+      Row(
+        children: [
+          AltBlob(
+            icon: AltIcons.desktopWindows,
+            background: connected
+                ? colors.secondary
+                : colors.surfaceContainerHighest,
+            foreground: connected
+                ? colors.onSecondary
+                : colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  connection.name.isEmpty ? address : connection.name,
+                  style: text.titleLarge?.copyWith(color: foreground),
+                ),
+                const SizedBox(height: 6),
+                DecoratedBox(
+                  key: const Key('host-status'),
+                  decoration: ShapeDecoration(
+                    color: fill,
+                    shape: const StadiumBorder(),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 3, 12, 3),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          connected
+                              ? Icons.check_circle_rounded
+                              : live.hostStatus == HostStatus.offline
+                              ? Icons.cloud_off_rounded
+                              : Icons.more_horiz_rounded,
+                          size: 16,
+                          color: ink,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            label,
+                            style: text.labelLarge?.copyWith(color: ink),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '$address\n$hostRole',
+                  style: text.bodyMedium?.copyWith(color: foreground),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                key: const Key('forget-host'),
+                tooltip: t('forgetHost'),
+                color: foreground,
+                onPressed: live.active ? null : forget,
+                icon: const Icon(Icons.link_off_rounded),
+              ),
+              if (!connected)
+                IconButton(
+                  key: const Key('recheck-host'),
+                  tooltip: t('recheckHost'),
+                  color: foreground,
+                  onPressed: checking ? null : recheck,
+                  icon: const Icon(AltIcons.refresh),
+                ),
+            ],
+          ),
+        ],
+      ),
+      radius: 28,
+      padding: const EdgeInsets.fromLTRB(24, 24, 12, 24),
+      color: connected ? colors.secondaryContainer : null,
+    );
+  }
+
+  /// Ways to reach a host: scan its code, type its address, or pick it from
+  /// the hosts answering on this network. The saved host is not listed again.
   Widget connectPanel(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final found = nearby;
+    final saved = live.remoteConnection.hostId;
+    final others = nearby
+        ?.where((host) => saved.isEmpty || host.id != saved)
+        .toList();
     return pagePanel(
       context,
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(t('connectNetwork'), style: text.titleMedium),
+          Text(
+            t(
+              live.remoteConnection.address.isEmpty
+                  ? 'connectHost'
+                  : 'otherHost',
+            ),
+            style: text.titleMedium,
+          ),
           const SizedBox(height: 18),
           Icon(AltIcons.devices, size: 40, color: colors.onSurfaceVariant),
           const SizedBox(height: 10),
@@ -334,35 +503,46 @@ class _DevicesScreenState extends State<DevicesScreen> {
             style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (MobilePlatform.android)
-                FilledButton.tonalIcon(
-                  key: const Key('scan-to-pair'),
-                  onPressed: pairing ? null : scan,
-                  icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
-                  label: Text(t('scanToPair')),
+          const SizedBox(height: 16),
+          // Two actions of one size on one line, so neither sits higher.
+          if (MobilePlatform.android)
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    key: const Key('scan-to-pair'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    onPressed: pairing ? null : scan,
+                    icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                    label: Text(t('scanToPair')),
+                  ),
                 ),
-              if (MobilePlatform.android)
-                TextButton.icon(
-                  key: const Key('connect-manually'),
-                  onPressed: pairing ? null : () => manual(),
-                  icon: const Icon(AltIcons.radar, size: 20),
-                  label: Text(t('remoteButton')),
-                )
-              else
-                FilledButton.tonalIcon(
-                  key: const Key('connect-manually'),
-                  onPressed: () => manual(),
-                  icon: const Icon(AltIcons.radar, size: 20),
-                  label: Text(t('connectHost')),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const Key('connect-manually'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    onPressed: pairing ? null : () => manual(),
+                    icon: const Icon(AltIcons.radar, size: 20),
+                    label: Text(t('remoteButton')),
+                  ),
                 ),
-            ],
-          ),
+              ],
+            )
+          else
+            Center(
+              child: FilledButton.tonalIcon(
+                key: const Key('connect-manually'),
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+                onPressed: () => manual(),
+                icon: const Icon(AltIcons.radar, size: 20),
+                label: Text(t('remoteButton')),
+              ),
+            ),
           if (pairing) ...[
             const SizedBox(height: 12),
             const LinearProgressIndicator(),
@@ -388,9 +568,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
             ],
           ),
           if (searching) const LinearProgressIndicator(),
-          if (found != null && found.isEmpty && !searching)
-            pageHint(context, t('noHostsFound')),
-          for (final host in found ?? const <DiscoveredHost>[])
+          if (others != null && others.isEmpty && !searching)
+            pageHint(
+              context,
+              t(nearby!.isEmpty ? 'noHostsFound' : 'noOtherHosts'),
+            ),
+          for (final host in others ?? const <DiscoveredHost>[])
             ListTile(
               key: ValueKey('nearby-${host.id}'),
               contentPadding: EdgeInsets.zero,
@@ -402,66 +585,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
               subtitle: Text(
                 '${host.address} · ${t(host.busy ? 'hostBusy' : 'hostOnline')}',
               ),
-              trailing: host.id == live.remoteConnection.hostId
-                  ? Text(
-                      t('pairedLabel'),
-                      style: text.labelLarge?.copyWith(color: colors.primary),
-                    )
-                  : FilledButton.tonal(
-                      onPressed: pairing ? null : () => manual(host.address),
-                      child: Text(t('pairAction')),
-                    ),
+              trailing: FilledButton.tonal(
+                onPressed: pairing ? null : () => manual(host.address),
+                child: Text(t('pairAction')),
+              ),
             ),
         ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-    );
-  }
-
-  Widget savedPanel(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-    final connection = live.remoteConnection;
-    final saved = connection.address.isNotEmpty;
-    return pagePanel(
-      context,
-      pageStack([
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Text(t('savedRemote'), style: text.titleMedium),
-        ),
-        ListTile(
-          key: const Key('saved-host'),
-          minTileHeight: 88,
-          contentPadding: const EdgeInsets.only(left: 16, right: 8),
-          leading: Icon(
-            saved ? AltIcons.desktopWindows : AltIcons.addLink,
-            color: saved
-                ? statusColor(colors, live.hostStatus)
-                : colors.onSurfaceVariant,
-          ),
-          title: Text(
-            connection.name.isEmpty ? t('remoteButton') : connection.name,
-          ),
-          subtitle: Text(
-            !saved
-                ? t('noRemote')
-                : '${connection.address}\n'
-                      '${statusText(live.hostStatus)} · ${seenText(live.hostSeen)} · '
-                      '${t(live.remoteProcessing ? 'remoteSelected' : 'remoteSaved')}',
-          ),
-          isThreeLine: saved,
-          trailing: saved
-              ? IconButton(
-                  key: const Key('forget-host'),
-                  tooltip: t('forgetHost'),
-                  onPressed: live.active ? null : forget,
-                  icon: const Icon(Icons.link_off_rounded),
-                )
-              : const Icon(AltIcons.chevronRight),
-          onTap: () => manual(),
-        ),
-      ], gap: 0),
     );
   }
 
@@ -470,6 +601,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
     pageHint(context, t('devicesSubtitle')),
     localCard(context),
     if (live.localInferenceAllowed) pairedPanel(context),
-    pageColumns(context, connectPanel(context), savedPanel(context)),
+    if (live.remoteConnection.address.isNotEmpty) hostCard(context),
+    connectPanel(context),
   ]);
 }

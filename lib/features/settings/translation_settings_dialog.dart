@@ -23,13 +23,13 @@ class _TranslationSettingsState
     extends SettingsDialogState<TranslationSettingsDialog> {
   late LlmProvider provider = controller.llmProvider;
 
-  /// While a host recognizes speech, its shared text model is the default and
-  /// the user's own service is an explicit alternative.
-  late bool fromHost = controller.useRemoteLlm;
+  /// With a host saved, its shared text model and the user's own service
+  /// are the two sources, whichever engine recognizes speech.
+  late bool fromHost = controller.hostLlm;
 
   /// One of the host's listed models; empty follows the host's default.
   late String hostModel = controller.remoteLlmModel;
-  bool get hostMode => controller.remoteProcessing;
+  bool get hostMode => controller.remoteConnection.address.isNotEmpty;
   bool get usingHost => hostMode && fromHost;
   // Phones can still reach online OpenAI-compatible services over HTTPS.
   List<LlmProvider> get providers => LlmProvider.values
@@ -304,7 +304,7 @@ class _TranslationSettingsState
           !controller.hostLlmModels.contains(hostModel)) {
         throw const FormatException('remoteLlmModelMissing');
       }
-      controller.useRemoteLlm = true;
+      controller.hostLlm = true;
       controller.remoteLlmModel = hostModel;
       await controller.saveSettings();
       return;
@@ -316,7 +316,7 @@ class _TranslationSettingsState
     if (!currentModels.contains(selected)) {
       throw const FormatException('translationModelMissing');
     }
-    controller.useRemoteLlm = fromHost;
+    controller.hostLlm = fromHost;
     controller.llmProvider = provider;
     controller.translationAddress = address.text.trim();
     controller.translationModel = selected;
