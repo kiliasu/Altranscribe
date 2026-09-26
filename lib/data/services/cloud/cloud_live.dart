@@ -478,6 +478,9 @@ class CloudLive {
           if (input != null || output != null) _continuous();
         } else {
           if (interim != null) {
+            // The server heard speech it has not finished, however quiet it
+            // was here: a stop waits for its final text.
+            if (interim.trim().isNotEmpty) _awaitingOutput = true;
             _emit(
               '$_sequence',
               interim,

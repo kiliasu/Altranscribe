@@ -67,11 +67,11 @@ class SocketFixture {
 
 void send(WebSocket socket, Map<String, Object?> event) =>
     socket.add(jsonEncode(event));
-Uint8List voice(int samples) {
+Uint8List voice(int samples, {int level = 3000}) {
   final pcm = Uint8List(samples * 2);
   final data = ByteData.sublistView(pcm);
   for (var i = 0; i < samples; i++) {
-    data.setInt16(i * 2, 3000, Endian.little);
+    data.setInt16(i * 2, level, Endian.little);
   }
   return pcm;
 }
@@ -450,6 +450,106 @@ void main() {
       expect(texts.last.finalized, isTrue);
     },
   );
+
+  test(
+    'Gemini waits for the final text of quiet speech the server heard',
+    () async {
+      var audio = 0;
+      final fixture = await SocketFixture.start((socket, event) {
+        if (event.containsKey('setup')) {
+          send(socket, {'setupComplete': {}});
+        } else if (event['realtimeInput']?['audio'] != null) {
+          if (++audio == 1) {
+            send(socket, {
+              'serverContent': {
+                'inputTranscription': {'text': 'First.'},
+              },
+            });
+            send(socket, {
+              'serverContent': {'generationComplete': true},
+            });
+          } else {
+            send(socket, {
+              'serverContent': {
+                'interimInputTranscription': {'text': 'the last'},
+              },
+            });
+          }
+        } else if (event['realtimeInput']?['audioStreamEnd'] == true) {
+          send(socket, {
+            'serverContent': {
+              'inputTranscription': {'text': 'The last words.'},
+            },
+          });
+          send(socket, {
+            'serverContent': {'generationComplete': true},
+          });
+        }
+      });
+      final texts = <CloudLiveText>[];
+      Future<void> heard(String text) async {
+        for (var i = 0; i < 400 && texts.every((e) => e.text != text); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(texts.map((e) => e.text), contains(text));
+      }
+
+      final live = CloudLive(
+        credentials: MemoryCredentials(),
+        provider: SpeechProvider.gemini,
+        directTranslation: false,
+        source: 'microphone',
+        language: 'en',
+        targetLanguage: null,
+        connect: fixture.connect,
+        onText: texts.add,
+        onError: (error) => fail(error),
+      );
+      await live.start();
+      live.add(voice(1600), 0, 100);
+      await heard('First.');
+      // Too quiet for the local voice level, yet the server hears words.
+      live.add(voice(1600, level: 40), 100, 200);
+      await heard('the last');
+      await live.finish();
+      expect(texts.map((e) => e.text).toList(), [
+        'First.',
+        'the last',
+        'The last words.',
+      ]);
+      expect(texts.last.finalized, isTrue);
+      expect(texts.last.id, texts[1].id);
+    },
+  );
+
+  test('Gemini stops at once after audio the server never heard', () async {
+    var ended = false;
+    final fixture = await SocketFixture.start((socket, event) {
+      if (event.containsKey('setup')) send(socket, {'setupComplete': {}});
+      // Nothing was said, so the stream's end brings no completion.
+      if (event['realtimeInput']?['audioStreamEnd'] == true) ended = true;
+    });
+    final live = CloudLive(
+      credentials: MemoryCredentials(),
+      provider: SpeechProvider.gemini,
+      directTranslation: false,
+      source: 'microphone',
+      language: 'en',
+      targetLanguage: null,
+      connect: fixture.connect,
+      onText: (e) => fail('unexpected text ${e.text}'),
+      onError: (error) => fail(error),
+    );
+    await live.start();
+    live.add(voice(1600, level: 40), 0, 100);
+    final clock = Stopwatch()..start();
+    await live.finish();
+    expect(clock.elapsed, lessThan(const Duration(seconds: 2)));
+    for (var i = 0; i < 200 && !ended; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(ended, isTrue);
+  });
 
   test(
     'OpenAI direct translation keeps timed bilingual windows and late text',
