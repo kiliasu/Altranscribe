@@ -10,6 +10,7 @@ import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
+import 'package:altranscribe/data/services/remote/paired_devices.dart';
 import 'package:altranscribe/data/services/remote/remote_protocol.dart';
 import 'package:altranscribe/data/services/remote/remote_services.dart';
 import 'package:altranscribe/data/services/remote/shared_host.dart';
@@ -138,6 +139,22 @@ void main() {
     expect(jsonDecode(info.$2)['busy'], false);
     expect(jsonDecode(info.$2)['device'], 'Test client');
     expect(jsonDecode(info.$2)['llmModels'], ['test-llm', 'test-model']);
+    // The challenge proves the host holds a device's credential without
+    // revealing it; only well-formed nonces are answered.
+    final nonce = 'ab' * 16;
+    final challenge = await request('challenge?nonce=$nonce');
+    expect(challenge.$1, 200);
+    expect(jsonDecode(challenge.$2)['hostId'], host.devices.hostId);
+    expect(
+      jsonDecode(challenge.$2)['proofs'],
+      contains(PairedDevices.proof(PairedDevices.hash(token), nonce)),
+    );
+    expect(challenge.$2, isNot(contains(token)));
+    expect((await request('challenge?nonce=short')).$1, 400);
+    expect(
+      (await request('challenge?nonce=$nonce', origin: 'https://x.test')).$1,
+      401,
+    );
     expect(host.devices.devices.single.lastSeen, isNotNull);
     expect(
       (await request(
@@ -216,6 +233,83 @@ void main() {
     );
     expect(result['token'], isA<String>());
     expect(host.devices.devices.last.name, 'Laptop');
+  });
+
+  test('a client that knows the host identity sends its credential only to a host that proves it', () async {
+    final host = SharedHost(engine: FakeEngine(), translator: FakeTranslator());
+    await startHost(host);
+    addTearDown(() async {
+      await host.stop();
+      host.dispose();
+    });
+    final token = await pairedToken(host);
+    final genuine = RemoteClient(
+      RemoteConnection(
+        address: host.address,
+        token: token,
+        hostId: host.devices.hostId,
+      ),
+    );
+    addTearDown(genuine.close);
+    expect((await genuine.connect())['hostId'], host.devices.hostId);
+
+    // An impostor on the network advertises the same identity but cannot
+    // answer the challenge; it must never see the token.
+    final headers = <String?>[];
+    final impostor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => impostor.close(force: true));
+    var answerChallenge = true;
+    impostor.listen((request) async {
+      headers.add(request.headers.value(HttpHeaders.authorizationHeader));
+      request.response.headers.contentType = ContentType.json;
+      if (request.uri.path == '/v1/challenge' && answerChallenge) {
+        request.response.write(
+          jsonEncode({
+            'hostId': host.devices.hostId,
+            'proofs': ['00' * 32],
+          }),
+        );
+      } else if (request.uri.path == '/v1/info') {
+        request.response.write(jsonEncode(host.info));
+      } else {
+        request.response.statusCode = 401;
+      }
+      await request.response.close();
+    });
+    for (final legacyAnswer in [false, true]) {
+      answerChallenge = !legacyAnswer;
+      final fooled = RemoteClient(
+        RemoteConnection(
+          address: 'http://127.0.0.1:${impostor.port}',
+          token: token,
+          hostId: host.devices.hostId,
+        ),
+      );
+      await expectLater(
+        fooled.connect(),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            'remoteUnverified',
+          ),
+        ),
+      );
+      fooled.close();
+    }
+    expect(headers, isNotEmpty);
+    expect(headers.every((value) => value == null), isTrue);
+
+    // A controller following discovery keeps its saved address when the
+    // host at the new one fails the challenge.
+    final live = fakeController()..useRemote = true;
+    addTearDown(live.dispose);
+    live.remoteConnection
+      ..address = host.address
+      ..token = token
+      ..hostId = host.devices.hostId;
+    await live.probeHost(discover: false);
+    expect(live.hostStatus, HostStatus.online);
   });
 
   test('real HTTP client routes speech, translation/context, summary and cleanup to local host only', () async {

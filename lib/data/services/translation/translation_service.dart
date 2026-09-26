@@ -181,8 +181,14 @@ class LocalLlmService implements TranslationService {
     LlmProvider provider = LlmProvider.ollama,
   }) async {
     if (provider.isCloud) {
-      final api = cloudApi;
-      if (api == null) throw StateError('cloudKeyMissing');
+      final shared = cloudApi;
+      if (shared == null) throw StateError('cloudKeyMissing');
+      // A separate connection: listing models must never close the client
+      // that a running session is translating through.
+      final api = CloudApi(
+        shared.credentials,
+        clientFactory: shared.clientFactory,
+      );
       try {
         return (await api.models(provider.cloud))
             .where(

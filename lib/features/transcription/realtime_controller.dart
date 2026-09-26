@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
 import 'package:altranscribe/data/services/files/android_audio_decoder.dart';
+import 'package:altranscribe/shared/platform/environment.dart';
 import 'package:altranscribe/shared/platform/mobile_platform.dart';
 import 'package:altranscribe/data/services/files/file_transcriber.dart';
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
@@ -102,7 +103,11 @@ class RealtimeController extends ChangeNotifier {
       _providedHost ??
       SharedHost(
         engine: WhisperService(audio),
-        translator: LocalLlmService(),
+        // Shared services read the saved compatible-service key, as local
+        // translation does.
+        translator: LocalLlmService(cloudApi: CloudApi(credentials)),
+        createTranslator: () =>
+            LocalLlmService(cloudApi: CloudApi(credentials)),
         // Phones never host, so their registry stays in memory.
         devices: PairedDevices(
           file: MobilePlatform.android
@@ -492,8 +497,9 @@ class RealtimeController extends ChangeNotifier {
     }
   }
 
-  /// One health check of the saved host. A host that moved to another
-  /// address is found again by identity through discovery.
+  /// One health check of the saved host. When it is silent, discovery may
+  /// offer a new address for the same identity; that address is adopted only
+  /// after the host there proves it holds this device's credential.
   Future<void> probeHost({bool discover = true}) async {
     if (_probingHost ||
         _disposed ||
@@ -502,53 +508,66 @@ class RealtimeController extends ChangeNotifier {
       return;
     }
     _probingHost = true;
-    var moved = false;
-    var renamed = false;
+    var changed = false;
     try {
-      final client = RemoteClient(
-        RemoteConnection(
-          address: remoteConnection.address,
-          token: remoteConnection.token,
-          name: remoteConnection.name,
-          hostId: remoteConnection.hostId,
-        ),
-      );
-      try {
-        final info = await client.connect();
-        remoteConnection.info = info;
-        if (info['hostId'] is String) {
-          remoteConnection.hostId = info['hostId'] as String;
-        }
-        // The host owns its name; a rename on its sharing panel shows up here.
-        final reported = (info['name'] as String? ?? '').trim();
-        if (reported.isNotEmpty && reported != remoteConnection.name) {
-          remoteConnection.name = reported;
-          renamed = true;
-        }
-        hostStatus = info['busy'] == true ? HostStatus.busy : HostStatus.online;
-        hostSeen = DateTime.now();
-      } finally {
-        client.close();
-      }
+      changed = await _probeAddress(remoteConnection.address);
     } catch (_) {
       hostStatus = HostStatus.offline;
       if (discover && remoteConnection.hostId.isNotEmpty) {
         final found = await _findSavedHost();
         if (found != null && found.address != remoteConnection.address) {
-          AppLog.instance.info(
-            'remote',
-            'Host ${remoteConnection.name} answered from ${found.address}',
-          );
-          remoteConnection.address = found.address;
-          moved = true;
+          try {
+            await _probeAddress(found.address);
+            remoteConnection.address = found.address;
+            changed = true;
+            AppLog.instance.info(
+              'remote',
+              'Host ${remoteConnection.name} answered from ${found.address}',
+            );
+          } catch (e) {
+            AppLog.instance.warn(
+              'remote',
+              'Ignored ${found.address}, which claims to be the saved host: $e',
+            );
+          }
         }
       }
     } finally {
       _probingHost = false;
     }
-    if (moved || renamed) await saveSettings();
-    if (moved) return probeHost(discover: false);
+    if (changed) await saveSettings();
     _notify();
+  }
+
+  /// Connects with the saved credential and records what the host reported;
+  /// true when the saved name changed.
+  Future<bool> _probeAddress(String address) async {
+    final client = RemoteClient(
+      RemoteConnection(
+        address: address,
+        token: remoteConnection.token,
+        name: remoteConnection.name,
+        hostId: remoteConnection.hostId,
+      ),
+    );
+    try {
+      final info = await client.connect();
+      remoteConnection.info = info;
+      if (info['hostId'] is String) {
+        remoteConnection.hostId = info['hostId'] as String;
+      }
+      hostStatus = info['busy'] == true ? HostStatus.busy : HostStatus.online;
+      hostSeen = DateTime.now();
+      // The host owns its name; a rename on its sharing panel shows up here.
+      final reported = (info['name'] as String? ?? '').trim();
+      if (reported.isNotEmpty && reported != remoteConnection.name) {
+        remoteConnection.name = reported;
+        return true;
+      }
+      return false;
+    } finally {
+      client.close();
+    }
   }
 
   Future<DiscoveredHost?> _findSavedHost() async {
@@ -675,20 +694,25 @@ class RealtimeController extends ChangeNotifier {
     final address = _llmAddress;
     final modelName = _llmModel;
     final provider = llmProvider;
+    // Pinned for the whole task: a settings change made meanwhile must not
+    // swap the service or its labels under it.
+    final summarizer = recordSummarizer;
+    final providerLabel = sessionLlmProvider;
+    final modelLabel = sessionLlmModel;
     updated.summaryStatus = 'pending';
     updated.summaryError = null;
     updated.summaryLanguage = language;
-    updated.summaryProvider = sessionLlmProvider;
-    updated.summaryModel = sessionLlmModel;
+    updated.summaryProvider = providerLabel;
+    updated.summaryModel = modelLabel;
     updatingRecordId = id;
     _notify();
     try {
       await _saveRecordEdit(updated.copy());
       try {
-        await recordSummarizer.prepare(address, modelName, provider: provider);
-        updated.summaryProvider = sessionLlmProvider;
-        updated.summaryModel = sessionLlmModel;
-        final result = await recordSummarizer.summarize(
+        await summarizer.prepare(address, modelName, provider: provider);
+        updated.summaryProvider = providerLabel;
+        updated.summaryModel = modelLabel;
+        final result = await summarizer.summarize(
           updated.lines.map((line) => line.displayText).toList(),
           language,
         );
@@ -711,7 +735,7 @@ class RealtimeController extends ChangeNotifier {
       }
       await _saveRecordEdit(updated);
     } finally {
-      recordSummarizer.stop();
+      summarizer.stop();
       updatingRecordId = null;
       _notify();
     }
@@ -1567,10 +1591,4 @@ class RealtimeController extends ChangeNotifier {
     unawaited(stop());
     super.dispose();
   }
-}
-
-/// Overrides from the environment; an empty value counts as unset.
-String? environmentValue(String name) {
-  final value = Platform.environment[name];
-  return value == null || value.isEmpty ? null : value;
 }

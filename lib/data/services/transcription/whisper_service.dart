@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'package:altranscribe/shared/platform/environment.dart';
 import 'package:altranscribe/data/services/audio/audio_service.dart';
 import 'package:altranscribe/data/services/transcription/chinese_script.dart';
 
@@ -45,8 +46,7 @@ class WhisperService implements SpeechEngine {
       data.lengthInBytes,
     );
     final folder = Directory(
-      Platform.environment['ALTRANSCRIBE_MODELS_DIR'] ??
-          '${directory.path}/models',
+      environmentValue('ALTRANSCRIBE_MODELS_DIR') ?? '${directory.path}/models',
     );
     await folder.create(recursive: true);
     final file = File('${folder.path}/ggml-silero-v5.1.2.bin');
@@ -123,7 +123,7 @@ class WhisperService implements SpeechEngine {
     backend = 'whisper.cpp';
     gpuActive = false;
     final cudaCache = Directory(
-      Platform.environment['CUDA_CACHE_PATH'] ?? '${directory.path}/cuda-cache',
+      environmentValue('CUDA_CACHE_PATH') ?? '${directory.path}/cuda-cache',
     );
     await cudaCache.create(recursive: true);
     final vadModel = await _prepareVad(directory);

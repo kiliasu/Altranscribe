@@ -32,6 +32,16 @@ ExportLabels exportLabels(bool english) {
   );
 }
 
+/// The largest media file an export will embed. A phone also has to hold the
+/// base64 text and the page, so it stops well below what a desktop can.
+int get embedLimit => MobilePlatform.android ? 64 << 20 : 256 << 20;
+
+/// Reads [file] only when its size is within [limit].
+Future<Uint8List> readWithin(File file, int limit) async {
+  if (await file.length() > limit) throw const FormatException('fileTooLarge');
+  return file.readAsBytes();
+}
+
 /// Reveals the record's source file: Explorer on Windows, a viewer on Android.
 Future<void> openRecordFile(
   BuildContext context,
@@ -88,11 +98,8 @@ Future<String?> exportRecord(
           source = Uri.file(input, windows: Platform.isWindows).toString();
         } else {
           final bytes = MobilePlatform.android
-              ? await MobilePlatform.readDocument(input)
-              : await File(input).readAsBytes();
-          if (bytes.length > 256 * 1024 * 1024) {
-            throw const FormatException('fileTooLarge');
-          }
+              ? await MobilePlatform.readDocument(input, limit: embedLimit)
+              : await readWithin(File(input), embedLimit);
           source = TranscriptExporter.dataUri(bytes, mime);
         }
       }

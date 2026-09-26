@@ -59,7 +59,7 @@ class AppRuntime private constructor(val context: Context) {
                     it.saveDocument(call.argument<String>("name")!!, call.argument<String>("mime")!!, call.argument<ByteArray>("bytes")!!, result)
                 }
                 "openDocument" -> withActivity(result) { it.openDocument(call.argument<String>("uri")!!, result) }
-                "readDocument" -> async(result) { readDocument(call.argument<String>("uri")!!) }
+                "readDocument" -> async(result) { readDocument(call.argument<String>("uri")!!, call.argument<Int>("limit") ?: 64 * 1024 * 1024) }
                 "shareFile" -> withActivity(result) { it.shareFile(call.argument<String>("path")!!, call.argument<String>("mime")!!, result) }
                 "scanQr" -> withActivity(result) { it.scanQr(call.argument<String>("hint") ?: "", result) }
                 "backgroundWork" -> {
@@ -105,14 +105,28 @@ class AppRuntime private constructor(val context: Context) {
         engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
     }
 
-    /** Whole-file read of a picked document; exports embed it, so keep a sane ceiling. */
-    private fun readDocument(uri: String): ByteArray {
+    /** Reads a picked document up to [limit] bytes; exports embed it, so the ceiling matters. */
+    private fun readDocument(uri: String, limit: Int): ByteArray {
         val target = android.net.Uri.parse(uri).buildUpon().fragment(null).build()
+        // A declared size lets an oversized file fail before any of it is read.
+        context.contentResolver.openAssetFileDescriptor(target, "r")?.use { descriptor ->
+            val declared = descriptor.length
+            if (declared != android.content.res.AssetFileDescriptor.UNKNOWN_LENGTH && declared > limit) throw IllegalStateException("fileTooLarge")
+        }
         val stream = context.contentResolver.openInputStream(target) ?: throw java.io.FileNotFoundException(uri)
         return stream.use { input ->
-            val bytes = input.readBytes()
-            check(bytes.size <= 256 * 1024 * 1024) { "fileTooLarge" }
-            bytes
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                total += read
+                // Streams of unknown length stop as soon as they pass the ceiling.
+                if (total > limit) throw IllegalStateException("fileTooLarge")
+                output.write(buffer, 0, read)
+            }
+            output.toByteArray()
         }
     }
 

@@ -48,6 +48,10 @@ class _TranslationSettingsState
   bool connected = false;
   @override
   String get title => 'translationSettings';
+
+  /// A running summary task keeps its service; changing sources must wait.
+  @override
+  bool get canSave => editable && controller.updatingRecordId == null;
   @override
   void dispose() {
     address.dispose();

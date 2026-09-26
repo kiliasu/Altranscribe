@@ -199,6 +199,19 @@ class SharedHost extends ChangeNotifier {
     );
   }
 
+  /// Answers a client's nonce with one keyed hash per paired device, so the
+  /// client can confirm this host holds its credential before sending it.
+  void _challenge(HttpRequest request, HttpResponse response) {
+    final nonce = request.uri.queryParameters['nonce'] ?? '';
+    if (!PairedDevices.noncePattern.hasMatch(nonce)) {
+      response.statusCode = 400;
+      return;
+    }
+    response.write(
+      jsonEncode({'hostId': devices.hostId, 'proofs': devices.proofs(nonce)}),
+    );
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
     response.persistentConnection = false;
@@ -208,8 +221,15 @@ class SharedHost extends ChangeNotifier {
       final browser = request.headers.value('origin') != null;
       final pairing =
           request.method == 'POST' && request.uri.path == '/v1/pair';
-      final device = browser || pairing ? null : _authorized(request);
-      if (pairing && !browser && _privatePeer(request)) {
+      final challenge =
+          request.method == 'GET' && request.uri.path == '/v1/challenge';
+      final open = !browser && (pairing || challenge) && _privatePeer(request);
+      final device = browser || pairing || challenge
+          ? null
+          : _authorized(request);
+      if (open && challenge) {
+        _challenge(request, response);
+      } else if (open && pairing) {
         await _pair(request, response);
       } else if (device == null) {
         response.statusCode = 401;

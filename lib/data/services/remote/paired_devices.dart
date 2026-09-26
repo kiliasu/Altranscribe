@@ -206,6 +206,20 @@ class PairedDevices extends ChangeNotifier {
   static String hash(String token) =>
       sha256.convert(utf8.encode(token)).toString();
 
+  /// Hex nonces of 16 to 32 bytes, as clients send them.
+  static final noncePattern = RegExp(r'^[0-9a-f]{32,64}$');
+
+  /// Proves this host holds its devices' credentials without revealing them:
+  /// one keyed hash per device over the caller's nonce. A client checks for
+  /// the proof of its own token before sending that token anywhere.
+  List<String> proofs(String nonce) => [
+    for (final device in devices) proof(device.tokenHash, nonce),
+  ];
+  static String proof(String tokenHash, String nonce) => Hmac(
+    sha256,
+    utf8.encode(tokenHash),
+  ).convert(utf8.encode(nonce)).toString();
+
   static String randomToken(int bytes) {
     final random = Random.secure();
     return base64UrlEncode(List.generate(bytes, (_) => random.nextInt(256)))

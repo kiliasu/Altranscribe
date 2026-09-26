@@ -19,7 +19,7 @@ The client does not need Whisper or model weights. Windows file transcription st
 ## Status and discovery
 
 - The **Devices** page shows whether the saved host is online, busy, or offline, checked every twenty seconds while the page is open. The host shows when each paired device was last seen.
-- Hosts answer discovery requests on UDP port 47653 from devices on the same network. If the saved host later answers from a different address, for example after a DHCP change, the client updates the address by itself. Discovery does not cross networks; over Tailscale, connect by address.
+- Hosts answer discovery requests on UDP port 47653 from devices on the same network. If the saved host later answers from a different address, for example after a DHCP change, the client updates the address by itself, but only after the host there has proved it holds this device's credential: the client sends a random challenge and expects a keyed hash that only the real host can compute, so the credential is never sent to an unverified address. Discovery does not cross networks; over Tailscale, connect by address.
 - Windows Firewall must allow the app's inbound connections: the sharing port over TCP and port 47653 over UDP. Windows normally asks once when sharing first starts; the app does not change firewall rules.
 
 ## Sharing and networking

@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
+
+import 'paired_devices.dart';
 
 // Only LAN, Tailscale's CGNAT space, and loopback for same-machine testing.
 bool privateAddress(InternetAddress address) {
@@ -153,8 +156,11 @@ class RemoteClient {
       throw const FormatException('remoteUnauthorized');
     }
     await _open();
-    _token = connection.token.trim();
     try {
+      // A host known by identity must first prove it holds this device's
+      // credential, so nothing at a discovered or reused address can collect it.
+      if (connection.hostId.isNotEmpty) await _verifyHost();
+      _token = connection.token.trim();
       final info = await request('info', timeout: const Duration(seconds: 10));
       if (info['protocol'] != 1 ||
           info['speechProvider'] != 'whisper' ||
@@ -172,6 +178,31 @@ class RemoteClient {
     } catch (_) {
       close();
       rethrow;
+    }
+  }
+
+  /// Sends a fresh nonce and expects, among the host's answers, the keyed hash
+  /// only a holder of this device's credential can produce.
+  Future<void> _verifyHost() async {
+    final random = Random.secure();
+    final nonce = List.generate(
+      32,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    final answer = await request(
+      'challenge',
+      query: {'nonce': nonce},
+      timeout: const Duration(seconds: 10),
+    );
+    final expected = PairedDevices.proof(
+      PairedDevices.hash(connection.token.trim()),
+      nonce,
+    );
+    final proofs = answer['proofs'];
+    if (answer['hostId'] != connection.hostId ||
+        proofs is! List ||
+        !proofs.contains(expected)) {
+      throw const FormatException('remoteUnverified');
     }
   }
 
@@ -206,6 +237,7 @@ class RemoteClient {
     Map<String, Object?>? json,
     Uint8List? wave,
     String? language,
+    Map<String, String>? query,
     Duration timeout = const Duration(minutes: 10),
   }) async {
     final client = _client;
@@ -216,10 +248,11 @@ class RemoteClient {
     try {
       request = await client
           .openUrl(
-            operation == 'info' ? 'GET' : 'POST',
+            operation == 'info' || operation == 'challenge' ? 'GET' : 'POST',
             _base!.replace(
               path: '/v1/$operation',
-              queryParameters: language == null ? null : {'language': language},
+              queryParameters:
+                  query ?? (language == null ? null : {'language': language}),
             ),
           )
           .timeout(const Duration(seconds: 10));
@@ -238,6 +271,7 @@ class RemoteClient {
         throw FormatException(switch (response.statusCode) {
           // Hosts before 0.6.2 answer every unauthenticated request with 401.
           401 when operation == 'pair' => 'pairingUnsupported',
+          401 || 404 when operation == 'challenge' => 'remoteUnverified',
           401 => 'remoteUnauthorized',
           403 when operation == 'pair' => 'pairingCodeInvalid',
           429 => 'remoteBusy',

@@ -53,9 +53,16 @@ class MobilePlatform {
   static Future<void> openDocument(String uri) =>
       channel.invokeMethod<void>('openDocument', {'uri': uri});
 
-  /// Reads a stored document URI, for embedding media in an export.
-  static Future<Uint8List> readDocument(String uri) async =>
-      await channel.invokeMethod<Uint8List>('readDocument', {'uri': uri}) ??
+  /// Reads a stored document URI for embedding in an export; the platform
+  /// side stops at [limit] bytes instead of loading a huge file first.
+  static Future<Uint8List> readDocument(
+    String uri, {
+    required int limit,
+  }) async =>
+      await channel.invokeMethod<Uint8List>('readDocument', {
+        'uri': uri,
+        'limit': limit,
+      }) ??
       Uint8List(0);
 
   /// Offers a file from the app's own folders through the share sheet.

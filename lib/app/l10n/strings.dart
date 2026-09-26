@@ -847,4 +847,8 @@ const strings = <String, List<String>>{
     "客户端默认使用这个模型，也可以改选该服务上的其他模型。",
     "Clients use this model by default and may switch to any other model the service lists.",
   ],
+  "remoteUnverified": [
+    "主机没有通过身份验证，已停止连接，凭据没有发送出去。",
+    "The host failed identity verification, so the connection stopped and no credential was sent.",
+  ],
 };

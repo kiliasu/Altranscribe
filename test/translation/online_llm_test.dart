@@ -4,7 +4,12 @@ import 'dart:io';
 import 'package:altranscribe/data/services/cloud/cloud_api.dart';
 import 'package:altranscribe/data/services/cloud/credential_store.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
+import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
+import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../cloud/cloud_test.dart' show FixtureHttpClient, MemoryCredentials;
+import '../support/fakes.dart';
 
 class NamedCredentials extends CredentialStore {
   final values = <String, String>{};
@@ -121,6 +126,81 @@ void main() {
       await anonymous.translate('Hello', 'en', 'zh');
       anonymous.stop();
       expect(auth.toSet(), {null});
+    },
+  );
+
+  test(
+    'the shared host translators carry the saved compatible-service key',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final auth = <String?>[];
+      server.listen((request) async {
+        auth.add(request.headers.value('authorization'));
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode({
+            'data': [
+              {'id': 'm1'},
+            ],
+          }),
+        );
+        await request.response.close();
+      });
+      final credentials = NamedCredentials()
+        ..values[compatibleKeyName] = 'compat-test-key';
+      final audio = FakeAudio();
+      final live = RealtimeController(
+        audio: audio,
+        engine: FakeEngine(),
+        store: MemoryStore(),
+        translator: FakeTranslator(),
+        recordSummarizer: FakeTranslator(),
+        catalog: FakeModelCatalog(),
+        credentials: credentials,
+      )..initialized = true;
+      addTearDown(live.dispose);
+      final address = 'http://127.0.0.1:${server.port}/v1';
+      await live.sharedHost.translator.prepare(
+        address,
+        'm1',
+        provider: LlmProvider.openAICompatible,
+      );
+      live.sharedHost.translator.stop();
+      expect(auth, ['Bearer compat-test-key']);
+    },
+  );
+
+  test(
+    'listing cloud models never closes the client a session translates with',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode({
+            'data': [
+              {'id': 'gpt-test'},
+            ],
+          }),
+        );
+        await request.response.close();
+      });
+      final api = CloudApi(
+        MemoryCredentials(),
+        clientFactory: () => FixtureHttpClient(server, []),
+      );
+      addTearDown(api.close);
+      await api.prepare(CloudProvider.openAI);
+      final service = LocalLlmService(cloudApi: api);
+      expect(await service.models('', provider: LlmProvider.openAI), [
+        'gpt-test',
+      ]);
+      // The session's own client is untouched, so its next request still works.
+      final response = await api.send('GET', '/v1/models');
+      expect(response.statusCode, 200);
+      await response.drain<void>();
     },
   );
 }
