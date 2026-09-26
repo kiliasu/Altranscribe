@@ -609,9 +609,9 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   String get modelSummary {
     if (live.remoteProcessing) {
       if (live.remoteConnection.name.isEmpty) {
-        return 'Whisper Remote · ${t('noRemote')}';
+        return 'Whisper · Remote · ${t('noRemote')}';
       }
-      return 'Whisper Remote · ${live.remoteConnection.name.isEmpty ? t('noRemote') : live.remoteConnection.name} · ${live.sessionModel}';
+      return 'Whisper · Remote · ${live.remoteConnection.name.isEmpty ? t('noRemote') : live.remoteConnection.name} · ${live.sessionModel}';
     }
     if (live.speechProvider == SpeechProvider.nemotron) {
       return 'Nemotron · ${ModelCatalog.nemotron(live.nemotronModel)?.shortLabel ?? live.nemotronModel} · CPU';

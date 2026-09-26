@@ -12,7 +12,7 @@ class RemoteSpeechEngine implements SpeechEngine {
     : client = RemoteClient(connection);
   final RemoteClient client;
   @override
-  String backend = 'Whisper Remote';
+  String backend = 'Whisper · Remote';
   @override
   Future<void> start(
     String executable,
@@ -21,7 +21,7 @@ class RemoteSpeechEngine implements SpeechEngine {
     ComputeMode compute = ComputeMode.automatic,
   }) async {
     final info = await client.connect();
-    backend = 'Whisper Remote · ${info['name']} · ${info['backend']}';
+    backend = 'Whisper · Remote · ${info['name']} · ${info['backend']}';
   }
 
   @override

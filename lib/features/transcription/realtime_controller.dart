@@ -181,7 +181,7 @@ class RealtimeController extends ChangeNotifier {
       remoteLlm ? remoteConnection.address : translationAddress;
   String get _llmModel => remoteLlm ? remoteLlmModel : translationModel;
   String get sessionModel => remoteProcessing
-      ? (remoteConnection.info?['model'] as String? ?? 'Whisper Remote')
+      ? (remoteConnection.info?['model'] as String? ?? 'Whisper · Remote')
       : nemotronSpeech
       ? (ModelCatalog.nemotron(nemotronModel)?.label ?? nemotronModel)
       : model.split(RegExp(r'[/\\]')).last;

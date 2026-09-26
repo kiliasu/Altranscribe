@@ -235,7 +235,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       items: [
         for (final option in speechOptions)
           AltGroupItem(
-            option?.label ?? 'Whisper Remote',
+            option?.label ?? 'Whisper · Remote',
             key: Key('speech-provider-${option?.name ?? 'remote'}'),
           ),
       ],
