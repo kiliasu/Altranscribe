@@ -408,13 +408,13 @@ void main() {
       final translator = controller.translator as FakeTranslator;
       translator.response = Completer<String>();
       await addLine(11);
-      expect(find.text('正在翻译…'), findsWidgets);
+      expect(find.textContaining('翻译中'), findsWidgets);
       expect(find.byKey(const Key('translation-placeholder')), findsWidgets);
       expect(scroll.offset, closeTo(scroll.position.maxScrollExtent, 1));
       final beforeTranslation = scroll.position.maxScrollExtent;
       translator.response!.complete('迟到的中文译文。' * 100);
       await tester.pumpAndSettle();
-      expect(find.text('正在翻译…'), findsNothing);
+      expect(find.textContaining('翻译中'), findsNothing);
       expect(find.byKey(const Key('translation-placeholder')), findsNothing);
       expect(scroll.position.maxScrollExtent, greaterThan(beforeTranslation));
       expect(scroll.offset, closeTo(scroll.position.maxScrollExtent, 1));

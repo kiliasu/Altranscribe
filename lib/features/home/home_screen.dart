@@ -250,6 +250,19 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
 
   String issue(String value) => localizedIssue(value, widget.english);
 
+  /// A line still being recognized in a session that translates with a text
+  /// model; direct speech translation streams its own text instead.
+  bool awaitingTranslation(TranscriptLine line) {
+    final current = live.record;
+    return live.active &&
+        current != null &&
+        current.targetLanguage != null &&
+        current.targetLanguage != current.language &&
+        !current.directTranslation &&
+        line.transcriptionStatus == 'partial' &&
+        line.translationStatus == 'none';
+  }
+
   String t(String key) => strings[key]![widget.english ? 1 : 0];
   ColorScheme get colors => Theme.of(context).colorScheme;
   TextTheme get text => Theme.of(context).textTheme;
@@ -1517,6 +1530,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
             captionSize: captionSize,
             highlight:
                 showSession && identical(line, live.record?.lines.lastOrNull),
+            awaitingTranslation: awaitingTranslation(line),
           ),
       ], gap: 4),
     ),
@@ -1686,6 +1700,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                   highlight:
                       showSession &&
                       identical(line, live.record?.lines.lastOrNull),
+                  awaitingTranslation: awaitingTranslation(line),
                 ),
             ], gap: 4),
           ),

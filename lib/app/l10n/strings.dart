@@ -872,4 +872,7 @@ const strings = <String, List<String>>{
     "The sherpa-onnx runtime could not be loaded; reinstall the app.",
   ],
   "modelLicense": ["许可证", "License"],
+  "tagRecognizing": ["识别中", "Recognizing"],
+  "tagUnconfirmed": ["待确认", "Unconfirmed"],
+  "tagTranslating": ["翻译中", "Translating"],
 };
