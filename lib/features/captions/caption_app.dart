@@ -190,15 +190,8 @@ class _CaptionPanelState extends State<CaptionPanel> {
                 Expanded(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onPanStart: MobilePlatform.android
-                        ? null
-                        : (_) => captionChannel.invokeMethod<void>('drag'),
-                    onPanUpdate: MobilePlatform.android
-                        ? (event) => captionChannel.invokeMethod<void>('move', {
-                            'dx': event.delta.dx,
-                            'dy': event.delta.dy,
-                          })
-                        : null,
+                    onPanStart: (_) =>
+                        captionChannel.invokeMethod<void>('drag'),
                     child: MouseRegion(
                       cursor: SystemMouseCursors.move,
                       child: Padding(
@@ -359,10 +352,8 @@ class _CaptionPanelState extends State<CaptionPanel> {
                 child: GestureDetector(
                   key: const Key('caption-resize'),
                   behavior: HitTestBehavior.opaque,
-                  onPanUpdate: (event) => captionChannel.invokeMethod<void>(
-                    'resize',
-                    {'dx': event.delta.dx, 'dy': event.delta.dy},
-                  ),
+                  onPanStart: (_) =>
+                      captionChannel.invokeMethod<void>('resize'),
                   child: Padding(
                     padding: const EdgeInsets.only(left: 20, top: 4),
                     child: Icon(
