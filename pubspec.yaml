@@ -1,7 +1,7 @@
 name: altranscribe
 description: "Altranscribe — real-time transcription and translation for Windows and Android."
 publish_to: 'none'
-version: 0.7.0+6
+version: 0.7.1+7
 
 environment:
   sdk: ^3.13.3
