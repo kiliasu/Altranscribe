@@ -360,6 +360,26 @@ class RealtimeController extends ChangeNotifier {
       if (!localInferenceAllowed && llmProvider == LlmProvider.ollama) {
         llmProvider = LlmProvider.openAI;
       }
+      if (settings['compatibleKeysScoped'] != true &&
+          llmProvider == LlmProvider.openAICompatible &&
+          settings['translationAddress'] is String) {
+        // Bind the old key only to the address it was saved with.
+        String? name;
+        try {
+          name = LocalLlmService.compatibleCredentialName(translationAddress);
+        } on FormatException {
+          // An invalid old address needs to be corrected before adding a key.
+        }
+        if (name != null) {
+          final legacy = await credentials.readNamed(compatibleKeyName);
+          if (legacy.isNotEmpty) {
+            if ((await credentials.readNamed(name)).isEmpty) {
+              await credentials.writeNamed(name, legacy);
+            }
+            await credentials.writeNamed(compatibleKeyName, '');
+          }
+        }
+      }
       generateSummary = settings['generateSummary'] as bool? ?? true;
       captionPreferences = CaptionPreferences.fromJson(
         settings['captions'] as Map? ?? {},
@@ -402,6 +422,7 @@ class RealtimeController extends ChangeNotifier {
       'translationAddress': translationAddress,
       'translationModel': translationModel,
       'llmProvider': llmProvider.name,
+      'compatibleKeysScoped': true,
       'generateSummary': generateSummary,
       'captions': captionPreferences.toJson(),
       'translationContext': translationContext.toJson(),

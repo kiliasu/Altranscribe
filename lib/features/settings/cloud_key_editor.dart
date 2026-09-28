@@ -16,6 +16,7 @@ class CloudKeyEditor extends StatefulWidget {
     required this.english,
     required this.enabled,
     this.onSaved,
+    this.onChanged,
   }) : assert(provider != null || name != null);
   final CloudProvider? provider;
   final String? name;
@@ -23,12 +24,13 @@ class CloudKeyEditor extends StatefulWidget {
   final CredentialStore credentials;
   final bool english, enabled;
   final Future<void> Function()? onSaved;
+  final VoidCallback? onChanged;
   String get credentialName => name ?? provider!.name;
   @override
-  State<CloudKeyEditor> createState() => _CloudKeyEditorState();
+  State<CloudKeyEditor> createState() => CloudKeyEditorState();
 }
 
-class _CloudKeyEditorState extends State<CloudKeyEditor> {
+class CloudKeyEditorState extends State<CloudKeyEditor> {
   final input = TextEditingController();
   bool configured = false, busy = false;
   String? error;
@@ -39,14 +41,42 @@ class _CloudKeyEditorState extends State<CloudKeyEditor> {
     load();
   }
 
+  @override
+  void didUpdateWidget(CloudKeyEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.credentialName != widget.credentialName) {
+      input.clear();
+      configured = false;
+      error = null;
+      load();
+    }
+  }
+
   Future<void> load() async {
+    final name = widget.credentialName;
     try {
-      final value = (await widget.credentials.readNamed(widget.credentialName))
-          .isNotEmpty;
-      if (mounted) setState(() => configured = value);
+      final value = (await widget.credentials.readNamed(name)).isNotEmpty;
+      if (mounted && name == widget.credentialName) {
+        setState(() => configured = value);
+      }
     } catch (_) {
       if (mounted) setState(() => error = t('cloudKeyReadFailed'));
     }
+  }
+
+  /// Used by the containing dialog before saving or checking its configuration.
+  Future<void> savePending() async {
+    if (input.text.trim().isEmpty) return;
+    if (busy) throw StateError('cloudKeySavePending');
+    await persist(input.text);
+  }
+
+  Future<void> persist(String value) async {
+    final name = widget.credentialName;
+    await widget.credentials.writeNamed(name, value);
+    if (!mounted || name != widget.credentialName) return;
+    input.clear();
+    await load();
   }
 
   Future<void> save({bool remove = false}) async {
@@ -58,13 +88,8 @@ class _CloudKeyEditorState extends State<CloudKeyEditor> {
       error = null;
     });
     try {
-      await widget.credentials.writeNamed(
-        widget.credentialName,
-        remove ? '' : input.text,
-      );
-      if (!mounted) return;
-      input.clear();
-      await load();
+      await persist(remove ? '' : input.text);
+      if (mounted) widget.onChanged?.call();
       if (mounted && !remove) await widget.onSaved?.call();
     } catch (_) {
       if (mounted) setState(() => error = t('cloudKeySaveFailed'));
@@ -88,6 +113,7 @@ class _CloudKeyEditorState extends State<CloudKeyEditor> {
         TextField(
           key: Key('api-key-${widget.credentialName}'),
           controller: input,
+          onChanged: (_) => widget.onChanged?.call(),
           obscureText: true,
           enableSuggestions: false,
           autocorrect: false,

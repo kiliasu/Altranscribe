@@ -43,9 +43,23 @@ class _TranslationSettingsState
   late final address = TextEditingController(
     text: controller.translationAddress,
   );
-  late String selected = controller.translationModel;
+  late final modelInput = TextEditingController(
+    text: controller.translationModel,
+  );
+  String get selected => modelInput.text.trim();
+  set selected(String value) => modelInput.text = value;
+  final compatibleEditor = GlobalKey<CloudKeyEditorState>();
+  String? get credentialName {
+    try {
+      return LocalLlmService.compatibleCredentialName(address.text);
+    } on FormatException {
+      return null;
+    }
+  }
+
   List<String> models = [];
   bool connected = false;
+  bool verified = false;
   @override
   String get title => 'translationSettings';
 
@@ -55,6 +69,7 @@ class _TranslationSettingsState
   @override
   void dispose() {
     address.dispose();
+    modelInput.dispose();
     super.dispose();
   }
 
@@ -63,6 +78,7 @@ class _TranslationSettingsState
     if (mounted) {
       setState(() {
         connected = false;
+        verified = false;
         models = [];
       });
     }
@@ -74,6 +90,7 @@ class _TranslationSettingsState
       return;
     }
     try {
+      await compatibleEditor.currentState?.savePending();
       final result = await controller.localTranslator.models(
         address.text,
         provider: provider,
@@ -86,6 +103,21 @@ class _TranslationSettingsState
       }
     } on SocketException {
       throw const FormatException('llmUnavailable');
+    }
+  }
+
+  Future<void> checkConnection() async {
+    await compatibleEditor.currentState?.savePending();
+    if (selected.isEmpty) {
+      throw const FormatException('translationModelMissing');
+    }
+    final service = controller.localTranslator;
+    try {
+      await service.prepare(address.text, selected, provider: provider);
+      await service.translate('Hello.', 'en', 'zh');
+      if (mounted) setState(() => verified = true);
+    } finally {
+      service.stop();
     }
   }
 
@@ -202,6 +234,7 @@ class _TranslationSettingsState
                     ? 'http://127.0.0.1:11434'
                     : 'http://127.0.0.1:1234/v1';
                 selected = '';
+                verified = false;
               });
               run(load);
             }
@@ -226,21 +259,43 @@ class _TranslationSettingsState
         decoration: InputDecoration(labelText: t('llmAddress')),
         onChanged: (_) => setState(() {
           connected = false;
+          verified = false;
           models = [];
+          selected = '';
+          error = null;
         }),
       ),
       if (provider == LlmProvider.openAICompatible) ...[
         gap(),
         Text(t('compatibleKeyHint')),
-        CloudKeyEditor(
-          key: const ValueKey('compatible-key'),
-          name: compatibleKeyName,
-          label: t('compatibleKeyLabel'),
-          credentials: controller.credentials,
-          english: widget.english,
+        if (credentialName != null)
+          CloudKeyEditor(
+            key: compatibleEditor,
+            name: credentialName,
+            onChanged: () => setState(() => verified = false),
+            label: t('compatibleKeyLabel'),
+            credentials: controller.credentials,
+            english: widget.english,
+            enabled: editable,
+            onSaved: () => run(load),
+          ),
+        TextField(
+          key: const Key('llm-model-input'),
+          controller: modelInput,
           enabled: editable,
-          onSaved: () => run(load),
+          onChanged: (_) => setState(() => verified = false),
+          decoration: InputDecoration(
+            labelText: t('translationModel'),
+            helperText: t('compatibleModelHint'),
+            helperMaxLines: 3,
+          ),
         ),
+        TextButton(
+          key: const Key('llm-check-connection'),
+          onPressed: canSave ? () => run(checkConnection) : null,
+          child: Text(t('llmCheckConnection')),
+        ),
+        if (verified) Text(t('llmConnectionVerified')),
       ],
     ],
     gap(),
@@ -260,7 +315,11 @@ class _TranslationSettingsState
           onPressed: busy ? null : () => run(load),
           icon: const Icon(AltIcons.refresh, size: 18),
           label: Text(
-            t(provider.isCloud ? 'cloudCheckModels' : 'loadLocalModels'),
+            t(
+              provider == LlmProvider.ollama
+                  ? 'loadLocalModels'
+                  : 'cloudCheckModels',
+            ),
           ),
         ),
       ],
@@ -269,7 +328,12 @@ class _TranslationSettingsState
     RadioGroup<String>(
       groupValue: selected,
       onChanged: (value) {
-        if (value != null) setState(() => selected = value);
+        if (value != null && editable) {
+          setState(() {
+            selected = value;
+            verified = false;
+          });
+        }
       },
       child: choices([
         for (final name in models)
@@ -287,7 +351,10 @@ class _TranslationSettingsState
           ),
       ]),
     ),
-    if (connected && selected.isNotEmpty && !models.contains(selected))
+    if (provider != LlmProvider.openAICompatible &&
+        connected &&
+        selected.isNotEmpty &&
+        !models.contains(selected))
       Text(t('translationModelMissing')),
   ];
 
@@ -309,12 +376,24 @@ class _TranslationSettingsState
       await controller.saveSettings();
       return;
     }
-    final currentModels = await controller.localTranslator.models(
-      address.text,
-      provider: provider,
-    );
-    if (!currentModels.contains(selected)) {
-      throw const FormatException('translationModelMissing');
+    if (provider == LlmProvider.openAICompatible) {
+      final base = LocalLlmService.serviceAddress(address.text, provider);
+      await compatibleEditor.currentState?.savePending();
+      if (selected.isEmpty) {
+        throw const FormatException('translationModelMissing');
+      }
+      if (LocalLlmService.isOnline(base) &&
+          (await controller.credentials.readNamed(credentialName!)).isEmpty) {
+        throw StateError('cloudKeyMissing');
+      }
+    } else {
+      final currentModels = await controller.localTranslator.models(
+        address.text,
+        provider: provider,
+      );
+      if (!currentModels.contains(selected)) {
+        throw const FormatException('translationModelMissing');
+      }
     }
     controller.hostLlm = fromHost;
     controller.llmProvider = provider;

@@ -251,6 +251,10 @@ const strings = <String, List<String>>{
     'No key saved. Keys are encrypted by the operating system and stay on this device.',
   ],
   'cloudSaveKey': ['保存 Key', 'Save key'],
+  'cloudKeySavePending': [
+    'Key 正在保存，请稍后重试。',
+    'The key is being saved. Try again shortly.',
+  ],
   'cloudRemoveKey': ['移除 Key', 'Remove key'],
   'cloudKeyMissing': [
     '请先在模型或翻译设置中保存该提供商的 API Key。',
@@ -595,10 +599,19 @@ const strings = <String, List<String>>{
   ],
   "translationSettings": ["翻译选择", "Translation & LLM"],
   "translationModel": ["翻译模型名称", "Translation model name"],
+  "compatibleModelHint": [
+    "可从下方列表选择，也可直接填写服务提供的模型名称。",
+    "Select a listed model or enter the model name supplied by your service.",
+  ],
+  "llmCheckConnection": ["测试连接", "Test connection"],
+  "llmConnectionVerified": [
+    "模型已成功响应测试请求。",
+    "The model responded to the test request.",
+  ],
   "loadLocalModels": ["读取本机模型", "Load local models"],
   "translationModelMissing": [
-    "未找到所选 LLM 模型。请在翻译选择中读取并勾选服务提供的模型。",
-    "LLM model not found. Load and select a model in Translation & LLM settings.",
+    "请在翻译选择中选择模型；兼容服务也可手动填写模型名称。",
+    "Select a model in Translation & LLM settings, or enter a model name for a compatible service.",
   ],
   "localTranslationOnly": [
     "请填本机地址，例如 http://127.0.0.1:端口；OpenAI 兼容服务也可填 https:// 在线地址。其他电脑上的模型请在「设备」页连接。",
@@ -652,8 +665,8 @@ const strings = <String, List<String>>{
     "Select one engine and model for text translation, cleanup, titles and summaries. Local engines require a running server; cloud engines require an API key.",
   ],
   "compatibleKeyHint": [
-    "在线服务填 https:// 地址和 API Key，本机服务不用填 Key。Key 只发送到上面的地址。",
-    "Online services need an https:// address and an API key; local servers need no key. The key goes only to the address above.",
+    "先填服务地址，再填 API Key。每个地址单独保存 Key；保存配置或测试连接时会一并保存。",
+    "Enter the address before the API key. Each address has its own key, also saved when you save settings or test the connection.",
   ],
   "compatibleKeyLabel": ["API Key（在线服务）", "API key (online services)"],
   "llmAddress": ["服务地址", "Server address"],

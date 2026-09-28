@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/cloud/cloud_api.dart';
 import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
@@ -9,8 +11,30 @@ import 'package:altranscribe/data/services/translation/translation_context.dart'
 
 enum LlmProvider { ollama, openAICompatible, openAI, gemini, anthropic }
 
-/// Credential name for the OpenAI-compatible key, which has no fixed host.
+/// Legacy credential name, migrated only to the previously saved address.
 const compatibleKeyName = 'openAICompatible';
+
+class LlmHttpException extends HttpException {
+  LlmHttpException(this.statusCode, String detail)
+    : super('LLM $statusCode: $detail');
+  final int statusCode;
+
+  bool get unsupportedSchema =>
+      (statusCode == 400 || statusCode == 422) &&
+      RegExp(
+        r'response_format|json_schema',
+        caseSensitive: false,
+      ).hasMatch(message) &&
+      RegExp(
+        r'unsupported|not support|unavailable|not available',
+        caseSensitive: false,
+      ).hasMatch(message);
+
+  @override
+  String toString() => [401, 403, 429].contains(statusCode)
+      ? 'cloudHttp$statusCode'
+      : super.toString();
+}
 
 extension LlmProviderInfo on LlmProvider {
   bool get isCloud =>
@@ -69,6 +93,7 @@ class LocalLlmService implements TranslationService {
   Uri? _base;
   String _model = '';
   String _key = '';
+  bool _jsonObjectOutput = false;
   LlmProvider _provider = LlmProvider.ollama;
   @override
   String backend = 'Ollama';
@@ -94,7 +119,14 @@ class LocalLlmService implements TranslationService {
             !['', '/', '/v1', '/v1/'].contains(uri.path))) {
       throw const FormatException('localTranslationOnly');
     }
-    return uri.replace(path: uri.path.replaceFirst(RegExp(r'/$'), ''));
+    return uri.replace(path: uri.path.replaceFirst(RegExp(r'/+$'), ''));
+  }
+
+  static String compatibleCredentialName(String address) {
+    var base = serviceAddress(address, LlmProvider.openAICompatible);
+    if (base.path.isEmpty) base = base.replace(path: '/v1');
+    final hash = sha256.convert(utf8.encode(base.toString())).toString();
+    return 'compatible-${hash.substring(0, 48)}';
   }
 
   static bool isOnline(Uri base) => base.scheme == 'https';
@@ -109,10 +141,18 @@ class LocalLlmService implements TranslationService {
     return base.replace(path: '$prefix/$operation');
   }
 
-  Future<String> _compatibleKey(LlmProvider provider) async =>
-      provider == LlmProvider.openAICompatible
-      ? await cloudApi?.credentials.readNamed(compatibleKeyName) ?? ''
-      : '';
+  Future<String> _compatibleKey(LlmProvider provider, Uri base) async {
+    if (provider != LlmProvider.openAICompatible) return '';
+    final key =
+        await cloudApi?.credentials.readNamed(
+          compatibleCredentialName(base.toString()),
+        ) ??
+        '';
+    if (isOnline(base) && key.trim().isEmpty) {
+      throw StateError('cloudKeyMissing');
+    }
+    return key.trim();
+  }
 
   static const languages = {
     'auto': 'the automatically detected source language',
@@ -143,7 +183,10 @@ class LocalLlmService implements TranslationService {
           .join()
           .timeout(timeout);
       if (response.statusCode != 200) {
-        throw HttpException('LLM ${response.statusCode}: $text');
+        throw LlmHttpException(
+          response.statusCode,
+          key.isEmpty ? text : text.replaceAll(key, '[redacted]'),
+        );
       }
       final result = jsonDecode(text) as Map<String, dynamic>;
       if (result['error'] != null) {
@@ -209,10 +252,16 @@ class LocalLlmService implements TranslationService {
     if (Platform.isAndroid && !isOnline(base)) {
       throw const FormatException('mobileRemoteOnly');
     }
-    final key = await _compatibleKey(provider);
+    final key = await _compatibleKey(provider, base);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
     try {
       return await _models(client, base, provider, key);
+    } on LlmHttpException catch (error) {
+      if (provider == LlmProvider.openAICompatible &&
+          [404, 405].contains(error.statusCode)) {
+        return [];
+      }
+      rethrow;
     } finally {
       client.close(force: true);
     }
@@ -247,15 +296,16 @@ class LocalLlmService implements TranslationService {
     if (model.trim().isEmpty) {
       throw const FormatException('translationModelMissing');
     }
-    final key = await _compatibleKey(provider);
+    final key = await _compatibleKey(provider, base);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
     _client = client;
     try {
-      if (!(await _models(client, base, provider, key)).contains(model)) {
+      if (provider == LlmProvider.ollama &&
+          !(await _models(client, base, provider, key)).contains(model)) {
         throw const FormatException('translationModelMissing');
       }
       _base = base;
-      _model = model;
+      _model = model.trim();
       _key = key;
       _provider = provider;
       backend = provider == LlmProvider.ollama
@@ -288,44 +338,65 @@ class LocalLlmService implements TranslationService {
     final client = _client;
     if (client == null || _base == null) throw StateError('llmUnavailable');
     final ollama = _provider == LlmProvider.ollama;
-    final response = await _request(
-      client,
-      _endpoint(_base!, _provider, ollama ? 'chat' : 'chat/completions'),
-      key: _key,
-      timeout: Duration(seconds: isOnline(_base!) ? 120 : 60),
-      body: {
-        'model': _model,
-        'stream': false,
-        if (jsonSchema != null)
-          if (ollama)
-            'format': jsonSchema
-          else
-            'response_format': {
-              'type': 'json_schema',
+    final body = <String, Object?>{
+      'model': _model,
+      'stream': false,
+      if (jsonSchema != null)
+        if (ollama)
+          'format': jsonSchema
+        else
+          'response_format': {
+            'type': _jsonObjectOutput ? 'json_object' : 'json_schema',
+            if (!_jsonObjectOutput)
               'json_schema': {
                 'name': 'cleanup',
                 'strict': true,
                 'schema': jsonSchema,
               },
-            },
-        if (ollama) ...{
-          'think': false,
-          'keep_alive': '5m',
-          'options': {
-            'temperature': 0,
-            'num_ctx': 8192,
-            'num_predict': maxTokens,
           },
-        } else ...{
+      if (ollama) ...{
+        'think': false,
+        'keep_alive': '5m',
+        'options': {
           'temperature': 0,
-          'max_tokens': maxTokens,
+          'num_ctx': 8192,
+          'num_predict': maxTokens,
         },
-        'messages': [
-          {'role': 'system', 'content': instruction},
-          {'role': 'user', 'content': text},
-        ],
+      } else ...{
+        'temperature': 0,
+        'max_tokens': maxTokens,
+        // DeepSeek's default reasoning consumes the same output budget.
+        if (_base!.host == 'api.deepseek.com') 'thinking': {'type': 'disabled'},
       },
+      'messages': [
+        {'role': 'system', 'content': instruction},
+        {'role': 'user', 'content': text},
+      ],
+    };
+    final uri = _endpoint(
+      _base!,
+      _provider,
+      ollama ? 'chat' : 'chat/completions',
     );
+    final key = _key;
+    final timeout = Duration(seconds: isOnline(_base!) ? 120 : 60);
+    Future<Map<String, dynamic>> send() =>
+        _request(client, uri, key: key, timeout: timeout, body: body);
+    Map<String, dynamic> response;
+    try {
+      response = await send();
+    } on LlmHttpException catch (error) {
+      if (ollama ||
+          jsonSchema == null ||
+          _jsonObjectOutput ||
+          client != _client ||
+          !error.unsupportedSchema) {
+        rethrow;
+      }
+      _jsonObjectOutput = true;
+      body['response_format'] = {'type': 'json_object'};
+      response = await send();
+    }
     final choice = (response['choices'] as List?)?.firstOrNull as Map?;
     final message = ollama ? response['message'] : choice?['message'];
     final content = (message as Map?)?['content'];
@@ -660,6 +731,7 @@ class LocalLlmService implements TranslationService {
     _client = null;
     _base = null;
     _key = '';
+    _jsonObjectOutput = false;
     // Shared servers belong to the user; never terminate them or unload models.
   }
 }

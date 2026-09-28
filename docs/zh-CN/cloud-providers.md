@@ -33,4 +33,6 @@ API Key 由 Windows DPAPI 或 Android Keystore 加密保存，不写入文稿。
 
 ## 在线 OpenAI 兼容服务
 
-在「设置 → 翻译选择」中选择「OpenAI compatible」，填写服务的 `https://` 地址（包括它要求的前缀，例如 `https://openrouter.ai/api/v1`），保存 API Key，然后从列表里选择模型。Key 只会发送给这个地址；`http://` 地址只接受本机服务，所以 Key 不会以明文在网络上传输。手机可以这样使用在线服务，本机服务仍然需要通过 Windows 主机。
+在「设置 → 翻译选择」中选择「OpenAI compatible」，先填写服务的 `https://` 地址（包括它要求的前缀，例如 `https://openrouter.ai/api/v1`），再填写 API Key。每个地址单独保存 Key；保存配置、读取模型或测试连接时会一并保存当前输入的 Key。可以从列表选择模型，也可以直接填写模型名称；服务不提供模型列表时，仍可用「测试连接」验证模型是否可用。保存配置本身不会调用聊天接口。
+
+Key 只会发送给对应的地址；`http://` 地址只接受本机服务。手机可以这样使用在线服务，本机服务仍然需要通过 Windows 主机。文本整理遇到服务明确不支持 JSON Schema 时，会改用 JSON Object 重试一次，并保留本地纠错校验；鉴权和限流错误不会触发这个重试。
