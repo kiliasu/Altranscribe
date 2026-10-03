@@ -46,9 +46,11 @@ Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a 
 | OpenAI / Gemini (speech and text), Anthropic and online OpenAI-compatible services (text) | Yes | Yes |
 
 - Transcribe the microphone and system audio separately or together, with live translation.
-- Floating captions show the original, the translation or both, with adjustable font, size and opacity. Pause, resume or stop and save from the caption window.
+- Floating captions show the original, the translation or both, with adjustable font, size, opacity and number of recent sentences. Pause, resume or stop and save from the caption window.
 - Queue WAV, MP3, M4A, FLAC, OGG, Opus, AAC, WMA, MP4, MKV, WebM and MOV files for transcripts, translations, titles and summaries. Whether a file opens depends on its actual encoding.
-- Search, copy, rename and delete transcripts; export them as TXT, Markdown or an HTML page (with a player for file transcriptions) and jump to the source file. Optional name, term and word corrections keep the original results.
+- Search, copy, rename and delete transcripts; export them as TXT, Markdown or an HTML page and jump to the source file. An HTML page with the file's audio or video highlights the sentence being played and can follow playback.
+- Names stay consistent: live translation reuses how earlier lines translated a name, and translated files get one fixed translation per name. Add your own translation requirements, such as tone or preferred names, in Settings → Translation & LLM.
+- File processing can also correct names, terms and misheard words, and join sentences that recognition split (a separate option). The originals and each change stay viewable.
 - English and Simplified Chinese interface, light and dark themes, amber or baseline colors.
 
 ![Floating bilingual captions](docs/images/captions-en.png)

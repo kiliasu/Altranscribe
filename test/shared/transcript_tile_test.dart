@@ -1,4 +1,5 @@
 import 'package:altranscribe/data/models/transcript_record.dart';
+import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/shared/ui/transcript_tile.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -34,6 +35,52 @@ Widget host(TranscriptLine line, {bool awaiting = false}) => MaterialApp(
 );
 
 void main() {
+  testWidgets('refined and merged lines keep their originals and changes', (
+    tester,
+  ) async {
+    final line = TranscriptLine(
+      source: 'file',
+      startMs: 0,
+      endMs: 2000,
+      text: 'Hinata came.',
+      revisedText: '日向来了。',
+      textEdits: const [CleanupEdit('name', 'Hinata', '日向', 'glossary')],
+      originalSegments: [sample()],
+    );
+    await tester.pumpWidget(host(line));
+    await tester.pumpAndSettle();
+    expect(find.text('日向来了。'), findsOneWidget);
+    expect(find.text('Hinata came.'), findsNothing);
+    await tester.tap(find.text('查看原文与修改对照'));
+    await tester.pumpAndSettle();
+    expect(find.text('Hinata came.'), findsOneWidget);
+    expect(find.text('Hinata → 日向'), findsOneWidget);
+    expect(find.text('依据：首选词表'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // A line joined from fragments shows them, one per line.
+    final joined = TranscriptLine(
+      source: 'file',
+      startMs: 0,
+      endMs: 4000,
+      text: 'Geoffrey wanted to explain why\nRiverside Hall was closed.',
+      revisedText: 'Geoffrey wanted to explain why Riverside Hall was closed.',
+      originalSegments: [sample(), sample()],
+    );
+    await tester.pumpWidget(host(joined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看原文与修改对照'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Geoffrey wanted to explain why\nRiverside Hall was closed.'),
+      findsOneWidget,
+    );
+
+    // A line without edits has no originals to show.
+    await tester.pumpWidget(host(sample()));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExpansionTile), findsNothing);
+  });
   testWidgets(
     'the translation space is held from the first word and filled in place',
     (tester) async {

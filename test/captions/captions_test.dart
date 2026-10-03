@@ -11,6 +11,7 @@ import 'package:altranscribe/app/app.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:altranscribe/features/settings/caption_settings_dialog.dart';
 import 'package:altranscribe/app/theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -188,6 +189,8 @@ void main() {
       expect(controller.discardConfirmationPending, false);
       await captionEvent(tester, 'action', 'larger');
       expect(controller.captionPreferences.fontSize, 26);
+      expect(await captionEvent(tester, 'action', 'sentences-4'), true);
+      expect(controller.captionPreferences.sentences, 4);
       await captionEvent(tester, 'closed');
       expect(controller.captionsVisible, false);
       expect(controller.active, true);
@@ -263,6 +266,37 @@ void main() {
     },
   );
 
+  testWidgets('the floating window sets how many sentences it shows', (
+    tester,
+  ) async {
+    final actions = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CaptionPanel(
+          data: sample,
+          action: (value) async {
+            actions.add(value);
+            return true;
+          },
+        ),
+      ),
+    );
+    expect(find.textContaining('悬浮字幕 · 正在采集'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('caption-sentences')));
+    await tester.pumpAndSettle();
+    final slider = find.byKey(const Key('caption-sentences-slider'));
+    expect(tester.widget<Slider>(slider).value, 2);
+    tester.widget<Slider>(slider).onChanged!(5);
+    await tester.pump();
+    expect(actions, ['sentences-5']);
+    // The new count shows at once, before the session echoes it back.
+    expect(find.text('显示最近句数: 5'), findsOneWidget);
+    expect(tester.widget<Slider>(slider).value, 5);
+    tester.widget<Slider>(slider).onChanged!(5);
+    await tester.pump();
+    expect(actions, ['sentences-5']);
+  });
+
   testWidgets('caption settings remain editable while recording', (
     tester,
   ) async {
@@ -283,8 +317,15 @@ void main() {
     expect(find.text('转录进行中，请先停止后修改设置。'), findsNothing);
   });
 
-  for (final size in [const Size(720, 360), const Size(420, 240)]) {
+  for (final size in [
+    const Size(720, 360),
+    // The smallest Android overlay, whose buttons keep 48 px touch targets.
+    const Size(320, 220),
+  ]) {
     testWidgets('caption layout at $size and large fonts', (tester) async {
+      if (size.width == 320) {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      }
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -334,6 +375,7 @@ void main() {
           image.dispose();
         });
       }
+      debugDefaultTargetPlatformOverride = null;
     });
   }
 

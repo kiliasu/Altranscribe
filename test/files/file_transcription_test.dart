@@ -38,12 +38,15 @@ class FileDecoderFake extends AudioFileDecoder {
 class FileTranslatorFake extends FakeTranslator {
   bool cleanupFailure = false;
   final cleanupCalls = <List<String>>[];
+  final cleanupLanguages = <String>[];
   @override
   Future<CleanupResult> cleanUp(
     List<String> texts,
-    CleanupOptions options,
-  ) async {
+    CleanupOptions options, {
+    String language = 'auto',
+  }) async {
     cleanupCalls.add(texts);
+    cleanupLanguages.add(language);
     if (cleanupFailure) throw const FormatException('incompleteCleanup');
     return CleanupResult.validate(texts, options, [
       edit('A', 'The'),
@@ -60,6 +63,19 @@ Future<void> until(bool Function() predicate) async {
 }
 
 void main() {
+  test(
+    'cleanup never romanizes existing kanji names even with a Latin glossary',
+    () {
+      final original = ['日向は明日来ます。日向明天会来。'];
+      final result = CleanupResult.validate(
+        original,
+        const CleanupOptions(names: true, spellings: ['Hinata']),
+        [edit('日向', 'Hinata', category: 'name')],
+      );
+      expect(result.texts, original);
+      expect(result.edits.single, isEmpty);
+    },
+  );
   test('cleanup requires evidence, enabled category, exact boundaries and high confidence', () {
     const options = CleanupOptions(
       names: true,
@@ -157,6 +173,7 @@ void main() {
     expect(line.revisedTranslation, '试验译文');
     expect(line.translationEdits.single.from, '测试');
     expect(translator.cleanupCalls, hasLength(4));
+    expect(translator.cleanupLanguages, ['en', 'zh', 'en', 'zh']);
     expect((controller.audio as FakeAudio).options, isNull);
     expect((controller.engine as FakeEngine).starts, 1);
     expect(

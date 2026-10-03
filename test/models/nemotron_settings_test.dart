@@ -96,13 +96,4 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
-
-  test('the speech provider tells local engines from cloud ones', () {
-    expect(SpeechProvider.nemotron.isCloud, isFalse);
-    expect(SpeechProvider.whisper.isCloud, isFalse);
-    expect(SpeechProvider.openAI.isCloud, isTrue);
-    expect(SpeechProvider.gemini.isCloud, isTrue);
-    expect(SpeechProvider.nemotron.label, 'Nemotron · Local');
-    expect(SpeechProvider.values.map((p) => p.name), contains('nemotron'));
-  });
 }

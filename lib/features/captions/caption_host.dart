@@ -140,6 +140,13 @@ class _CaptionHostState extends State<CaptionHost> {
       return null;
     }
     if (!live.active || live.processingFiles) return false;
+    final sentences = RegExp(r'^sentences-(\d+)$').firstMatch(action);
+    if (sentences != null) {
+      await live.setCaptionPreferences(
+        live.captionPreferences.copyWith(sentences: int.parse(sentences[1]!)),
+      );
+      return true;
+    }
     switch (action) {
       case 'larger':
       case 'smaller':

@@ -1,5 +1,6 @@
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/files/media_paths.dart';
+import 'package:altranscribe/data/services/translation/translation_terms.dart';
 
 class TranscriptLine {
   TranscriptLine({
@@ -17,6 +18,7 @@ class TranscriptLine {
     this.transcriptionStatus = 'done',
     this.continuous = false,
     this.timingEstimated = false,
+    this.originalSegments = const [],
   });
   final String source;
   final int startMs;
@@ -28,6 +30,7 @@ class TranscriptLine {
   String transcriptionStatus;
   final bool continuous;
   final bool timingEstimated;
+  final List<TranscriptLine> originalSegments;
   String? translation;
   String translationStatus;
   String? translationError;
@@ -52,6 +55,10 @@ class TranscriptLine {
     'revisedTranslation': revisedTranslation,
     'textEdits': textEdits.map((edit) => edit.toJson()).toList(),
     'translationEdits': translationEdits.map((edit) => edit.toJson()).toList(),
+    if (originalSegments.isNotEmpty)
+      'originalSegments': originalSegments
+          .map((line) => line.toJson())
+          .toList(),
   };
   factory TranscriptLine.fromJson(Map<String, dynamic> value) => TranscriptLine(
     source: value['source'] as String,
@@ -68,6 +75,12 @@ class TranscriptLine {
         ? 'interrupted'
         : value['translationStatus'] as String? ?? 'none',
     translationError: value['translationError'] as String?,
+    originalSegments: (value['originalSegments'] as List? ?? [])
+        .map(
+          (item) =>
+              TranscriptLine.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
+        .toList(),
     revisedText: value['revisedText'] as String?,
     revisedTranslation: value['revisedTranslation'] as String?,
     textEdits: (value['textEdits'] as List? ?? [])
@@ -112,6 +125,8 @@ class TranscriptRecord {
     this.speechProvider,
     this.speechModel,
     this.directTranslation = false,
+    this.translationRules = defaultTranslationRules,
+    this.translationTerms = const [],
   });
   final String id;
   final DateTime createdAt;
@@ -120,6 +135,8 @@ class TranscriptRecord {
   final bool directTranslation;
   final String? targetLanguage;
   final String? translationModel;
+  final String translationRules;
+  List<TranslationTerm> translationTerms;
   String? summaryLanguage;
   String? summaryProvider;
   String? summaryModel;
@@ -159,6 +176,8 @@ class TranscriptRecord {
     error: error,
     targetLanguage: targetLanguage,
     translationModel: translationModel,
+    translationRules: translationRules,
+    translationTerms: [...translationTerms],
     title: title,
     summary: summary,
     summaryStatus: summaryStatus,
@@ -174,7 +193,7 @@ class TranscriptRecord {
     cleanupError: cleanupError,
   );
   Map<String, Object?> toJson() => {
-    'version': 5,
+    'version': 6,
     'id': id,
     'createdAt': createdAt.toIso8601String(),
     'language': language,
@@ -183,6 +202,8 @@ class TranscriptRecord {
     'directTranslation': directTranslation,
     'targetLanguage': targetLanguage,
     'translationModel': translationModel,
+    'translationRules': translationRules,
+    'translationTerms': translationTerms.map((term) => term.toJson()).toList(),
     'title': title,
     'summary': summary,
     'summaryStatus': summaryStatus,
@@ -211,6 +232,12 @@ class TranscriptRecord {
         directTranslation: value['directTranslation'] as bool? ?? false,
         targetLanguage: value['targetLanguage'] as String?,
         translationModel: value['translationModel'] as String?,
+        translationRules: normalizeTranslationRules(
+          value['translationRules'] as String?,
+        ),
+        translationTerms: (value['translationTerms'] as List? ?? [])
+            .map((term) => TranslationTerm.fromJson(term as Map))
+            .toList(),
         title: value['title'] as String?,
         summary: value['summary'] as String?,
         summaryStatus: value['summaryStatus'] == 'pending'

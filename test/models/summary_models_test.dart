@@ -254,7 +254,7 @@ void main() {
       provider: LlmProvider.openAICompatible,
     );
     expect(await service.translate('Original', 'en', 'zh'), '译文');
-    expect(requests.single['max_tokens'], 384);
+    expect(requests.single['max_tokens'], 512);
     expect(requests.single.containsKey('options'), false);
     finish = 'length';
     await expectLater(

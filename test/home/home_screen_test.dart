@@ -65,6 +65,42 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets(
+    'refinement leaves sentence joining off until separately selected',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 820);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = fakeController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(AltranscribeApp(realtime: controller));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('文件'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('refine')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const PageStorageKey('file-processing-options')),
+      );
+      await tester.tap(find.text('处理选项'));
+      await tester.pumpAndSettle();
+      bool option(int index) => tester
+          .widget<CheckboxListTile>(find.byKey(ValueKey('file-option-$index')))
+          .value!;
+      expect(
+        [option(0), option(1), option(2), option(3)],
+        [true, true, true, false],
+      );
+      await tester.ensureVisible(find.byKey(const ValueKey('file-option-3')));
+      await tester.tap(find.byKey(const ValueKey('file-option-3')));
+      await tester.pumpAndSettle();
+      expect(option(3), true);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('sources, locale, session and sharing remain independent', (
     tester,
   ) async {
@@ -213,6 +249,34 @@ void main() {
       await capture('05-devices');
       await page('设置');
       await capture('06-settings');
+      controller.translationModel = 'test-model';
+      await tester.tap(find.text('翻译选择').last);
+      await tester.pumpAndSettle();
+      // The requirements start empty and show an example instead.
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('translation-rules')))
+            .controller!
+            .text,
+        isEmpty,
+      );
+      await tester.ensureVisible(find.byKey(const Key('translation-rules')));
+      await tester.pumpAndSettle();
+      await capture('06a-translation-rules');
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('translation-rules')));
+      await tester.pumpAndSettle();
+      await capture('06b-translation-rules-narrow');
+      tester.view.physicalSize = const Size(1200, 820);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('translation-rules')),
+        'Keep a neutral tone. No emoji.',
+      );
+      await tester.tap(find.text('保存').last);
+      await tester.pumpAndSettle();
+      expect(controller.translationRules, 'Keep a neutral tone. No emoji.');
 
       await tester.tap(find.text('深色'));
       await tester.pumpAndSettle();
@@ -342,6 +406,33 @@ void main() {
     expect(controller.translationModel, 'test-model');
     expect(controller.llmProvider, LlmProvider.openAICompatible);
     expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('two results for the same audio window both show', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = fakeController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(AltranscribeApp(realtime: controller));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('start')));
+    await tester.pumpAndSettle();
+    // Same source and start time, like a cloud segment without timestamps.
+    (controller.audio as FakeAudio).events.addAll([
+      chunk('microphone', 0),
+      chunk('microphone', 0),
+    ]);
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pumpAndSettle();
+    expect(controller.record!.lines, hasLength(2));
+    expect(find.text('A real result would appear here.'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byKey(const Key('stop')));
+    await tester.pumpAndSettle();
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets(

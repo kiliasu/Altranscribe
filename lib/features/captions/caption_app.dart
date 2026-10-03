@@ -18,6 +18,9 @@ class CaptionApp extends StatefulWidget {
 
 class _CaptionAppState extends State<CaptionApp> {
   Map data = const {};
+
+  /// Each showing starts with a fresh panel, without menus left open.
+  int showing = 0;
   final navigator = GlobalKey<NavigatorState>();
   @override
   void initState() {
@@ -27,6 +30,7 @@ class _CaptionAppState extends State<CaptionApp> {
         setState(() => data = call.arguments as Map);
       } else if (call.method == 'hidden') {
         navigator.currentState?.popUntil((route) => route.isFirst);
+        if (mounted) setState(() => showing++);
       }
     });
     unawaited(load());
@@ -66,6 +70,7 @@ class _CaptionAppState extends State<CaptionApp> {
           ? Duration.zero
           : const Duration(milliseconds: 200),
       home: CaptionPanel(
+        key: ValueKey(showing),
         data: data,
         action: (action) =>
             captionChannel.invokeMethod<Object?>('action', action),
@@ -85,6 +90,9 @@ class CaptionPanel extends StatefulWidget {
 class _CaptionPanelState extends State<CaptionPanel> {
   bool busy = false;
   String? error;
+
+  /// A count picked here, shown until the session confirms it.
+  int? sentences;
   final scroll = ScrollController();
   String t(String key) => strings[key]![widget.data['english'] == true ? 1 : 0];
   CaptionPreferences get prefs =>
@@ -95,6 +103,32 @@ class _CaptionPanelState extends State<CaptionPanel> {
       widget.data['pausePending'] != true &&
       widget.data['confirming'] != true &&
       !busy;
+
+  @override
+  void didUpdateWidget(CaptionPanel old) {
+    super.didUpdateWidget(old);
+    if (sentences == prefs.sentences) sentences = null;
+  }
+
+  Future<void> setSentences(int value) async {
+    if (value == (sentences ?? prefs.sentences)) return;
+    setState(() {
+      sentences = value;
+      error = null;
+    });
+    try {
+      if (await widget.action('sentences-$value') == false && mounted) {
+        setState(() => sentences = null);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          sentences = null;
+          error = t('captionActionFailed');
+        });
+      }
+    }
+  }
 
   Future<void> run(String action) async {
     if (busy) return;
@@ -171,6 +205,13 @@ class _CaptionPanelState extends State<CaptionPanel> {
       onPressed: enabled && !busy ? () => run(action) : null,
       icon: Icon(icon, size: 22),
     );
+    final shown = sentences ?? prefs.sentences;
+    final status = t(switch (widget.data['phase']) {
+      'paused' => 'paused',
+      'loading' => 'loadingModel',
+      'stopping' => 'stopping',
+      _ => 'listening',
+    });
     final style = TextStyle(
       fontFamily: prefs.font,
       fontFamilyFallback: const ['NotoSansSC', 'Roboto'],
@@ -181,7 +222,8 @@ class _CaptionPanelState extends State<CaptionPanel> {
     return Scaffold(
       backgroundColor: colors.surfaceContainer,
       body: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+        // Buttons carry their own padding; text keeps a 20 px margin.
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -195,7 +237,7 @@ class _CaptionPanelState extends State<CaptionPanel> {
                     child: MouseRegion(
                       cursor: SystemMouseCursors.move,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.fromLTRB(8, 12, 0, 12),
                         child: Row(
                           children: [
                             Icon(
@@ -205,8 +247,19 @@ class _CaptionPanelState extends State<CaptionPanel> {
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: Text(
-                                'Altranscribe · ${t('floatingCaptions')}',
+                              child: Text.rich(
+                                TextSpan(
+                                  text: t('floatingCaptions'),
+                                  children: [
+                                    TextSpan(
+                                      text: ' · $status',
+                                      style: TextStyle(
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                key: const Key('caption-status'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.labelLarge,
@@ -224,6 +277,7 @@ class _CaptionPanelState extends State<CaptionPanel> {
             Expanded(
               child: SingleChildScrollView(
                 controller: scroll,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -284,23 +338,17 @@ class _CaptionPanelState extends State<CaptionPanel> {
               ),
             ),
             if (error != null)
-              Text(error!, maxLines: 2, style: TextStyle(color: colors.error)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  error!,
+                  maxLines: 2,
+                  style: TextStyle(color: colors.error),
+                ),
+              ),
             const SizedBox(height: 4),
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    t(switch (widget.data['phase']) {
-                      'paused' => 'paused',
-                      'loading' => 'loadingModel',
-                      'stopping' => 'stopping',
-                      _ => 'listening',
-                    }),
-                    style: Theme.of(context).textTheme.labelMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
                 button(
                   'smaller',
                   'smallerCaptions',
@@ -313,7 +361,55 @@ class _CaptionPanelState extends State<CaptionPanel> {
                   AltIcons.textIncrease,
                   enabled: prefs.fontSize < 48,
                 ),
-                const SizedBox(width: 4),
+                MenuAnchor(
+                  menuChildren: [
+                    SizedBox(
+                      width: 248,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${t('captionSentences')}: $shown',
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                            Slider(
+                              key: const Key('caption-sentences-slider'),
+                              value: shown.toDouble(),
+                              min: 1,
+                              max: 8,
+                              divisions: 7,
+                              label: '$shown',
+                              onChanged: (value) =>
+                                  unawaited(setSentences(value.round())),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  builder: (context, menu, _) => IconButton(
+                    key: const Key('caption-sentences'),
+                    tooltip: t('captionSentences'),
+                    onPressed: busy
+                        ? null
+                        : () => menu.isOpen ? menu.close() : menu.open(),
+                    icon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(AltIcons.segment, size: 20),
+                        const SizedBox(width: 2),
+                        Text(
+                          '$shown',
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Spacer(),
                 button(
                   'pause',
                   paused ? 'resume' : 'pause',
@@ -333,7 +429,7 @@ class _CaptionPanelState extends State<CaptionPanel> {
                         'loading',
                       ].contains(widget.data['phase']),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 IconButton(
                   key: const Key('caption-discard'),
                   tooltip: t('discardSession'),
@@ -355,7 +451,7 @@ class _CaptionPanelState extends State<CaptionPanel> {
                   onPanStart: (_) =>
                       captionChannel.invokeMethod<void>('resize'),
                   child: Padding(
-                    padding: const EdgeInsets.only(left: 20, top: 4),
+                    padding: const EdgeInsets.fromLTRB(20, 4, 8, 0),
                     child: Icon(
                       Icons.south_east_rounded,
                       size: 18,

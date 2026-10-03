@@ -32,8 +32,10 @@ class ExportLabels {
       'file': 'File',
     },
     this.generatedBy = 'Exported from Altranscribe',
+    this.followPlayback = 'Follow playback',
   });
   final String summary, transcript, segments, sourceFile, generatedBy;
+  final String followPlayback;
   final Map<String, String> sources;
 }
 
@@ -176,7 +178,10 @@ class TranscriptExporter {
     if (mediaSource != null) {
       final tag = isVideoMimeType(mediaMime) ? 'video' : 'audio';
       out.writeln(
-        '<$tag id="player" controls preload="metadata" src="${a(mediaSource)}"></$tag>',
+        '<div class="playback-bar"><div class="playback $tag">'
+        '<$tag id="player" controls preload="metadata" src="${a(mediaSource)}"></$tag>'
+        '<label class="follow"><span>${e(labels.followPlayback)}</span>'
+        '<input id="follow-playback" type="checkbox" role="switch" checked></label></div></div>',
       );
     }
     if (record.summary?.trim().isNotEmpty == true) {
@@ -192,7 +197,7 @@ class TranscriptExporter {
       ..writeln('<h2>${e(labels.transcript)}</h2>')
       ..writeln('<ol class="transcript">');
     for (final line in record.lines) {
-      out.write('<li data-start="${line.startMs}">');
+      out.write('<li data-start="${line.startMs}" data-end="${line.endMs}">');
       out.write('<span class="time">${e(_time(line))}</span>');
       if (_showSource(record)) {
         out.write('<span class="source">${e(_source(line))}</span>');
@@ -219,25 +224,101 @@ class TranscriptExporter {
       'data:$mime;base64,${base64Encode(bytes)}';
 
   static const _style = '''
-:root{color-scheme:light dark;--fg:#1c1b1f;--muted:#5f5e63;--bg:#fdfbf7;--panel:#f3efe6;--accent:#7b3f8c}
-@media(prefers-color-scheme:dark){:root{--fg:#e6e1e5;--muted:#a8a4ad;--bg:#1a1817;--panel:#2a2724;--accent:#e9a6ff}}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,"Segoe UI",Roboto,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}
-main{max-width:52rem;margin:0 auto;padding:2rem 1.25rem 4rem}
-h1{font-size:1.8rem;margin:0 0 .25rem}h2{font-size:1.1rem;margin:2rem 0 .75rem}
-.meta,.footer{color:var(--muted);font-size:.9rem}
-audio,video{display:block;width:100%;margin:1.25rem 0;position:sticky;top:.5rem;background:var(--panel);border-radius:12px}
-.summary{background:var(--panel);border-radius:16px;padding:1rem 1.25rem}.summary h2{margin-top:0}
-ol.transcript{list-style:none;padding:0;margin:0}
-ol.transcript li{padding:.6rem .75rem;border-radius:12px;margin:0 -.75rem}
-ol.transcript li.seekable{cursor:pointer}ol.transcript li.seekable:hover,ol.transcript li.active{background:var(--panel)}
-.time,.source{font-size:.8rem;color:var(--muted);margin-right:.75rem}
-.text{margin:.1rem 0}.translation{margin:.1rem 0 0;color:var(--accent)}
+:root{color-scheme:light dark;
+--surface:#fef9f0;--surface-low:#f8f3ea;--surface-container:#f2ede4;--surface-high:#ece8de;--surface-highest:#e7e2d9;
+--on-surface:#1e1b15;--on-surface-variant:#4c4639;--outline:#7d7668;--outline-variant:#cec6b6;
+--primary:#8e437d;--on-primary:#fff;--primary-container:#ffd7f3;--on-primary-container:#742a64;
+--shadow:rgba(0,0,0,.14)}
+@media(prefers-color-scheme:dark){:root{
+--surface:#17130a;--surface-low:#1e1b15;--surface-container:#221f19;--surface-high:#2d2a23;--surface-highest:#38342d;
+--on-surface:#e7e2d9;--on-surface-variant:#cec6b6;--outline:#979081;--outline-variant:#4c4639;
+--primary:#fface9;--on-primary:#5a0e4c;--primary-container:#742a64;--on-primary-container:#ffd7f3;
+--shadow:rgba(0,0,0,.45)}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface);color:var(--on-surface);font:16px/1.6 system-ui,"Segoe UI",Roboto,"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:48rem;margin:0 auto;padding:40px 24px 64px}
+h1{font-size:1.75rem;line-height:1.3;font-weight:600;margin:0 0 8px}
+h2{font-size:1.125rem;line-height:1.4;font-weight:600;margin:32px 0 12px}
+.meta,.footer{color:var(--on-surface-variant);font-size:.875rem;margin:0}
+.footer{margin-top:32px}
+/* The band keeps text that scrolls under the player out of sight. */
+.playback-bar{position:sticky;top:0;z-index:2;margin:12px 0;padding:12px 0;background:var(--surface)}
+.playback{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 16px 10px 10px;border-radius:28px;background:var(--surface-high);box-shadow:0 1px 3px var(--shadow),0 4px 12px var(--shadow)}
+.playback audio{flex:1 1 18rem;min-width:0;height:44px}
+audio::-webkit-media-controls-enclosure{background:transparent;border-radius:22px}
+audio::-webkit-media-controls-panel{background:transparent}
+.playback.video{padding:12px 16px 12px 12px}
+.playback video{flex:1 0 100%;display:block;width:100%;max-height:min(40vh,24rem);border-radius:18px;background:#000}
+.follow{display:flex;align-items:center;gap:12px;margin-left:auto;padding-left:6px;font-size:.875rem;font-weight:500;color:var(--on-surface-variant);cursor:pointer;user-select:none}
+.follow input{appearance:none;-webkit-appearance:none;position:relative;flex:none;width:52px;height:32px;margin:0;border:2px solid var(--outline);border-radius:16px;background:var(--surface-highest);cursor:pointer;transition:background-color .2s,border-color .2s}
+.follow input::before{content:"";position:absolute;top:50%;left:6px;width:16px;height:16px;border-radius:50%;background:var(--outline);transform:translateY(-50%);transition:left .2s,width .2s,height .2s,background-color .2s}
+.follow input:checked{border-color:var(--primary);background:var(--primary)}
+.follow input:checked::before{left:22px;width:24px;height:24px;background:var(--on-primary)}
+.follow input:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.summary{margin-top:24px;padding:20px;border-radius:24px;background:var(--surface-container)}
+.summary h2{margin:0 0 8px}.summary p{margin:0}
+ol.transcript{list-style:none;display:flex;flex-direction:column;gap:4px;padding:0;margin:0}
+ol.transcript li{padding:12px 20px;border-radius:20px;transition:background-color .2s,color .2s,padding .2s,margin .2s,box-shadow .2s}
+ol.transcript li.seekable{cursor:pointer}
+ol.transcript li.seekable:hover{background:var(--surface-low)}
+.time,.source{font-size:.75rem;line-height:1.3;font-weight:500;letter-spacing:.02em;color:var(--on-surface-variant);font-variant-numeric:tabular-nums}
+.source::before{content:"·";margin:0 6px}
+.text,.translation{margin:4px 0 0;font-size:1.0625rem;transition:font-size .2s}
+.translation{margin-top:2px;color:var(--primary);font-weight:500}
+ol.transcript li.active{padding:16px 20px;margin:4px 0;background:var(--primary-container);color:var(--on-primary-container);box-shadow:0 1px 3px var(--shadow)}
+ol.transcript li.active .time,ol.transcript li.active .source{color:var(--on-primary-container)}
+ol.transcript li.active .text,ol.transcript li.active .translation{font-size:1.1875rem}
+ol.transcript li.active .translation{color:var(--on-primary-container);font-weight:600}
+@media(max-width:600px){main{padding:24px 16px 48px}.playback-bar{padding:8px 0}.summary{padding:16px}ol.transcript li{padding:12px 16px}ol.transcript li.active{padding:14px 16px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{.playback-bar{display:none}ol.transcript li.active{background:none;box-shadow:none;padding:12px 20px;margin:0}}
 ''';
 
   static const _script = '''
-(function(){var p=document.getElementById('player');if(!p)return;var items=[].slice.call(document.querySelectorAll('li[data-start]'));
-items.forEach(function(li){li.classList.add('seekable');li.addEventListener('click',function(){p.currentTime=Number(li.dataset.start)/1000;p.play();});});
-p.addEventListener('timeupdate',function(){var t=p.currentTime*1000,current=null;items.forEach(function(li){if(Number(li.dataset.start)<=t)current=li;});
-items.forEach(function(li){li.classList.toggle('active',li===current);});});})();
+(function(){
+  var p=document.getElementById('player');if(!p)return;
+  var follow=document.getElementById('follow-playback');
+  var bar=document.querySelector('.playback');
+  var items=[].slice.call(document.querySelectorAll('li[data-start]'));
+  var active=null;
+  function update(force,instant){
+    var t=p.currentTime*1000,current=null,nearest=null,distance=Infinity;
+    items.forEach(function(li){
+      var start=Number(li.dataset.start),end=Number(li.dataset.end);
+      if(start<=t&&t<end&&(!current||start>=Number(current.dataset.start)))current=li;
+      var gap=t<start?start-t:Math.max(0,t-end);
+      if(gap<distance||(gap===distance&&start>Number(nearest.dataset.start))){nearest=li;distance=gap;}
+    });
+    current=current||nearest;
+    var changed=current!==active;
+    if(changed){
+      if(active){active.classList.remove('active');active.removeAttribute('aria-current');}
+      active=current;
+      if(active){active.classList.add('active');active.setAttribute('aria-current','true');}
+    }
+    if(!current||!follow.checked||(!changed&&!force))return;
+    var rect=current.getBoundingClientRect(),top=bar.getBoundingClientRect().bottom+16;
+    if(force||rect.top<top||rect.bottom>window.innerHeight-24){
+      var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({top:Math.max(0,window.scrollY+rect.top-Math.max(top,(window.innerHeight-rect.height)/2)),
+        behavior:instant||reduced?'auto':'smooth'});
+    }
+  }
+  items.forEach(function(li){
+    li.classList.add('seekable');
+    li.addEventListener('click',function(){
+      p.currentTime=Number(li.dataset.start)/1000;update(true,true);
+      var playing=p.play();if(playing)playing.catch(function(){});
+    });
+  });
+  p.addEventListener('timeupdate',function(){update(p.seeking,p.seeking);});
+  ['seeking','seeked'].forEach(function(event){
+    p.addEventListener(event,function(){update(true,true);});
+  });
+  ['loadedmetadata','play','ended'].forEach(function(event){
+    p.addEventListener(event,function(){update(false,true);});
+  });
+  follow.addEventListener('change',function(){update(true,true);});
+})();
 ''';
 }

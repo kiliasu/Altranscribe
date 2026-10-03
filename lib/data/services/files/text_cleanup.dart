@@ -3,13 +3,16 @@ class CleanupOptions {
     this.names = false,
     this.terms = false,
     this.corrections = false,
+    this.mergeSentences = false,
     this.spellings = const [],
   });
   final bool names;
   final bool terms;
   final bool corrections;
+  final bool mergeSentences;
   final List<String> spellings;
-  bool get enabled => names || terms || corrections;
+  bool get enabled => names || terms || corrections || mergeSentences;
+  bool get spellingEnabled => names || terms || corrections;
   bool allows(String category) => switch (category) {
     'name' => names,
     'term' => terms,
@@ -20,6 +23,7 @@ class CleanupOptions {
     'names': names,
     'terms': terms,
     'corrections': corrections,
+    'mergeSentences': mergeSentences,
     'spellings': spellings,
   };
 }
@@ -91,6 +95,10 @@ class CleanupResult {
       String numbers(String text) =>
           RegExp(r'\d+').allMatches(text).map((m) => m[0]).join('|');
       if (numbers(from) != numbers(to)) continue;
+      // Cleanup is not translation. A Latin glossary entry must never erase
+      // an existing kanji name in Japanese or Chinese source text.
+      final han = RegExp(r'[\u3400-\u9fff]');
+      if (han.hasMatch(from) && !han.hasMatch(to)) continue;
       final sourcePattern = CleanupEdit.pattern(from);
       if (!originals.any(sourcePattern.hasMatch)) continue;
       final targetPattern = CleanupEdit.pattern(to);

@@ -18,12 +18,14 @@ class TranscriptTile extends StatelessWidget {
     this.captionSize = 22,
     this.highlight = false,
     this.awaitingTranslation = false,
+    this.animateTranslation = true,
   });
   final TranscriptLine line;
   final bool english;
   final bool compact;
   final double captionSize;
   final bool highlight;
+  final bool animateTranslation;
 
   /// The session will translate this line once its text is final. Its
   /// translation space is held from the first word, so the tile does not
@@ -35,7 +37,8 @@ class TranscriptTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final motion = MediaQuery.disableAnimationsOf(context)
+    final motion =
+        !animateTranslation || MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : const Duration(milliseconds: 200);
     final body = text.bodyLarge!.copyWith(
@@ -49,13 +52,18 @@ class TranscriptTile extends StatelessWidget {
     final translated = line.displayTranslation?.trim().isNotEmpty == true;
     final translating =
         !translated &&
-        (line.translationStatus == 'pending' || awaitingTranslation);
+        (line.translationStatus == 'pending' ||
+            (awaitingTranslation && line.translationStatus == 'none'));
     final tag = status == 'partial'
         ? t('tagRecognizing')
         : status == 'streamed'
         ? t('tagUnconfirmed')
         : translating
-        ? t('tagTranslating')
+        ? t(
+            line.translationStatus == 'pending'
+                ? 'tagTranslating'
+                : 'tagTranslationQueued',
+          )
         : null;
     final label = text.labelMedium?.copyWith(color: colors.onSurfaceVariant);
     final Widget translation = translated
@@ -131,13 +139,16 @@ class TranscriptTile extends StatelessWidget {
           if (status != 'done' && !settling)
             pageHint(context, t('cloudPartialSaved')),
           SelectableText(readableTranscript(line.displayText), style: body),
-          if (translated || translating) ...[
+          if (translated || translating || awaitingTranslation) ...[
             SizedBox(height: compact ? 4 : 8),
             // The placeholder is sized like the text that replaces it; any
             // difference that remains is animated rather than jumped. With
             // reduced motion the switch is immediate.
             if (motion == Duration.zero)
-              translation
+              Opacity(
+                opacity: translated || translating ? 1 : 0,
+                child: translation,
+              )
             else
               AnimatedSize(
                 duration: motion,
@@ -153,36 +164,43 @@ class TranscriptTile extends StatelessWidget {
                 ),
               ),
           ],
-          if (line.textEdits.isNotEmpty || line.translationEdits.isNotEmpty)
+          // Joined sentences keep their fragments in the original text, one
+          // per line.
+          if (line.textEdits.isNotEmpty ||
+              line.translationEdits.isNotEmpty ||
+              line.originalSegments.isNotEmpty)
             ExpansionTile(
               key: PageStorageKey(line),
               title: Text(t('viewOriginals')),
               tilePadding: EdgeInsets.zero,
               children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: SelectableText(line.text),
-                ),
-                if (line.translation != null)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: SelectableText(line.translation!),
-                  ),
-                for (final edit in [
-                  ...line.textEdits,
-                  ...line.translationEdits,
-                ])
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('${edit.from} → ${edit.to}'),
-                    subtitle: Text(
-                      t(
-                        edit.evidence == 'glossary'
-                            ? 'glossaryEvidence'
-                            : 'repeatedEvidence',
+                // Its own storage key keeps the texts' scroll state apart from
+                // the tile's expanded state.
+                Column(
+                  key: const PageStorageKey('originals'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SelectableText(line.text),
+                    if (line.translation != null &&
+                        line.translationEdits.isNotEmpty)
+                      SelectableText(line.translation!),
+                    for (final edit in [
+                      ...line.textEdits,
+                      ...line.translationEdits,
+                    ])
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('${edit.from} → ${edit.to}'),
+                        subtitle: Text(
+                          t(
+                            edit.evidence == 'glossary'
+                                ? 'glossaryEvidence'
+                                : 'repeatedEvidence',
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
+                ),
               ],
             ),
           if (line.translationStatus == 'interrupted')

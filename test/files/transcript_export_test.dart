@@ -51,12 +51,6 @@ void main() {
     );
   });
 
-  test('timestamps show hours only when needed and mark estimates', () {
-    expect(TranscriptExporter.timestamp(0), '0:00');
-    expect(TranscriptExporter.timestamp(65000), '1:05');
-    expect(TranscriptExporter.timestamp(3725000), '1:02:05');
-  });
-
   test('plain text lists summary, sources and translations', () {
     final text = exporter.text(record);
     expect(text, startsWith('Solar / panels: intro?\n'));
@@ -95,6 +89,12 @@ void main() {
     expect(audio, contains('<audio id="player" controls'));
     expect(audio, contains('src="file:///C:/audio/lecture%20%3C1%3E.wav"'));
     expect(audio, contains('<script>'));
+    expect(
+      audio,
+      contains('id="follow-playback" type="checkbox" role="switch" checked'),
+    );
+    expect(audio, contains('<div class="playback audio">'));
+    expect(audio, contains('data-start="0" data-end="2000"'));
 
     final video = exporter.html(
       record,
@@ -105,6 +105,7 @@ void main() {
       mediaMime: 'video/mp4',
     );
     expect(video, contains('<video id="player" controls'));
+    expect(video, contains('<div class="playback video">'));
     expect(video, contains('src="data:video/mp4;base64,AQID"'));
   });
 
@@ -122,11 +123,11 @@ void main() {
       language: 'en',
       sources: ['file'],
       lines: [
-        TranscriptLine(source: 'file', startMs: 500, endMs: 900, text: 'Hi'),
+        TranscriptLine(source: 'file', startMs: 65000, endMs: 65900, text: 'Hi'),
       ],
     );
-    expect(exporter.text(single), contains('[0:00] Hi'));
-    expect(exporter.markdown(single), contains('**0:00** Hi  '));
+    expect(exporter.text(single), contains('[1:05] Hi'));
+    expect(exporter.markdown(single), contains('**1:05** Hi  '));
     expect(exporter.html(single), isNot(contains('class="source"')));
   });
 }

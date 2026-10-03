@@ -71,50 +71,52 @@ void main() {
     );
   });
 
-  test(
-    'ASR continues while translation waits, and stop saves both languages',
-    () async {
-      final controller = fakeController();
-      addTearDown(controller.dispose);
-      final translator = controller.translator as FakeTranslator;
-      translator.response = Completer<String>();
-      await controller.start(
-        microphone: true,
-        system: true,
-        language: 'en',
-        targetLanguage: 'zh',
-      );
-      (controller.audio as FakeAudio).events.addAll([
-        chunk('system', 2000),
-        chunk('microphone', 0),
-      ]);
-      await until(() => controller.record!.lines.length == 2);
-      expect(
-        controller.record!.lines.every(
-          (line) => line.translationStatus == 'pending',
-        ),
-        isTrue,
-      );
-      expect(controller.pending, 0);
-      expect(controller.pendingTranslations, 2);
-      final stopped = controller.stop();
-      expect(controller.phase, SessionPhase.stopping);
-      translator.response!.complete('这是译文。');
-      await stopped;
-      final record = controller.records.single;
-      expect(record.targetLanguage, 'zh');
-      expect(record.lines.map((line) => line.source), ['microphone', 'system']);
-      expect(record.lines.every((line) => line.translation == '这是译文。'), isTrue);
-      expect(
-        record.lines.every((line) => line.translationStatus == 'done'),
-        isTrue,
-      );
-      expect(
-        translator.calls.every((call) => call.$2 == 'en' && call.$3 == 'zh'),
-        isTrue,
-      );
-    },
-  );
+  test('ASR continues while translation waits, and stop saves both languages', () async {
+    final controller = fakeController();
+    addTearDown(controller.dispose);
+    final translator = controller.translator as FakeTranslator;
+    translator.response = Completer<String>();
+    controller.translationRules = 'Use a formal tone.';
+    await controller.start(
+      microphone: true,
+      system: true,
+      language: 'en',
+      targetLanguage: 'zh',
+    );
+    (controller.audio as FakeAudio).events.addAll([
+      chunk('system', 2000),
+      chunk('microphone', 0),
+    ]);
+    await until(() => controller.record!.lines.length == 2);
+    expect(
+      controller.record!.lines.every(
+        (line) => line.translationStatus == 'pending',
+      ),
+      isTrue,
+    );
+    expect(controller.pending, 0);
+    expect(controller.pendingTranslations, 2);
+    final stopped = controller.stop();
+    expect(controller.phase, SessionPhase.stopping);
+    translator.response!.complete('这是译文。');
+    await stopped;
+    final record = controller.records.single;
+    expect(record.targetLanguage, 'zh');
+    expect(record.lines.map((line) => line.source), ['microphone', 'system']);
+    expect(record.lines.every((line) => line.translation == '这是译文。'), isTrue);
+    expect(
+      record.lines.every((line) => line.translationStatus == 'done'),
+      isTrue,
+    );
+    expect(
+      translator.calls.every((call) => call.$2 == 'en' && call.$3 == 'zh'),
+      isTrue,
+    );
+    // Live captions use the session rules without a separate preparation call.
+    expect(translator.preparationCalls, isEmpty);
+    expect(translator.calls, hasLength(2));
+    expect(translator.rules, everyElement('Use a formal tone.'));
+  });
 
   test(
     'failed translation preserves original and does not stop transcription',

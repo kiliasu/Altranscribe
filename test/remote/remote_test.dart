@@ -8,6 +8,7 @@ import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/audio/audio_service.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
+import 'package:altranscribe/data/services/translation/translation_terms.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/remote/paired_devices.dart';
@@ -428,6 +429,32 @@ void main() {
     );
     expect(translator.contexts.single.single.text, 'The GPU job.');
     expect(translator.provider, LlmProvider.ollama);
+    const fixedName = TranslationTerm(
+      source: 'Geoffrey',
+      translation: '杰弗里',
+      type: 'person',
+    );
+    translator.preparation = const TextPreparation(
+      terms: [fixedName],
+      joins: [1],
+    );
+    final preparedText = await llm.prepareText(
+      ['Geoffrey will', 'return.'],
+      'en',
+      'zh',
+      mergeSentences: true,
+    );
+    expect(preparedText.terms.single.translation, '杰弗里');
+    expect(preparedText.joins, [1]);
+    await llm.translate(
+      'Geoffrey will return.',
+      'en',
+      'zh',
+      rules: 'No emoji.',
+      terms: preparedText.terms,
+    );
+    expect(translator.rules.last, 'No emoji.');
+    expect(translator.termCalls.last.single.translation, '杰弗里');
     expect((await llm.summarize(['Hello'], 'zh')).title, isNotEmpty);
     expect(
       (await llm.cleanUp(['Hello'], const CleanupOptions(names: true))).texts,

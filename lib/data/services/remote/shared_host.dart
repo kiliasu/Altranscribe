@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
+import 'package:altranscribe/data/services/translation/translation_terms.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/remote/discovery.dart';
@@ -116,6 +117,7 @@ class SharedHost extends ChangeNotifier {
       ).toString();
       info = {
         'protocol': 1,
+        'textPreparation': true,
         'name': name.trim().isEmpty ? Platform.localHostname : name.trim(),
         'speechProvider': 'whisper',
         'model': model.split(RegExp(r'[/\\]')).last,
@@ -258,6 +260,7 @@ class SharedHost extends ChangeNotifier {
         if (!speech &&
             ![
               '/v1/translate',
+              '/v1/prepare-text',
               '/v1/summarize',
               '/v1/cleanup',
             ].contains(request.uri.path)) {
@@ -373,10 +376,34 @@ class SharedHost extends ChangeNotifier {
           source,
           target,
           context: TranslationContextPolicy.bound(context),
+          rules: normalizeTranslationRules(data['rules'] as String?),
+          terms: (data['terms'] as List? ?? [])
+              .map((term) => TranslationTerm.fromJson(term as Map))
+              .toList(),
         ),
       };
     }
     final texts = (data['texts'] as List).cast<String>();
+    if (operation == '/v1/prepare-text') {
+      final source = data['source'] as String;
+      final target = data['target'] as String?;
+      _language(source);
+      if (target != null) _language(target);
+      final result = await service.prepareText(
+        texts,
+        source,
+        target,
+        terms: (data['terms'] as List? ?? [])
+            .map((term) => TranslationTerm.fromJson(term as Map))
+            .toList(),
+        mergeSentences: data['mergeSentences'] == true,
+        rules: normalizeTranslationRules(data['rules'] as String?),
+      );
+      return {
+        'terms': result.terms.map((term) => term.toJson()).toList(),
+        'joins': result.joins,
+      };
+    }
     if (operation == '/v1/summarize') {
       final language = data['language'] as String;
       _language(language);
@@ -390,7 +417,9 @@ class SharedHost extends ChangeNotifier {
       corrections: values['corrections'] == true,
       spellings: (values['spellings'] as List? ?? []).cast<String>(),
     );
-    final result = await service.cleanUp(texts, options);
+    final language = data['language'] as String? ?? 'auto';
+    _language(language);
+    final result = await service.cleanUp(texts, options, language: language);
     return {
       'edits': [
         for (final edits in result.edits)

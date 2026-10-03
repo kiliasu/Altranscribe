@@ -10,6 +10,7 @@ import 'package:altranscribe/data/repositories/record_store.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
+import 'package:altranscribe/data/services/translation/translation_terms.dart';
 import 'package:altranscribe/data/services/models/model_catalog.dart';
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 
@@ -148,6 +149,10 @@ class FakeTranslator extends TranslationService {
   String? failure;
   final calls = <(String, String, String)>[];
   final contexts = <List<TranslationContext>>[];
+  final rules = <String>[];
+  final termCalls = <List<TranslationTerm>>[];
+  TextPreparation? preparation;
+  final preparationCalls = <List<String>>[];
   String? prepareFailure;
   String? summaryFailure;
   Completer<RecordSummary>? summaryResponse;
@@ -176,11 +181,28 @@ class FakeTranslator extends TranslationService {
     String source,
     String target, {
     List<TranslationContext> context = const [],
+    String rules = defaultTranslationRules,
+    List<TranslationTerm> terms = const [],
   }) async {
     calls.add((text, source, target));
     contexts.add(context);
+    this.rules.add(rules);
+    termCalls.add(terms);
     if (failure != null) throw StateError(failure!);
     return await response?.future ?? '测试译文';
+  }
+
+  @override
+  Future<TextPreparation> prepareText(
+    List<String> texts,
+    String source,
+    String? target, {
+    List<TranslationTerm> terms = const [],
+    bool mergeSentences = false,
+    String rules = defaultTranslationRules,
+  }) async {
+    preparationCalls.add(texts);
+    return preparation ?? TextPreparation(terms: terms);
   }
 
   @override
@@ -193,8 +215,9 @@ class FakeTranslator extends TranslationService {
   @override
   Future<CleanupResult> cleanUp(
     List<String> texts,
-    CleanupOptions options,
-  ) async => CleanupResult(texts, [for (final _ in texts) <CleanupEdit>[]]);
+    CleanupOptions options, {
+    String language = 'auto',
+  }) async => CleanupResult(texts, [for (final _ in texts) <CleanupEdit>[]]);
 
   @override
   void stop() {}

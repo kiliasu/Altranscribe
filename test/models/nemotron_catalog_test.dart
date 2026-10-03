@@ -62,47 +62,50 @@ void main() {
     await directory.delete(recursive: true);
   });
 
-  NemotronModel model() => TinyNemotron(
-    Uri.parse('http://127.0.0.1:${server.port}/'),
-    [
-      for (final entry in contents.entries)
-        ModelFile(
-          entry.key,
-          entry.value.length,
-          sha256.convert(entry.value).toString(),
-        ),
-    ],
+  NemotronModel model() =>
+      TinyNemotron(Uri.parse('http://127.0.0.1:${server.port}/'), [
+        for (final entry in contents.entries)
+          ModelFile(
+            entry.key,
+            entry.value.length,
+            sha256.convert(entry.value).toString(),
+          ),
+      ]);
+
+  test(
+    'downloads every file into the model folder, verifying each one',
+    () async {
+      final catalog = ModelCatalog(directory);
+      addTearDown(catalog.dispose);
+      final tiny = model();
+      final progress = <int>[];
+      catalog.addListener(() => progress.add(catalog.receivedBytes));
+      expect(await catalog.download(tiny), isTrue);
+      expect(catalog.downloadError, isNull);
+      expect(progress.last, tiny.bytes);
+      final folder = Directory(catalog.folder(tiny));
+      expect(
+        folder.listSync().map((f) => f.uri.pathSegments.last).toSet(),
+        contents.keys.toSet(),
+      );
+      expect(
+        utf8
+            .decode(
+              File('${folder.path}/decoder.int8.onnx').readAsBytesSync(),
+              allowMalformed: true,
+            )
+            .length,
+        700,
+      );
+      expect(catalog.downloadingModel, isNull);
+
+      // A second download only fetches what is missing.
+      File('${folder.path}/decoder.int8.onnx').deleteSync();
+      requests.clear();
+      expect(await catalog.download(tiny), isTrue);
+      expect(requests, ['decoder.int8.onnx']);
+    },
   );
-
-  test('downloads every file into the model folder, verifying each one', () async {
-    final catalog = ModelCatalog(directory);
-    addTearDown(catalog.dispose);
-    final tiny = model();
-    final progress = <int>[];
-    catalog.addListener(() => progress.add(catalog.receivedBytes));
-    expect(await catalog.download(tiny), isTrue);
-    expect(catalog.downloadError, isNull);
-    expect(progress.last, tiny.bytes);
-    final folder = Directory(catalog.folder(tiny));
-    expect(
-      folder.listSync().map((f) => f.uri.pathSegments.last).toSet(),
-      contents.keys.toSet(),
-    );
-    expect(
-      utf8.decode(
-        File('${folder.path}/decoder.int8.onnx').readAsBytesSync(),
-        allowMalformed: true,
-      ).length,
-      700,
-    );
-    expect(catalog.downloadingModel, isNull);
-
-    // A second download only fetches what is missing.
-    File('${folder.path}/decoder.int8.onnx').deleteSync();
-    requests.clear();
-    expect(await catalog.download(tiny), isTrue);
-    expect(requests, ['decoder.int8.onnx']);
-  });
 
   test('a corrupt file is rejected and leaves nothing behind', () async {
     final catalog = ModelCatalog(directory);
@@ -114,10 +117,7 @@ void main() {
     final folder = Directory(catalog.folder(tiny));
     expect(File('${folder.path}/encoder.int8.onnx').existsSync(), isTrue);
     expect(File('${folder.path}/decoder.int8.onnx').existsSync(), isFalse);
-    expect(
-      folder.listSync().where((f) => f.path.endsWith('.part')),
-      isEmpty,
-    );
+    expect(folder.listSync().where((f) => f.path.endsWith('.part')), isEmpty);
   });
 
   test('scan reports folders as missing, incomplete or available', () async {
@@ -126,9 +126,8 @@ void main() {
     final real = ModelCatalog.nemotronModels.first;
     expect((await catalog.scan())[real.id], ModelAvailability.missing);
     final folder = Directory(catalog.folder(real))..createSync(recursive: true);
-    File('${folder.path}/tokens.txt').writeAsBytesSync(
-      List.filled(real.files.last.bytes, 1),
-    );
+    File('${folder.path}/tokens.txt')
+        .writeAsBytesSync(List.filled(real.files.last.bytes, 1));
     expect((await catalog.scan())[real.id], ModelAvailability.incomplete);
     for (final file in real.files) {
       // Sparse files keep this cheap: length is what scan checks.
@@ -139,5 +138,18 @@ void main() {
     }
     expect((await catalog.scan())[real.id], ModelAvailability.available);
     expect((await catalog.scan())['large-v3-turbo'], ModelAvailability.missing);
+  });
+
+  test('Nemotron downloads are pinned to a commit and checked', () {
+    for (final model in ModelCatalog.nemotronModels) {
+      expect(model.revision, matches(RegExp(r'^[0-9a-f]{40}$')));
+      expect(model.licenseUrl, startsWith('https://'));
+      for (final file in model.files) {
+        final uri = model.downloadUri(file);
+        expect(uri.scheme, 'https');
+        expect(uri.path, contains('/resolve/${model.revision}/'));
+        expect(file.sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
+      }
+    }
   });
 }

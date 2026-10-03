@@ -420,27 +420,4 @@ void main() {
       );
     },
   );
-
-  test('catalog entries describe both models with pinned sources', () {
-    expect(ModelCatalog.nemotronModels.map((m) => m.id), [
-      'nemotron-en-0.6b',
-      'nemotron-3.5-0.6b',
-    ]);
-    for (final model in ModelCatalog.nemotronModels) {
-      expect(model.files.map((f) => f.name), NemotronModel.fileNames);
-      expect(model.bytes, greaterThan(600000000));
-      expect(model.size, endsWith('MB'));
-      expect(
-        model.downloadUri(model.files.first).toString(),
-        startsWith('https://huggingface.co/csukuangfj2/'),
-      );
-      expect(
-        model.downloadUri(model.files.first).path,
-        contains(model.revision),
-      );
-      expect(model.licenseUrl, startsWith('https://'));
-    }
-    expect(ModelCatalog.nemotron('nemotron-3.5-0.6b')?.multilingual, isTrue);
-    expect(ModelCatalog.nemotron('nope'), isNull);
-  });
 }

@@ -39,6 +39,7 @@ void main() {
         automatic: false,
         count: 3,
       );
+      first.translationRules = 'Keep technical speech neutral. No emoji.';
       await first.setCaptionPreferences(
         const CaptionPreferences(
           sentences: 5,
@@ -59,6 +60,7 @@ void main() {
         first.translationContext.toJson(),
       );
       expect(second.captionsVisible, false);
+      expect(second.translationRules, first.translationRules);
     },
   );
   test('context uses prior completed same-source entries with manual and automatic bounds', () {
@@ -262,4 +264,79 @@ void main() {
       },
     );
   }
+
+  test('an earlier line naming the same person or term is sent as context', () {
+    TranscriptLine line(int second, String text, [String? translation]) =>
+        TranscriptLine(
+          source: 'microphone',
+          startMs: second * 1000,
+          endMs: second * 1000 + 2000,
+          text: text,
+          translation: translation,
+          translationStatus: translation == null ? 'none' : 'done',
+        );
+    final hinata = line(0, 'Hinata will lead the review.', '日向会主持这次评审。');
+    // The other source and unfinished text are never referenced.
+    final otherSource = TranscriptLine(
+      source: 'system',
+      startMs: 20000,
+      endMs: 22000,
+      text: 'Hinata is on the call.',
+      translation: '比娜塔在通话中。',
+      translationStatus: 'done',
+    );
+    final unfinished = line(30, 'Hinata wants GPU numbers', '日向想要 GPU 数据')
+      ..transcriptionStatus = 'partial';
+    final gpu = line(5, 'The build uses GPU inference.', '构建使用 GPU 推理。');
+    final untranslated = line(10, 'Hinata joined late.');
+    final current = line(240, 'Hinata said the GPU build is ready.');
+    final record = TranscriptRecord(
+      id: 'session-1',
+      createdAt: DateTime(2026),
+      language: 'en',
+      sources: ['microphone'],
+      lines: [
+        hinata,
+        gpu,
+        untranslated,
+        otherSource,
+        unfinished,
+        for (var i = 0; i < 7; i++)
+          line(200 + i * 5, 'Item $i moved to Friday.', '第 $i 项移到了周五。'),
+        current,
+      ],
+    );
+    final context = const TranslationContextPolicy().select(record, current);
+    // Two references come first, then the six most recent lines.
+    expect(context.map((item) => item.text).take(2), [hinata.text, gpu.text]);
+    expect(context.first.translation, '日向会主持这次评审。');
+    expect(context, hasLength(8));
+    // A name that opens the sentence counts; common openers do not.
+    expect(
+      TranslationContextPolicy.nameTokens('Hinata said the build is ready.'),
+      {'Hinata'},
+    );
+    expect(
+      TranslationContextPolicy.nameTokens(
+        "The review moved. We asked Geoffrey and NASA. Let's go.",
+      ),
+      {'Geoffrey', 'NASA'},
+    );
+    expect(TranslationContextPolicy.nameTokens('我们明天和 Hinata 一起用 whisper。'), {
+      'Hinata',
+      'whisper',
+    });
+    expect(TranslationContextPolicy.nameTokens('ヒナタさんは来ます。'), {'ヒナタ'});
+    expect(
+      TranslationContextPolicy.mentions('Geoffreys arrived', 'Geoffrey'),
+      false,
+    );
+    expect(
+      const TranslationContextPolicy(
+        automatic: false,
+        count: 0,
+      ).select(record, current),
+      isEmpty,
+    );
+  });
 }

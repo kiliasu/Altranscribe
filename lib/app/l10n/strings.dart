@@ -1,4 +1,38 @@
 const strings = <String, List<String>>{
+  'translationRules': ['翻译要求', 'Translation requirements'],
+  'translationRulesHint': [
+    '可选，会附加到每次文字翻译中；留空则按默认方式翻译。',
+    'Optional; added to every text translation. Leave empty for the default.',
+  ],
+  'translationRulesExample': [
+    '例如：使用正式语气；Alice 译为“爱丽丝”',
+    'For example: use a formal tone; keep product names in English',
+  ],
+  'mergeSentences': ['合并被切断的句子', 'Join fragmented sentences'],
+  'tagTranslationQueued': ['待翻译', 'Awaiting translation'],
+  'viewOriginals': ['查看原文与修改对照', 'View originals & changes'],
+  'glossaryEvidence': ['依据：首选词表', 'Evidence: preferred spelling'],
+  'repeatedEvidence': [
+    '依据：文稿中重复出现的写法',
+    'Evidence: repeated spelling in the document',
+  ],
+  'filePreparingText': [
+    '正在识别名称与整理断句…',
+    'Preparing names and sentence boundaries…',
+  ],
+  'incompleteTextPreparation': [
+    '名称或断句识别未完成，已保留原文并继续处理。',
+    'Name or sentence preparation was incomplete; the original text was kept.',
+  ],
+  'translationTruncated': [
+    '译文过长，重试后仍未完成，原文已保留。',
+    'The translation ran too long even after a retry; the original is kept.',
+  ],
+  'translationEmpty': [
+    '模型重试后仍未返回译文，原文已保留。',
+    'The model returned no translation after retrying. Original text was kept.',
+  ],
+  'exportFollowPlayback': ['跟随播放', 'Follow playback'],
   'androidMicrophonePermission': [
     '需要音频权限才能开始采集。请在系统应用权限中允许 Altranscribe 使用麦克风。',
     'Audio permission is required. Allow Altranscribe microphone access in system app permissions.',
@@ -417,8 +451,8 @@ const strings = <String, List<String>>{
   "unifyTerms": ["专业术语统一", "Unify technical terms"],
   "correctWords": ["错误词汇修正（仅高置信度）", "Correct words (high confidence only)"],
   "cleanupHint": [
-    "仅用于文件原文与译文，需要启动所选 LLM。只接受词表或至少两处原文用例支持的明确替换，有疑义则保留。保留原文与修改对照；结果仍需核对。",
-    "For file transcripts and translations; requires the selected LLM. Only unambiguous edits backed by preferred spellings or at least two occurrences are accepted. Originals and changes are kept; review the results.",
+    "仅用于文件，需要所选 LLM。只做有依据的明确修正，有疑义则保留；合并断句需单独勾选。原文与修改对照会保留，结果仍需核对。",
+    "For files; requires the selected LLM. Only clear, supported edits are made and doubtful ones are skipped; joining sentences is a separate option. Originals and changes are kept for review.",
   ],
   "preferredSpellings": ["首选人名与术语（可选）", "Preferred names & terms (optional)"],
   "spellingsHint": [
@@ -433,12 +467,6 @@ const strings = <String, List<String>>{
   "fileSummaryHint": [
     "需要可用的文字 LLM（本地服务或云端 API）。每个文件处理完成后生成，使用开始时的界面语言。",
     "Requires a text LLM (local server or cloud API). Generated after each file finishes, using the app language at start.",
-  ],
-  "viewOriginals": ["查看原文与修改对照", "View originals & changes"],
-  "glossaryEvidence": ["依据：首选词表", "Evidence: preferred spelling"],
-  "repeatedEvidence": [
-    "依据：文稿中重复出现的写法",
-    "Evidence: repeated spelling in the document",
   ],
   "cleanup_done": [
     "文字整理已完成；未找到明确依据的词保持原样。",

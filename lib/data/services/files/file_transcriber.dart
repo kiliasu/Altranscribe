@@ -7,6 +7,7 @@ import 'package:altranscribe/data/services/transcription/transcript_assembler.da
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
+import 'package:altranscribe/data/services/files/sentence_merger.dart';
 
 /// One offline file at a time, using the session's already prepared services.
 class FileTranscriber {
@@ -64,7 +65,7 @@ class FileTranscriber {
       if (cancelled) return;
 
       Future<void> clean(bool translation) async {
-        if (!options.enabled || cancelled) return;
+        if (!options.spellingEnabled || cancelled) return;
         stage = translation ? 'fileCleaningTranslation' : 'fileCleaning';
         onChanged();
         final lines = record.lines
@@ -74,11 +75,22 @@ class FileTranscriber {
             .map((line) => translation ? line.translation! : line.text)
             .toList();
         try {
-          final result = await translator.cleanUp(originals, options);
+          final result = await translator.cleanUp(
+            originals,
+            options,
+            language: translation ? record.targetLanguage! : record.language,
+          );
           if (cancelled) return;
           for (var i = 0; i < lines.length; i++) {
             if (result.edits[i].isEmpty) continue;
             if (translation) {
+              if (record.translationTerms.any(
+                (term) =>
+                    term.isTranslatedIn(originals[i]) &&
+                    !term.isTranslatedIn(result.texts[i]),
+              )) {
+                continue;
+              }
               lines[i].revisedTranslation = result.texts[i];
               lines[i].translationEdits = result.edits[i];
             } else {
@@ -95,6 +107,41 @@ class FileTranscriber {
       }
 
       await clean(false);
+      final prepareNames =
+          record.targetLanguage != null &&
+          record.targetLanguage != record.language;
+      if (!cancelled &&
+          (prepareNames || options.mergeSentences) &&
+          record.lines.isNotEmpty) {
+        stage = 'filePreparingText';
+        onChanged();
+        for (final joining in [
+          if (options.mergeSentences) true,
+          if (prepareNames) false,
+        ]) {
+          try {
+            final prepared = await translator.prepareText(
+              record.lines.map((line) => line.displayText).toList(),
+              record.language,
+              joining ? null : record.targetLanguage,
+              mergeSentences: joining,
+              terms: record.translationTerms,
+              rules: record.translationRules,
+            );
+            if (cancelled) return;
+            if (joining) {
+              mergeTranscriptFragments(record, prepared.joins);
+            } else {
+              record.translationTerms = prepared.terms;
+            }
+          } catch (e) {
+            if (cancelled) return;
+            record.cleanupStatus = 'failed';
+            record.cleanupError = e.toString();
+          }
+          await save();
+        }
+      }
       if (record.targetLanguage != null && !cancelled) {
         stage = 'fileTranslating';
         onChanged();
@@ -110,6 +157,8 @@ class FileTranscriber {
                     record.language,
                     record.targetLanguage!,
                     context: translationContext.select(record, line),
+                    rules: record.translationRules,
+                    terms: record.translationTerms,
                   );
             if (cancelled) {
               line.translationStatus = 'interrupted';

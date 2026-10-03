@@ -69,6 +69,11 @@ try {
         & $dart analyze --fatal-infos
         if ($LASTEXITCODE -ne 0) { throw 'Flutter analysis failed.' }
         & (Join-Path $projectRoot 'scripts/test-audio-processing.ps1')
+        # The exported HTML player's script; skipped where Node.js is missing.
+        if (Get-Command node -ErrorAction SilentlyContinue) {
+            & node --test test/files/transcript_player_test.cjs
+            if ($LASTEXITCODE -ne 0) { throw 'HTML player script tests failed.' }
+        }
     }
     if ($Build) {
         & $flutter build windows $(if ($Release) { '--release' } else { '--debug' })

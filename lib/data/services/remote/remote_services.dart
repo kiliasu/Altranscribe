@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
+import 'package:altranscribe/data/services/translation/translation_terms.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/remote/remote_protocol.dart';
@@ -44,6 +45,7 @@ class RemoteTranslationService implements TranslationService {
 
   /// One of the models the host lists; empty means the host's default.
   String model = '';
+  bool _textPreparation = false;
   @override
   String backend = 'LLM · Remote';
   @override
@@ -74,6 +76,7 @@ class RemoteTranslationService implements TranslationService {
       throw const FormatException('remoteLlmModelMissing');
     }
     this.model = model;
+    _textPreparation = info['textPreparation'] == true;
     backend =
         'Remote · ${info['llmProvider']} · ${model.isEmpty ? info['llmModel'] : model}';
   }
@@ -84,20 +87,63 @@ class RemoteTranslationService implements TranslationService {
     String source,
     String target, {
     List<TranslationContext> context = const [],
-  }) async =>
-      (await client.request(
-            'translate',
-            json: {
-              'text': text,
-              'source': source,
-              'target': target,
-              'context': TranslationContextPolicy.bound(context)
-                  .map((item) => item.toJson())
-                  .toList(),
-              if (model.isNotEmpty) 'model': model,
-            },
-          ))['text']
-          as String;
+    String rules = defaultTranslationRules,
+    List<TranslationTerm> terms = const [],
+  }) async {
+    return (await client.request(
+          'translate',
+          json: {
+            'text': text,
+            'source': source,
+            'target': target,
+            if (rules.trim().isNotEmpty) 'rules': rules,
+            if (terms.isNotEmpty)
+              'terms': terms.map((term) => term.toJson()).toList(),
+            'context': TranslationContextPolicy.bound(context)
+                .map((item) => item.toJson())
+                .toList(),
+            if (model.isNotEmpty) 'model': model,
+          },
+        ))['text']
+        as String;
+  }
+
+  @override
+  Future<TextPreparation> prepareText(
+    List<String> texts,
+    String source,
+    String? target, {
+    List<TranslationTerm> terms = const [],
+    bool mergeSentences = false,
+    String rules = defaultTranslationRules,
+  }) async {
+    // A host from before file preparation translates without it.
+    if (!_textPreparation) return TextPreparation(terms: terms);
+    final result = await client.request(
+      'prepare-text',
+      json: {
+        'texts': texts,
+        'source': source,
+        'target': target,
+        'terms': terms.map((term) => term.toJson()).toList(),
+        'mergeSentences': mergeSentences,
+        'rules': rules,
+        if (model.isNotEmpty) 'model': model,
+      },
+    );
+    return TextPreparation(
+      terms: TranslationTerm.accept(
+        terms,
+        result['terms'] as List,
+        texts.join('\n'),
+      ),
+      joins: (result['joins'] as List)
+          .whereType<int>()
+          .where((index) => index > 0 && index < texts.length)
+          .toList(),
+    );
+  }
+
   @override
   Future<RecordSummary> summarize(List<String> texts, String language) async {
     final result = await client.request(
@@ -117,13 +163,15 @@ class RemoteTranslationService implements TranslationService {
   @override
   Future<CleanupResult> cleanUp(
     List<String> texts,
-    CleanupOptions options,
-  ) async {
+    CleanupOptions options, {
+    String language = 'auto',
+  }) async {
     final result = await client.request(
       'cleanup',
       json: {
         'texts': texts,
         'options': options.toJson(),
+        'language': language,
         if (model.isNotEmpty) 'model': model,
       },
     );

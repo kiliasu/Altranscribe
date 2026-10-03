@@ -225,6 +225,70 @@ void main() {
     expect(paths, ['/v1/chat/completions']);
   });
 
+  test('local compatible servers are asked not to think', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final switches = <Object?>[];
+    var rejectSwitch = false;
+    var reply = '<think>The user wants Chinese.</think>\n你好';
+    server.listen((request) async {
+      final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+      switches.add(body['chat_template_kwargs']);
+      final rejected = rejectSwitch && body['chat_template_kwargs'] != null;
+      request.response.statusCode = rejected ? 400 : 200;
+      request.response.write(
+        rejected
+            ? '{"error":"Unrecognized request argument: chat_template_kwargs"}'
+            : completion(reply),
+      );
+      await request.response.close();
+    });
+    final service = LocalLlmService();
+    addTearDown(service.stop);
+    final address = 'http://127.0.0.1:${server.port}/v1';
+    await service.prepare(
+      address,
+      'hybrid',
+      provider: LlmProvider.openAICompatible,
+    );
+    // Reasoning returned in the content never reaches the transcript.
+    expect(await service.translate('Hello', 'en', 'zh'), '你好');
+    expect(switches, [
+      {'enable_thinking': false},
+    ]);
+
+    rejectSwitch = true;
+    reply = '你好';
+    switches.clear();
+    expect(await service.translate('Hello', 'en', 'zh'), '你好');
+    expect(await service.translate('Hello', 'en', 'zh'), '你好');
+    // One rejection turns the switch off for this server.
+    expect(switches, [
+      {'enable_thinking': false},
+      null,
+      null,
+    ]);
+
+    // Reasoning without an answer counts as no answer: a short fragment keeps
+    // its text, a sentence reports the failure.
+    reply = '<think>Still weighing the options';
+    expect(await service.translate('Hello', 'en', 'zh'), 'Hello');
+    await expectLater(
+      service.translate(
+        'Hello there, this sentence is long enough to need a translation.',
+        'en',
+        'zh',
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          'translationEmpty',
+        ),
+      ),
+    );
+  });
+
   test('cleanup retries only unsupported formats, once, and still validates edits', () async {
     const unsupported = 'This response_format type is unavailable now';
     for (final status in [400, 401, 403, 422, 429, 500]) {

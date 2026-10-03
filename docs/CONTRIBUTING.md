@@ -44,6 +44,8 @@ The platform folders contain custom audio, caption and lifecycle code, so don't 
 
 Regular checks never download models or call paid APIs. The Nemotron engine test (`test/transcription/nemotron_engine_test.dart`) runs the real sherpa-onnx library and model only when `.tools/sherpa-onnx/models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25` and `build/spike/clip.wav` exist on the machine, and is skipped otherwise; sherpa-onnx itself comes in as an FFI plugin (`sherpa_onnx`), whose DLLs and `.so` files the normal builds bundle. The live checks need real services: `dev.ps1 -Smoke -WhisperDirectory <whisper.cpp folder>` and `-RemoteSmoke` (add `-TranslationModel <Ollama model>` for translation), `-CaptionsSmoke`, and `-CloudSmoke`, which is billed and uses the API keys saved in the app. `flutter test test/models/model_download_test.dart --dart-define=MODEL_DOWNLOAD_SMOKE=true` runs the real model download. The Android device tests in `integration_test/` need fixtures and a Windows host pushed by hand, so treat them as maintainer-only. Tests use synthetic audio only. Never commit recordings, transcripts, API keys, host tokens or signing keys.
 
+`dev.ps1 -Verify` also runs the exported HTML player's script tests (`test/files/transcript_player_test.cjs`) when Node.js is installed. To check fillers and repeated sounds, names reused from context, file name preparation and long passages against a real local model, run `flutter test test/translation/llm_translation_smoke_test.dart --dart-define=LLM_SMOKE_MODEL=<Ollama model>`; it uses synthetic text and never downloads a model.
+
 Keep `pubspec.lock` committed, and update the [third-party notices](en/third-party.md) when a bundled component changes.
 
 ## Distribution

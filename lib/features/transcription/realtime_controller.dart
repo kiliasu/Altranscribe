@@ -28,6 +28,7 @@ import 'package:altranscribe/data/services/transcription/nemotron_engine.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
+import 'package:altranscribe/data/services/translation/translation_terms.dart';
 import 'package:altranscribe/data/services/transcription/transcript_assembler.dart';
 import 'package:altranscribe/data/models/caption_preferences.dart';
 import 'package:altranscribe/data/services/models/model_catalog.dart';
@@ -225,6 +226,7 @@ class RealtimeController extends ChangeNotifier {
   ComputeMode computeMode = ComputeMode.automatic;
   String translationAddress = 'http://127.0.0.1:11434';
   String translationModel = '';
+  String translationRules = defaultTranslationRules;
   LlmProvider llmProvider = MobilePlatform.android
       ? LlmProvider.openAI
       : LlmProvider.ollama;
@@ -387,6 +389,9 @@ class RealtimeController extends ChangeNotifier {
       translationContext = TranslationContextPolicy.fromJson(
         settings['translationContext'] as Map? ?? {},
       );
+      translationRules = normalizeTranslationRules(
+        settings['translationRules'] as String?,
+      );
       translationModel =
           environmentValue('ALTRANSCRIBE_TRANSLATION_MODEL') ??
           settings['translationModel'] as String? ??
@@ -426,6 +431,7 @@ class RealtimeController extends ChangeNotifier {
       'generateSummary': generateSummary,
       'captions': captionPreferences.toJson(),
       'translationContext': translationContext.toJson(),
+      'translationRules': translationRules,
       'microphoneDevice': microphoneDevice,
       'systemDevice': systemDevice,
       'microphoneDenoise': microphoneDenoise,
@@ -906,6 +912,7 @@ class RealtimeController extends ChangeNotifier {
           speechModel: cloudSpeech ? speechProvider.fileModel : sessionModel,
           targetLanguage: targetLanguage,
           translationModel: targetLanguage == null ? null : sessionLlmModel,
+          translationRules: translationRules,
           llmProvider: needsLlm ? sessionLlmProvider : null,
           llmModel: needsLlm ? sessionLlmModel : null,
           summaryStatus: generateSummary ? 'pending' : 'none',
@@ -1076,6 +1083,7 @@ class RealtimeController extends ChangeNotifier {
             ? speechProvider.liveModel(_directForSession)
             : sessionModel,
         directTranslation: _directForSession,
+        translationRules: translationRules,
         targetLanguage: targetLanguage,
         translationModel: targetLanguage == null
             ? null
@@ -1488,6 +1496,8 @@ class RealtimeController extends ChangeNotifier {
             current.language,
             current.targetLanguage!,
             context: translationContext.select(current, line),
+            rules: current.translationRules,
+            terms: current.translationTerms,
           );
           if (!_discarding && current.lines.contains(line)) {
             line.translation = translation;

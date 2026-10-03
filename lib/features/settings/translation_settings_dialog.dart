@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
 import 'package:altranscribe/shared/ui/expressive.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
+import 'package:altranscribe/data/services/translation/translation_terms.dart';
 
 import 'settings_dialog.dart';
 import 'cloud_key_editor.dart';
@@ -46,6 +47,7 @@ class _TranslationSettingsState
   late final modelInput = TextEditingController(
     text: controller.translationModel,
   );
+  late final rules = TextEditingController(text: controller.translationRules);
   String get selected => modelInput.text.trim();
   set selected(String value) => modelInput.text = value;
   final compatibleEditor = GlobalKey<CloudKeyEditorState>();
@@ -70,6 +72,7 @@ class _TranslationSettingsState
   void dispose() {
     address.dispose();
     modelInput.dispose();
+    rules.dispose();
     super.dispose();
   }
 
@@ -362,6 +365,21 @@ class _TranslationSettingsState
   List<Widget> contents() => [
     if (hostMode) ...[...sourceSection(), gap()],
     if (!usingHost) ...ownServiceSection(),
+    gap(),
+    // The user's own additions; the translation instructions stay fixed.
+    TextField(
+      key: const Key('translation-rules'),
+      controller: rules,
+      enabled: editable,
+      minLines: 2,
+      maxLines: 6,
+      decoration: InputDecoration(
+        labelText: t('translationRules'),
+        hintText: t('translationRulesExample'),
+        helperText: t('translationRulesHint'),
+        helperMaxLines: 2,
+      ),
+    ),
   ];
 
   @override
@@ -373,6 +391,7 @@ class _TranslationSettingsState
       }
       controller.hostLlm = true;
       controller.remoteLlmModel = hostModel;
+      controller.translationRules = normalizeTranslationRules(rules.text);
       await controller.saveSettings();
       return;
     }
@@ -399,6 +418,7 @@ class _TranslationSettingsState
     controller.llmProvider = provider;
     controller.translationAddress = address.text.trim();
     controller.translationModel = selected;
+    controller.translationRules = normalizeTranslationRules(rules.text);
     await controller.saveSettings();
   }
 }

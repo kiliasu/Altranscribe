@@ -29,6 +29,7 @@ ExportLabels exportLabels(bool english) {
       'file': t('file'),
     },
     generatedBy: t('exportedFrom'),
+    followPlayback: t('exportFollowPlayback'),
   );
 }
 

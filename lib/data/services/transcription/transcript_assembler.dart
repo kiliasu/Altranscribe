@@ -8,6 +8,19 @@ final _abbreviation = RegExp(
   caseSensitive: false,
 );
 final _cjk = RegExp(r'[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]');
+
+/// Han and kana, which are written without spaces between words. Korean,
+/// like Latin text, keeps them.
+final _unspaced = RegExp(r'[\u2e80-\u312f\u3190-\u9fff\uf900-\ufaff]');
+
+/// What goes between two fragments joined into one sentence.
+String joinSeparator(String left, String right) =>
+    left.isEmpty ||
+        right.isEmpty ||
+        _unspaced.hasMatch(String.fromCharCode(left.runes.last)) ||
+        _unspaced.hasMatch(String.fromCharCode(right.runes.first))
+    ? ''
+    : ' ';
 final _complete = RegExp(r'''[。！？.!?][”’"）)\]」』》】]*$''');
 
 /// Something a reader can see: a piece made only of invisible characters,
@@ -116,11 +129,7 @@ class TranscriptAssembler {
           tail.text.runes.length + lines.first.text.runes.length <=
               (_cjk.hasMatch(tail.text + lines.first.text) ? 100 : 240)) {
         final first = lines.first;
-        final separator =
-            _cjk.hasMatch(tail.text.substring(tail.text.length - 1)) ||
-                _cjk.hasMatch(first.text.substring(0, 1))
-            ? ''
-            : ' ';
+        final separator = joinSeparator(tail.text, first.text);
         record.lines.remove(tail);
         lines[0] = TranscriptLine(
           source: source,
