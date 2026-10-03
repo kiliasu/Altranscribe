@@ -663,8 +663,19 @@ const strings = <String, List<String>>{
   "cancelDownload": ["取消下载", "Cancel download"],
   "modelSource": ["官方 GitHub", "Official GitHub"],
   "modelDownloadBackground": [
-    "关闭面板后继续下载；取消后重试将重新下载。",
-    "Downloads continue when this panel is closed. Retry starts a new download.",
+    "关闭面板后仍会继续下载；连接中断会自动续传，取消则删除已下载的部分。",
+    "Downloading continues when this panel is closed and resumes by itself if the connection drops. Cancelling deletes what was downloaded.",
+  ],
+  "modelConnecting": ["正在连接…", "Connecting…"],
+  "modelRetrying": ["连接中断，正在重试…", "Connection lost, retrying…"],
+  "removeModel": ["移除模型", "Remove model"],
+  "removeModelHint": [
+    "模型文件会从这台设备上删除，需要时可以重新下载。",
+    "Its files are deleted from this device. You can download it again any time.",
+  ],
+  "modelRemoveFailed": [
+    "无法删除模型文件，可能正在使用。请稍后再试。",
+    "The model files could not be deleted; they may be in use. Try again later.",
   ],
   "modelDownloadFailed": [
     "下载失败，请检查网络后重试。",

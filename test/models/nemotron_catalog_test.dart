@@ -140,6 +140,26 @@ void main() {
     expect((await catalog.scan())['large-v3-turbo'], ModelAvailability.missing);
   });
 
+  test(
+    'partial files count as incomplete and removal clears the folder',
+    () async {
+      final catalog = ModelCatalog(directory);
+      addTearDown(catalog.dispose);
+      final real = ModelCatalog.nemotronModels.first;
+      final folder = Directory(catalog.folder(real))
+        ..createSync(recursive: true);
+      File('${folder.path}/encoder.int8.onnx.part').writeAsBytesSync([1, 2, 3]);
+      expect((await catalog.scan())[real.id], ModelAvailability.incomplete);
+      expect(catalog.availability[real.id], ModelAvailability.incomplete);
+      var notified = 0;
+      catalog.addListener(() => notified++);
+      await catalog.remove(real);
+      expect(folder.existsSync(), isFalse);
+      expect(catalog.availability[real.id], ModelAvailability.missing);
+      expect(notified, greaterThan(0));
+    },
+  );
+
   test('Nemotron downloads are pinned to a commit and checked', () {
     for (final model in ModelCatalog.nemotronModels) {
       expect(model.revision, matches(RegExp(r'^[0-9a-f]{40}$')));

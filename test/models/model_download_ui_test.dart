@@ -9,6 +9,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:altranscribe/shared/platform/mobile_platform.dart';
+
 import '../support/fakes.dart';
 import '../support/preview_binding.dart';
 
@@ -17,12 +19,18 @@ class DownloadCatalog extends FakeModelCatalog {
   final downloaded = <String>{};
 
   @override
-  Future<Map<String, ModelAvailability>> scan() async => {
+  Future<Map<String, ModelAvailability>> scan() async => availability = {
     for (final model in ModelCatalog.models)
       model.id: downloaded.contains(model.id)
           ? ModelAvailability.available
           : ModelAvailability.missing,
   };
+
+  void report(DownloadStage stage, {int? received}) {
+    downloadStage = stage;
+    if (received != null) receivedBytes = received;
+    notifyListeners();
+  }
 
   @override
   Future<bool> download(SpeechModel model) async {
@@ -87,9 +95,7 @@ void main() {
       expect(find.byKey(const Key('model-download-progress')), findsOneWidget);
       expect(find.byKey(const Key('cancel-model-download')), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(
-        find.byKey(const Key('whisper-tiny')),
-      );
+      await tester.ensureVisible(find.byKey(const Key('whisper-tiny')));
       await tester.pumpAndSettle();
       await tester.runAsync(() async {
         final boundary =
@@ -108,6 +114,75 @@ void main() {
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
       expect(controller.model, endsWith('/ggml-tiny.bin'));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  test('a second download request leaves the running one alone', () async {
+    final catalog = DownloadCatalog();
+    final controller = fakeController(catalog: catalog);
+    addTearDown(controller.dispose);
+    final tiny = ModelCatalog.models.firstWhere((model) => model.id == 'tiny');
+    final first = controller.downloadModel(tiny, english: false);
+    final cancel = MobilePlatform.onDownloadCancel;
+    expect(cancel, isNotNull);
+    await expectLater(
+      controller.downloadModel(tiny, english: false),
+      throwsStateError,
+    );
+    // The refused request changed nothing the running download relies on.
+    expect(MobilePlatform.onDownloadCancel, cancel);
+    expect(catalog.downloadingModel, tiny);
+    catalog.pending!.complete(true);
+    expect(await first, isTrue);
+    expect(MobilePlatform.onDownloadCancel, isNull);
+  });
+
+  testWidgets(
+    'a download stays in view on the start page after the panel closes',
+    (tester) async {
+      final catalog = DownloadCatalog();
+      final controller = fakeController(catalog: catalog);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(AltranscribeApp(realtime: controller));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('设置').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('模型选择'));
+      await tester.tap(find.text('模型选择'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('download-tiny')));
+      await tester.tap(find.byKey(const Key('download-tiny')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('转录').last);
+      await tester.pumpAndSettle();
+      final progress = find.byKey(const Key('home-model-download'));
+      await tester.ensureVisible(progress);
+      final tiny = ModelCatalog.models.firstWhere(
+        (model) => model.id == 'tiny',
+      );
+      expect(
+        find.descendant(
+          of: progress,
+          matching: find.textContaining(
+            'Whisper · Tiny · ${catalog.receivedBytes * 100 ~/ tiny.bytes}%',
+          ),
+        ),
+        findsOneWidget,
+      );
+      // Waiting for the first bytes or for a reconnect shows that instead.
+      catalog.report(DownloadStage.connecting, received: 0);
+      await tester.pump();
+      expect(find.textContaining('正在连接'), findsOneWidget);
+      catalog.report(DownloadStage.retrying);
+      await tester.pump();
+      expect(find.textContaining('连接中断，正在重试'), findsOneWidget);
+      catalog.pending!.complete(true);
+      await tester.pumpAndSettle();
+      expect(progress, findsNothing);
+      expect(tester.takeException(), isNull);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );

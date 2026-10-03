@@ -615,6 +615,54 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     return 'Whisper · ${model?.label ?? (filename.isEmpty ? t('noModelConfigured') : filename)} · ${live.computeMode.name == 'automatic' ? t('automatic') : live.computeMode.name.toUpperCase()}';
   }
 
+  /// The chosen on-device model is not on disk, for example after removal.
+  bool get localModelMissing {
+    final available = live.catalog.availability;
+    if (available.isEmpty || live.remoteProcessing || live.cloudSpeech) {
+      return false;
+    }
+    if (live.speechProvider == SpeechProvider.nemotron) {
+      return available[live.nemotronModel] != ModelAvailability.available;
+    }
+    final model = ModelCatalog.models
+        .where((item) => live.model == live.catalog.path(item))
+        .firstOrNull;
+    return model != null && available[model.id] != ModelAvailability.available;
+  }
+
+  /// Progress of a model download, shown outside the model settings too.
+  Widget? downloadProgress() {
+    final catalog = live.catalog;
+    final model = catalog.downloadingModel;
+    if (model == null) return null;
+    final waiting =
+        catalog.downloadStage == DownloadStage.retrying ||
+        (catalog.downloadStage == DownloadStage.connecting &&
+            catalog.receivedBytes == 0);
+    final name = model is NemotronModel
+        ? 'Nemotron · ${model.shortLabel}'
+        : 'Whisper · ${model.label}';
+    return Column(
+      key: const Key('home-model-download'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 6),
+        LinearProgressIndicator(
+          value: waiting ? null : catalog.receivedBytes / model.bytes,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${t('modelDownloading')} · $name · ${catalog.downloadStage == DownloadStage.retrying
+              ? t('modelRetrying')
+              : waiting
+              ? t('modelConnecting')
+              : '${catalog.receivedBytes * 100 ~/ model.bytes}%'}',
+          style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
   String get llmSummary => live.remoteLlm
       ? 'Remote · ${live.sessionLlmModel.isEmpty ? t('remoteHostLlm') : live.sessionLlmModel}'
       : '${live.llmProvider.label} · ${live.translationModel.isEmpty ? t('translationModelMissing') : live.translationModel}';
@@ -629,6 +677,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     String subtitle,
     VoidCallback onTap, {
     bool smallTitle = false,
+    Widget? footer,
   }) => InkWell(
     onTap: onTap,
     child: Padding(
@@ -661,6 +710,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                             color: colors.onSurfaceVariant,
                           ),
                   ),
+                  ?footer,
                 ],
               ),
             ),
@@ -842,35 +892,44 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
           child: pageStack([
             startButton(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  !fileMode && !microphone && !systemAudio
-                      ? AltIcons.error
-                      : AltIcons.checkCircle,
-                  size: 18,
-                  color: !fileMode && !microphone && !systemAudio
-                      ? colors.error
-                      : colors.primary,
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    live.backgroundFinishing
-                        ? t('backgroundFinishingHint')
-                        : !fileMode && !microphone && !systemAudio
-                        ? t('noSource')
-                        : fileMode
-                        ? '${filePaths.length} ${t('filesInQueue')} · ${t('fileQueueHint')}'
-                        : modelSummary,
-                    textAlign: TextAlign.center,
-                    style: text.bodyMedium?.copyWith(
-                      color: colors.onSurfaceVariant,
+            ListenableBuilder(
+              listenable: live.catalog,
+              builder: (context, _) {
+                final noSource = !fileMode && !microphone && !systemAudio;
+                final missing = !noSource && localModelMissing;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      noSource || missing
+                          ? AltIcons.error
+                          : AltIcons.checkCircle,
+                      size: 18,
+                      color: noSource || missing
+                          ? colors.error
+                          : colors.primary,
                     ),
-                  ),
-                ),
-              ],
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        live.backgroundFinishing
+                            ? t('backgroundFinishingHint')
+                            : noSource
+                            ? t('noSource')
+                            : missing
+                            ? '$modelSummary · ${t('model_missing')}'
+                            : fileMode
+                            ? '${filePaths.length} ${t('filesInQueue')} · ${t('fileQueueHint')}'
+                            : modelSummary,
+                        textAlign: TextAlign.center,
+                        style: text.bodyMedium?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ], gap: 12),
         ),
@@ -887,12 +946,18 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Text(t('engine'), style: text.titleMedium),
           ),
-          infoRow(
-            AltIcons.graphicEq,
-            t('model'),
-            modelSummary,
-            modelSettings,
-            smallTitle: true,
+          ListenableBuilder(
+            listenable: live.catalog,
+            builder: (context, _) => infoRow(
+              AltIcons.graphicEq,
+              t('model'),
+              localModelMissing
+                  ? '$modelSummary · ${t('model_missing')}'
+                  : modelSummary,
+              modelSettings,
+              smallTitle: true,
+              footer: downloadProgress(),
+            ),
           ),
           infoRow(
             AltIcons.translate,
@@ -1135,6 +1200,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     onPressed:
         session ||
             !live.initialized ||
+            live.removingModel ||
             (fileMode ? filePaths.isEmpty : !microphone && !systemAudio)
         ? null
         : () {

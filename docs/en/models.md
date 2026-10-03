@@ -2,7 +2,7 @@
 
 English | [简体中文](../zh-CN/models.md) · [Home](../../README.md)
 
-Download models under **Settings → Speech models**. Select the model and save when the download finishes. Downloads show progress and support cancellation and retry; retries start from the beginning. Exiting the app stops the download.
+Download models under **Settings → Speech models**, then select the model and save. Progress also shows on the start page, and the download continues after the panel closes; on Android it keeps running in the background with a notification. A dropped connection resumes where it stopped, and so does downloading again after the app was closed; cancelling deletes the partial file. The delete button next to a model removes its files.
 
 On Windows, models are stored in `%LOCALAPPDATA%\Altranscribe\models\`, the folder shown in the model panel.
 

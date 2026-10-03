@@ -111,6 +111,11 @@ class MainActivity : FlutterActivity() {
             startActivityForResult(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent(), 102)
         } else { capture = null; runtime.startCapture(pending.first, Activity.RESULT_CANCELED, null, pending.second) }
     }
+    /** Asks once for the notification that shows a background download. */
+    fun requestNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 107)
+    }
     fun chooseFiles(result: MethodChannel.Result) {
         if (picker != null) { result.error("busy", "File picker already open", null); return }
         picker = result

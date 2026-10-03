@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+
+import 'package:altranscribe/data/services/logging/app_log.dart';
 
 enum ModelAvailability { missing, incomplete, available }
 
@@ -82,8 +85,22 @@ class NemotronModel extends SpeechModel {
 }
 
 class ModelCatalog extends ChangeNotifier {
-  ModelCatalog(this.directory);
+  ModelCatalog(
+    this.directory, {
+    this.stallTimeout = const Duration(seconds: 30),
+    this.retryDelay = const Duration(seconds: 2),
+  });
   final Directory directory;
+
+  /// No data for this long counts as a dropped connection.
+  final Duration stallTimeout;
+
+  /// The wait before the first reconnect; later ones wait longer.
+  final Duration retryDelay;
+
+  /// Reconnects per file before a download fails; its partial file stays, so
+  /// downloading again continues from there.
+  static const retries = 3;
   static const sourceUrl =
       'https://github.com/ggml-org/whisper.cpp/tree/master/models';
   static const revision = '5359861c739e955e79d9a303bcbc70fb988958b1';
@@ -210,11 +227,17 @@ class ModelCatalog extends ChangeNotifier {
   /// The folder a Nemotron model's files live in.
   String folder(NemotronModel model) => '${directory.path}/${model.id}';
 
+  /// What the last [scan] found, by model id. Downloads and removals scan
+  /// again, so listeners see a model appear or go.
+  Map<String, ModelAvailability> availability = const {};
+
   SpeechModel? downloadingModel;
   int receivedBytes = 0;
+  DownloadStage downloadStage = DownloadStage.connecting;
   String? downloadError;
   HttpClient? _client;
   bool _cancelled = false;
+  Completer<void> _cancel = Completer<void>();
   bool _disposed = false;
 
   void _notify() {
@@ -223,6 +246,7 @@ class ModelCatalog extends ChangeNotifier {
 
   void cancelDownload() {
     _cancelled = true;
+    if (!_cancel.isCompleted) _cancel.complete();
     _client?.close(force: true);
   }
 
@@ -232,21 +256,29 @@ class ModelCatalog extends ChangeNotifier {
     }
     downloadingModel = model;
     receivedBytes = 0;
+    downloadStage = DownloadStage.connecting;
     downloadError = null;
     _cancelled = false;
+    _cancel = Completer<void>();
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 30);
     _client = client;
+    final clock = Stopwatch()..start();
+    AppLog.instance.info('models', 'Download of ${model.id} started');
     _notify();
     try {
       await directory.create(recursive: true);
       if (model is WhisperModel) {
-        return await _fetch(
-          client,
-          model.downloadUri,
-          File(path(model)),
-          model.bytes,
-          model.sha256,
+        return _finished(
+          model,
+          await _fetch(
+            client,
+            model.downloadUri,
+            File(path(model)),
+            model.bytes,
+            model.sha256,
+          ),
+          clock,
         );
       }
       final nemotron = model as NemotronModel;
@@ -269,29 +301,65 @@ class ModelCatalog extends ChangeNotifier {
           file.bytes,
           file.sha256,
         )) {
-          return false;
+          return _finished(model, false, clock);
         }
       }
-      return true;
-    } on FileSystemException {
-      if (!_cancelled) downloadError = 'modelDownloadStorage';
+      return _finished(model, true, clock);
+    } on FileSystemException catch (error) {
+      _failed(model, 'modelDownloadStorage', error);
       return false;
-    } on FormatException {
-      if (!_cancelled) downloadError = 'modelDownloadInvalid';
+    } on FormatException catch (error) {
+      _failed(model, 'modelDownloadInvalid', error);
       return false;
-    } catch (_) {
-      if (!_cancelled) downloadError = 'modelDownloadFailed';
+    } catch (error) {
+      _failed(model, 'modelDownloadFailed', error);
       return false;
     } finally {
       client.close(force: true);
       _client = null;
       downloadingModel = null;
+      try {
+        await scan();
+      } on FileSystemException {
+        // The next scan reports the folder as it is.
+      }
       _notify();
     }
   }
 
-  /// Streams one file to a temporary name, verifying size and SHA-256 before
-  /// it replaces anything; false means the download was cancelled.
+  bool _finished(SpeechModel model, bool success, Stopwatch clock) {
+    AppLog.instance.info(
+      'models',
+      success
+          ? 'Download of ${model.id} finished in ${clock.elapsed.inSeconds} s'
+          : 'Download of ${model.id} cancelled',
+    );
+    return success;
+  }
+
+  void _failed(SpeechModel model, String reason, Object error) {
+    if (_cancelled) {
+      AppLog.instance.info('models', 'Download of ${model.id} cancelled');
+      return;
+    }
+    downloadError = reason;
+    AppLog.instance.warn(
+      'models',
+      'Download of ${model.id} failed at $receivedBytes bytes: '
+          '${_describe(error)}',
+    );
+  }
+
+  /// An error without the signed query of a download address.
+  static String _describe(Object error) =>
+      '${error.runtimeType}: $error'.replaceAll(RegExp('[?][^ ,]*'), '');
+
+  /// Streams one file to `<name>.part` and renames it once its size and
+  /// SHA-256 match. A dropped or stalled connection, or a server that is
+  /// briefly unavailable, resumes from the bytes already written, up to
+  /// [retries] times; a partial file left by an earlier download resumes the
+  /// same way. Only cancelling or a corrupt file deletes the partial file.
+  /// False means cancelled.
   Future<bool> _fetch(
     HttpClient client,
     Uri uri,
@@ -299,48 +367,127 @@ class ModelCatalog extends ChangeNotifier {
     int bytes,
     String sha256Hex,
   ) async {
-    final temporary = File(
-      '${target.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.part',
-    );
-    RandomAccessFile? output;
+    final partial = File('${target.path}.part');
+    final digest = _DigestSink();
+    var hasher = sha256.startChunkedConversion(digest);
     final before = receivedBytes;
+    RandomAccessFile? output;
+    var corrupt = false;
     try {
       if (_cancelled) return false;
-      output = await temporary.open(mode: FileMode.write);
-      if (_cancelled) return false;
-      final request = await client.getUrl(uri);
-      final response = await request.close().timeout(
-        const Duration(seconds: 30),
-      );
-      if (response.statusCode != HttpStatus.ok) {
-        throw const HttpException('Model download failed');
+      output = await partial.open(mode: FileMode.append);
+      var written = await output.length();
+      Future<void> restart() async {
+        final file = output!;
+        await file.truncate(0);
+        await file.setPosition(0);
+        hasher = sha256.startChunkedConversion(digest);
+        written = 0;
+        receivedBytes = before;
       }
-      if (response.contentLength >= 0 && response.contentLength != bytes) {
-        throw const FormatException('modelDownloadInvalid');
+
+      if (written > bytes) await restart();
+      // Bytes from an interrupted download count once they are hashed again.
+      await output.setPosition(0);
+      for (var offset = 0; offset < written;) {
+        final chunk = await output.read(min(1 << 20, written - offset));
+        if (chunk.isEmpty) throw const FormatException('modelDownloadInvalid');
+        hasher.add(chunk);
+        offset += chunk.length;
       }
-      var lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
-      final digest = await sha256
-          .bind(
-            response.timeout(const Duration(seconds: 60)).asyncMap((
-              chunk,
-            ) async {
-              if (_cancelled) throw const HttpException('Cancelled');
-              receivedBytes += chunk.length;
-              if (receivedBytes - before > bytes) {
-                throw const FormatException('modelDownloadInvalid');
-              }
-              await output!.writeFrom(chunk);
-              final now = DateTime.now();
-              if (now.difference(lastUpdate).inMilliseconds >= 100) {
-                lastUpdate = now;
-                _notify();
-              }
-              return chunk;
-            }),
-          )
-          .single;
-      if (_cancelled) return false;
-      if (receivedBytes - before != bytes || digest.toString() != sha256Hex) {
+      await output.setPosition(written);
+      receivedBytes = before + written;
+      if (written > 0) {
+        AppLog.instance.info(
+          'models',
+          'Resuming ${target.uri.pathSegments.last} at $written bytes',
+        );
+      }
+      _notify();
+      for (var attempt = 0; written < bytes; attempt++) {
+        if (_cancelled) return false;
+        try {
+          final request = await client.getUrl(uri);
+          if (written > 0) {
+            request.headers.set(HttpHeaders.rangeHeader, 'bytes=$written-');
+          }
+          final response = await request.close().timeout(
+            const Duration(seconds: 30),
+          );
+          final status = response.statusCode;
+          if (written > 0 && status == HttpStatus.partialContent) {
+            final range = response.headers.value(
+              HttpHeaders.contentRangeHeader,
+            );
+            if (range == null || !range.startsWith('bytes $written-')) {
+              throw const FormatException('modelDownloadInvalid');
+            }
+          } else if (status == HttpStatus.ok) {
+            // The server sent the whole file again instead of the rest.
+            if (written > 0) await restart();
+          } else {
+            await response.listen(null).cancel();
+            if (written > 0 &&
+                status == HttpStatus.requestedRangeNotSatisfiable) {
+              // The partial file does not fit the file on the server.
+              await restart();
+              continue;
+            }
+            throw _Refused(
+              status,
+              temporary: _temporary.contains(status),
+              retryAfter: _retryAfter(response),
+            );
+          }
+          if (response.contentLength >= 0 &&
+              response.contentLength != bytes - written) {
+            throw const FormatException('modelDownloadInvalid');
+          }
+          downloadStage = DownloadStage.receiving;
+          _notify();
+          var lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+          await for (final chunk in response.timeout(stallTimeout)) {
+            if (_cancelled) return false;
+            if (written + chunk.length > bytes) {
+              throw const FormatException('modelDownloadInvalid');
+            }
+            await output.writeFrom(chunk);
+            hasher.add(chunk);
+            written += chunk.length;
+            receivedBytes = before + written;
+            final now = DateTime.now();
+            if (now.difference(lastUpdate).inMilliseconds >= 100) {
+              lastUpdate = now;
+              _notify();
+            }
+          }
+          // A response that ends early without an error is a wrong file, not
+          // a dropped connection.
+          if (written != bytes) {
+            throw const FormatException('modelDownloadInvalid');
+          }
+        } on FormatException {
+          rethrow;
+        } on FileSystemException {
+          rethrow;
+        } on _Refused catch (refusal) {
+          if (_cancelled) return false;
+          if (!refusal.temporary || attempt >= retries) rethrow;
+          await _retryLater(
+            target,
+            written,
+            refusal,
+            attempt,
+            refusal.retryAfter,
+          );
+        } on Exception catch (error) {
+          if (_cancelled) return false;
+          if (attempt >= retries) rethrow;
+          await _retryLater(target, written, error, attempt);
+        }
+      }
+      hasher.close();
+      if (digest.value?.toString() != sha256Hex) {
         throw const FormatException('modelDownloadInvalid');
       }
       await output.flush();
@@ -348,15 +495,92 @@ class ModelCatalog extends ChangeNotifier {
       output = null;
       if (_cancelled) return false;
       // Only a complete, verified download replaces a previous file.
-      await temporary.rename(target.path);
+      await partial.rename(target.path);
       return true;
+    } on FormatException {
+      corrupt = true;
+      rethrow;
     } finally {
       try {
         await output?.close();
-        if (await temporary.exists()) await temporary.delete();
+        // What arrived intact is kept for the next try, unless the user
+        // cancelled or the file turned out wrong.
+        if (await partial.exists() &&
+            (_cancelled || corrupt || await partial.length() == 0)) {
+          await partial.delete();
+        }
       } on FileSystemException {
         downloadError ??= 'modelDownloadStorage';
       }
+    }
+  }
+
+  /// Statuses a server sends when it is busy or briefly unavailable.
+  static const _temporary = {408, 425, 429, 500, 502, 503, 504};
+
+  /// A Retry-After given in seconds, at most a minute.
+  static Duration? _retryAfter(HttpClientResponse response) {
+    final seconds = int.tryParse(
+      response.headers.value(HttpHeaders.retryAfterHeader)?.trim() ?? '',
+    );
+    return seconds == null ? null : Duration(seconds: seconds.clamp(0, 60));
+  }
+
+  Future<void> _retryLater(
+    File target,
+    int written,
+    Object reason,
+    int attempt, [
+    Duration? requested,
+  ]) async {
+    AppLog.instance.warn(
+      'models',
+      '${target.uri.pathSegments.last} interrupted at $written bytes '
+          '(${_describe(reason)}); retrying',
+    );
+    downloadStage = DownloadStage.retrying;
+    _notify();
+    final delay = retryDelay * (attempt + 1);
+    await Future.any([
+      Future<void>.delayed(
+        requested != null && requested > delay ? requested : delay,
+      ),
+      _cancel.future,
+    ]);
+  }
+
+  /// Deletes a model's files, including any partial download.
+  Future<void> remove(SpeechModel model) async {
+    if (downloadingModel == model) throw StateError('modelDownloadBusy');
+    try {
+      if (model is NemotronModel) {
+        final target = Directory(folder(model));
+        if (await target.exists()) await target.delete(recursive: true);
+      } else if (model is WhisperModel && await directory.exists()) {
+        await for (final entry in directory.list()) {
+          final name = entry.uri.pathSegments.last;
+          if (entry is File &&
+              (name == model.filename ||
+                  name.startsWith('${model.filename}.') &&
+                      name.endsWith('.part'))) {
+            await entry.delete();
+          }
+        }
+      }
+      AppLog.instance.info('models', 'Removed ${model.id}');
+    } on FileSystemException catch (error) {
+      AppLog.instance.warn(
+        'models',
+        'Removing ${model.id} failed: ${_describe(error)}',
+      );
+      throw StateError('modelRemoveFailed');
+    } finally {
+      try {
+        await scan();
+      } on FileSystemException {
+        // The next scan reports the folder as it is.
+      }
+      _notify();
     }
   }
 
@@ -372,7 +596,9 @@ class ModelCatalog extends ChangeNotifier {
     for (final model in models) {
       final file = File(path(model));
       if (!await file.exists()) {
-        result[model.id] = ModelAvailability.missing;
+        result[model.id] = await File('${file.path}.part').exists()
+            ? ModelAvailability.incomplete
+            : ModelAvailability.missing;
         continue;
       }
       result[model.id] = ModelAvailability.incomplete;
@@ -394,9 +620,12 @@ class ModelCatalog extends ChangeNotifier {
       var complete = 0;
       for (final entry in model.files) {
         final file = File('${folder(model)}/${entry.name}');
-        if (!await file.exists()) continue;
-        present++;
-        if (await file.length() == entry.bytes) complete++;
+        if (await file.exists()) {
+          present++;
+          if (await file.length() == entry.bytes) complete++;
+        } else if (await File('${file.path}.part').exists()) {
+          present++;
+        }
       }
       result[model.id] = complete == model.files.length
           ? ModelAvailability.available
@@ -404,6 +633,30 @@ class ModelCatalog extends ChangeNotifier {
           ? ModelAvailability.missing
           : ModelAvailability.incomplete;
     }
+    availability = result;
     return result;
   }
+}
+
+/// Where a download is: waiting for its first bytes, receiving, or waiting to
+/// reconnect after the connection dropped or stalled.
+enum DownloadStage { connecting, receiving, retrying }
+
+/// A request the server answered with an error status. A temporary refusal
+/// is tried again; any other ends the download.
+class _Refused implements Exception {
+  const _Refused(this.status, {required this.temporary, this.retryAfter});
+  final int status;
+  final bool temporary;
+  final Duration? retryAfter;
+  @override
+  String toString() => 'HTTP $status';
+}
+
+class _DigestSink implements Sink<Digest> {
+  Digest? value;
+  @override
+  void add(Digest data) => value = data;
+  @override
+  void close() {}
 }

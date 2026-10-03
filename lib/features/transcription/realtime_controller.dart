@@ -277,6 +277,9 @@ class RealtimeController extends ChangeNotifier {
   bool _discarding = false;
   bool _disposed = false;
   bool get active => phase != SessionPhase.idle;
+
+  /// A speech model is being deleted; no session may start meanwhile.
+  bool removingModel = false;
   int get pending => _queue.length + (recognizing ? 1 : 0);
   int get pendingTranslations =>
       _translationQueue.fold<int>(0, (count, item) => count + item.$2.length) +
@@ -680,6 +683,77 @@ class RealtimeController extends ChangeNotifier {
     _notify();
   }
 
+  /// Downloads a speech model. On Android a foreground service keeps it going
+  /// with the screen off or the app in the background, and shows progress.
+  Future<bool> downloadModel(SpeechModel model, {required bool english}) async {
+    // The catalog takes the download before anything is awaited, so a second
+    // request is refused here and never touches this one's service.
+    if (catalog.downloadingModel != null) throw StateError('modelDownloadBusy');
+    final download = catalog.download(model);
+    var shown = '';
+    void mirror() {
+      if (catalog.downloadingModel != model) return;
+      final stage = catalog.downloadStage.name;
+      final key = '$stage ${catalog.receivedBytes * 100 ~/ model.bytes}';
+      if (key == shown) return;
+      shown = key;
+      unawaited(
+        MobilePlatform.modelDownload(
+          'progress',
+          stage: stage,
+          received: catalog.receivedBytes,
+          total: model.bytes,
+        ),
+      );
+    }
+
+    MobilePlatform.onDownloadCancel = catalog.cancelDownload;
+    catalog.addListener(mirror);
+    try {
+      await MobilePlatform.modelDownload(
+        'start',
+        title: model.label,
+        total: model.bytes,
+        english: english,
+      );
+      return await download;
+    } finally {
+      catalog.removeListener(mirror);
+      MobilePlatform.onDownloadCancel = null;
+      await MobilePlatform.modelDownload('stop');
+    }
+  }
+
+  /// Deletes a downloaded speech model. When it was the chosen one, another
+  /// downloaded model of the same kind takes its place.
+  Future<void> removeModel(SpeechModel model) async {
+    if (active || removingModel) throw StateError('settingsLocked');
+    removingModel = true;
+    _notify();
+    try {
+      await catalog.remove(model);
+      final available = catalog.availability;
+      bool ready(SpeechModel item) =>
+          available[item.id] == ModelAvailability.available;
+      if (model is NemotronModel && nemotronModel == model.id) {
+        final other = ModelCatalog.nemotronModels.where(ready).firstOrNull;
+        if (other != null) {
+          nemotronModel = other.id;
+          await saveSettings();
+        }
+      } else if (model is WhisperModel && this.model == catalog.path(model)) {
+        final other = ModelCatalog.models.where(ready).firstOrNull;
+        if (other != null) {
+          this.model = catalog.path(other);
+          await saveSettings();
+        }
+      }
+    } finally {
+      removingModel = false;
+      _notify();
+    }
+  }
+
   Future<void> setCaptionPreferences(CaptionPreferences value) async {
     captionPreferences = value;
     await saveSettings();
@@ -842,7 +916,9 @@ class RealtimeController extends ChangeNotifier {
     required String summaryLanguage,
     required CleanupOptions options,
   }) {
-    if (active || !initialized || paths.isEmpty) return Future.value();
+    if (active || removingModel || !initialized || paths.isEmpty) {
+      return Future.value();
+    }
     _cancelled = false;
     error = warning = null;
     record = null;
@@ -989,7 +1065,7 @@ class RealtimeController extends ChangeNotifier {
     String? targetLanguage,
     String? summaryLanguage,
   }) {
-    if (active || !initialized || (!microphone && !system)) {
+    if (active || removingModel || !initialized || (!microphone && !system)) {
       return Future.value();
     }
     _cancelled = false;

@@ -75,6 +75,25 @@ class AppRuntime private constructor(val context: Context) {
                         } else result.success(null)
                     } catch (error: Exception) { result.error("androidBackgroundWork", error.message, null) }
                 }
+                "modelDownload" -> {
+                    try {
+                        when (call.argument<String>("state")) {
+                            "start" -> {
+                                activity.get()?.requestNotifications()
+                                context.startForegroundService(Intent(context, DownloadService::class.java).setAction("start")
+                                    .putExtra("title", call.argument<String>("title"))
+                                    .putExtra("english", call.argument<Boolean>("english") == true)
+                                    .putExtra("total", (call.argument<Number>("total") ?: 0).toLong()))
+                            }
+                            "progress" -> DownloadService.current?.update(
+                                call.argument<String>("stage") ?: "receiving",
+                                (call.argument<Number>("received") ?: 0).toLong(),
+                                (call.argument<Number>("total") ?: 0).toLong())
+                            else -> context.stopService(Intent(context, DownloadService::class.java))
+                        }
+                        result.success(null)
+                    } catch (error: Exception) { result.error("androidBackgroundWork", error.message, null) }
+                }
                 else -> result.notImplemented()
             }
         }
