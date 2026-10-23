@@ -22,6 +22,7 @@ Successfully listing models does not mean your account can call every model. For
 - Long files are submitted in sections; the original file is unchanged. Gemini file transcription temporarily uploads audio. The app attempts to delete it when the task ends and reports deletion failures.
 - After **Stop & save**, final text, translations, and summaries continue processing. Wait for them to finish before starting another session.
 - If the network disconnects or quota runs out, received text is retained. Paid inference is not retried automatically.
+- Translation, titles and cleanup ask each model for the least reasoning it accepts. If the provider refuses a setting, the app moves up one level and remembers it.
 
 ## Known limitations
 
@@ -35,4 +36,4 @@ API keys are encrypted with Windows DPAPI or Android Keystore and are not writte
 
 Under **Settings → Translation & LLM**, choose **OpenAI compatible**, enter the service's `https://` address including any documented prefix (for example `https://openrouter.ai/api/v1`), then enter its API key. Each address has its own saved key. Saving settings, loading models or testing the connection also saves the key you entered. Select a listed model or enter its name directly; **Test connection** can verify a model even when the service does not provide a model list. Saving settings alone does not call the chat API.
 
-The key is sent only to its associated address; plain `http://` addresses are accepted only for a server on the same computer. Phones can use online services this way; local servers still need a Windows host. If a service explicitly rejects JSON Schema during text cleanup, the app retries once using JSON Object and retains local correction validation. Authentication and rate-limit errors do not trigger this retry.
+The key is sent only to its associated address; plain `http://` addresses are accepted only for a server on the same computer. Phones can use online services this way; local servers still need a Windows host. Requests ask the model not to reason (`reasoning_effort: none`, plus the service's own switch on DeepSeek, Zhipu, Bailian and similar). If the service refuses, the app moves up one level or leaves the setting out. A model that still reasons takes seconds longer per line, and the log says so. If a service explicitly rejects JSON Schema during text cleanup, the app retries once using JSON Object and retains local correction validation. Authentication and rate-limit errors do not trigger this retry.

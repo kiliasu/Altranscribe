@@ -13,6 +13,16 @@ import 'package:flutter_test/flutter_test.dart';
 import '../support/fakes.dart';
 import '../transcription/realtime_test.dart' show until;
 
+/// A record store whose writes wait for [gate].
+class GatedStore extends MemoryStore {
+  Completer<void>? gate;
+  @override
+  Future<void> save(TranscriptRecord record) async {
+    await gate?.future;
+    await super.save(record);
+  }
+}
+
 void main() {
   test(
     'translation overload marks skipped translations while ASR continues',
@@ -27,7 +37,9 @@ void main() {
         language: 'en',
         targetLanguage: 'zh',
       );
-      for (int i = 0; i < 10; i++) {
+      // Lines in every slot, eight windows waiting, and one too many.
+      const windows = RealtimeController.translationSlots + 8 + 1;
+      for (int i = 0; i < windows; i++) {
         (controller.audio as FakeAudio).events.add(chunk('system', i * 2000));
         await until(() => controller.record!.lines.length > i);
       }
@@ -36,15 +48,15 @@ void main() {
         controller.record!.lines.last.translationError,
         'translationTooSlow',
       );
-      expect(controller.pendingTranslations, 9);
+      expect(controller.pendingTranslations, windows - 1);
       translator.response!.complete('译文');
       await controller.stop();
-      expect(controller.record!.lines.length, 10);
+      expect(controller.record!.lines.length, windows);
       expect(
         controller.record!.lines
             .where((line) => line.translationStatus == 'done')
             .length,
-        9,
+        windows - 1,
       );
       expect(controller.record!.lines.last.text, isNotEmpty);
     },
@@ -116,6 +128,70 @@ void main() {
     expect(translator.preparationCalls, isEmpty);
     expect(translator.calls, hasLength(2));
     expect(translator.rules, everyElement('Use a formal tone.'));
+  });
+
+  test('up to three lines are translated at once', () async {
+    final controller = fakeController();
+    addTearDown(controller.dispose);
+    final translator = controller.translator as FakeTranslator;
+    translator.response = Completer<String>();
+    await controller.start(
+      microphone: true,
+      system: false,
+      language: 'en',
+      targetLanguage: 'zh',
+    );
+    (controller.audio as FakeAudio).events.addAll([
+      for (var i = 0; i < 4; i++) chunk('microphone', i * 3000),
+    ]);
+    await until(
+      () =>
+          controller.record!.lines.length == 4 &&
+          translator.calls.length == RealtimeController.translationSlots,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    // The fourth waits for a free slot.
+    expect(translator.calls, hasLength(3));
+    expect(controller.pendingTranslations, 4);
+    translator.response!.complete('译文');
+    await until(
+      () => controller.record!.lines.every(
+        (line) => line.translationStatus == 'done',
+      ),
+    );
+    expect(translator.calls, hasLength(4));
+    expect(controller.pendingTranslations, 0);
+    await controller.stop();
+  });
+
+  test('translation never waits for the record to be written', () async {
+    final store = GatedStore();
+    final translator = FakeTranslator();
+    final controller = RealtimeController(
+      audio: FakeAudio(),
+      engine: FakeEngine(),
+      store: store,
+      translator: translator,
+      recordSummarizer: FakeTranslator(),
+      catalog: FakeModelCatalog(),
+    )..initialized = true;
+    addTearDown(controller.dispose);
+    await controller.start(
+      microphone: true,
+      system: false,
+      language: 'en',
+      targetLanguage: 'zh',
+    );
+    // From here on every write hangs, as on a busy phone disk.
+    store.gate = Completer<void>();
+    (controller.audio as FakeAudio).events.add(chunk('microphone', 0));
+    await until(
+      () => controller.record?.lines.singleOrNull?.translationStatus == 'done',
+    );
+    expect(translator.calls, hasLength(1));
+    store.gate!.complete();
+    await controller.stop();
+    expect(store.values.values.single['status'], 'completed');
   });
 
   test(
@@ -215,6 +291,56 @@ void main() {
     },
   );
 
+  test('Ollama loads the model at prepare and gives a level to a model that reasons anyway', () async {
+    LocalLlmService.forgetReasoningSettings();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final chats = <Map>[];
+    server.listen((request) async {
+      Object body = {};
+      if (request.uri.path == '/api/tags') {
+        body = {
+          'models': [
+            {'name': 'gpt-oss:20b'},
+          ],
+        };
+      } else if (request.uri.path == '/api/chat') {
+        final sent = jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+        chats.add(sent);
+        body = {
+          'message': {
+            'content': '你好',
+            // gpt-oss reasons although think is false.
+            if (sent['think'] == false) 'thinking': 'The user wants Chinese.',
+          },
+          'done': true,
+          'done_reason': 'stop',
+        };
+      }
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode(body));
+      await request.response.close();
+    });
+    final service = LocalLlmService(warmUp: true);
+    addTearDown(service.stop);
+    await service.prepare('http://127.0.0.1:${server.port}', 'gpt-oss:20b');
+    await until(() => chats.isNotEmpty);
+    // The warm-up loads the model without asking for anything, with the
+    // context later requests ask for, so the first line does not reload it.
+    expect(chats.first['messages'], isEmpty);
+    expect(chats.first['keep_alive'], '30m');
+    final loaded = (chats.first['options'] as Map)['num_ctx'];
+    chats.clear();
+    await service.translate('Hello', 'en', 'zh');
+    await service.translate('Hello', 'en', 'zh');
+    expect(chats.map((chat) => chat['think']), [false, 'low']);
+    expect(chats.first['keep_alive'], '30m');
+    expect(chats.map((chat) => (chat['options'] as Map)['num_ctx']), [
+      loaded,
+      loaded,
+    ]);
+  });
+
   test('Ollama adapter uses installed models and returns only complete translations', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final service = LocalLlmService();
@@ -262,7 +388,8 @@ void main() {
     expect(await service.models(address), ['local-model']);
     await service.prepare(address, 'local-model');
     expect(await service.translate('Hello world.', 'en', 'zh'), '你好，世界。');
-    expect(service.backend, 'GPU · Ollama');
+    // Where the model runs is checked beside the request, not before showing it.
+    await until(() => service.backend == 'GPU · Ollama');
     expect(requests.single['stream'], false);
     expect(
       requests.single['messages'][0]['content'],

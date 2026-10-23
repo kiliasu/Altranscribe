@@ -63,6 +63,7 @@ class RealtimeController extends ChangeNotifier {
              cloudApi: CloudApi(
                credentials ?? WindowsCredentialStore(store.directory),
              ),
+             warmUp: true,
            ),
        fileDecoder =
            fileDecoder ??
@@ -132,9 +133,12 @@ class RealtimeController extends ChangeNotifier {
         engine: WhisperService(audio),
         // Shared services read the saved compatible-service key, as local
         // translation does.
-        translator: LocalLlmService(cloudApi: CloudApi(credentials)),
+        translator: LocalLlmService(
+          cloudApi: CloudApi(credentials),
+          warmUp: true,
+        ),
         createTranslator: () =>
-            LocalLlmService(cloudApi: CloudApi(credentials)),
+            LocalLlmService(cloudApi: CloudApi(credentials), warmUp: true),
         // Phones never host, so their registry stays in memory.
         devices: PairedDevices(
           file: MobilePlatform.android
@@ -212,7 +216,7 @@ class RealtimeController extends ChangeNotifier {
 
   /// Sentence lines each finished streaming segment produced, by segment id.
   final _finalLines = <String, List<TranscriptLine>>{};
-  Timer? _cloudSaveTimer;
+  Timer? _saveTimer;
   CloudFileEngine? _cloudFile;
   bool _directForSession = false;
   FileTranscriber? fileTask;
@@ -267,8 +271,23 @@ class RealtimeController extends ChangeNotifier {
   Future<void>? _polling;
   Future<void>? _processing;
   final _translationQueue = Queue<(TranscriptRecord, List<TranscriptLine>)>();
-  int _translationBatchRemaining = 0;
-  Future<void>? _translations;
+
+  /// Lines taken from [_translationQueue] in order, waiting for a free slot.
+  final _lineQueue = Queue<(TranscriptRecord, TranscriptLine)>();
+  int _translationsRunning = 0;
+
+  /// When each line was queued, for the session's timing summary.
+  final _queuedAt = <TranscriptLine, DateTime>{};
+  final _translationWaits = <double>[];
+  final _translationTimes = <double>[];
+
+  /// Lines translated at once. A burst of sentences then waits about one
+  /// request rather than one per sentence; each line still starts in order.
+  static const translationSlots = 3;
+
+  /// Completes once no line is being translated or waiting to be.
+  Completer<void>? _translationsDone;
+  Future<void>? get _translations => _translationsDone?.future;
   Future<void>? _starting;
   Future<void>? _stopping;
   Completer<void>? _savedStop;
@@ -283,7 +302,8 @@ class RealtimeController extends ChangeNotifier {
   int get pending => _queue.length + (recognizing ? 1 : 0);
   int get pendingTranslations =>
       _translationQueue.fold<int>(0, (count, item) => count + item.$2.length) +
-      _translationBatchRemaining;
+      _lineQueue.length +
+      _translationsRunning;
   void _notify() {
     if (!active) captionsVisible = false;
     if (!_disposed) notifyListeners();
@@ -1082,6 +1102,8 @@ class RealtimeController extends ChangeNotifier {
     levelHistory.clear();
     lastInferenceSeconds = 0;
     lastTranslationSeconds = 0;
+    _translationWaits.clear();
+    _translationTimes.clear();
     transcriptRevision++;
     phase = SessionPhase.loading;
     AppLog.instance.info(
@@ -1421,16 +1443,22 @@ class RealtimeController extends ChangeNotifier {
         );
         _queueTranslations(current, completedLines);
         if (_translationQueue.isNotEmpty) {
-          _translations ??= _translate().whenComplete(
-            () => _translations = null,
-          );
+          _pumpTranslations();
         }
       }
     }
     transcriptRevision++;
     _notify();
-    _cloudSaveTimer ??= Timer(const Duration(seconds: 1), () {
-      _cloudSaveTimer = null;
+    _saveSoon(current);
+  }
+
+  /// Writes the session's record within a second, so recognition and
+  /// translation never wait for the disk. Changes made meanwhile go into the
+  /// same write; stopping cancels a pending one and saves for good.
+  void _saveSoon(TranscriptRecord current) {
+    _saveTimer ??= Timer(const Duration(seconds: 1), () {
+      _saveTimer = null;
+      if (_discarding) return;
       unawaited(
         store.save(current).catchError((Object e) {
           error = e.toString();
@@ -1461,15 +1489,7 @@ class RealtimeController extends ChangeNotifier {
     line.text = '$text$suffix';
     transcriptRevision++;
     _notify();
-    _cloudSaveTimer ??= Timer(const Duration(seconds: 1), () {
-      _cloudSaveTimer = null;
-      unawaited(
-        store.save(current).catchError((Object e) {
-          error = e.toString();
-          unawaited(stop());
-        }),
-      );
-    });
+    _saveSoon(current);
   }
 
   Future<void> _process() async {
@@ -1509,11 +1529,9 @@ class RealtimeController extends ChangeNotifier {
         }
         transcriptRevision++;
         _notify();
-        await store.save(current);
+        _saveSoon(current);
         if (!_discarding && _translationQueue.isNotEmpty) {
-          _translations ??= _translate().whenComplete(
-            () => _translations = null,
-          );
+          _pumpTranslations();
         }
         final audioSeconds =
             ((chunk['endMs'] as int) - (chunk['startMs'] as int)) / 1000;
@@ -1546,6 +1564,7 @@ class RealtimeController extends ChangeNotifier {
         line.translationError = warning = 'translationTooSlow';
       } else {
         line.translationStatus = 'pending';
+        _queuedAt[line] = DateTime.now();
       }
     }
     // Capacity still counts audio windows, so splitting a window into many
@@ -1555,54 +1574,104 @@ class RealtimeController extends ChangeNotifier {
     }
   }
 
-  Future<void> _translate() async {
-    while (_translationQueue.isNotEmpty) {
-      final (current, lines) = _translationQueue.removeFirst();
-      for (var index = 0; index < lines.length; index++) {
-        if (_discarding) break;
-        _translationBatchRemaining = lines.length - index;
-        final line = lines[index];
-        if (!current.lines.contains(line)) continue;
-        translating = true;
-        _notify();
-        final clock = Stopwatch()..start();
-        try {
-          final translation = await translator.translate(
-            line.text,
-            current.language,
-            current.targetLanguage!,
-            context: translationContext.select(current, line),
-            rules: current.translationRules,
-            terms: current.translationTerms,
-          );
-          if (!_discarding && current.lines.contains(line)) {
-            line.translation = translation;
-            line.translationStatus = 'done';
-          }
-          lastTranslationSeconds = clock.elapsedMilliseconds / 1000;
-        } catch (e) {
-          if (!_discarding && current.lines.contains(line)) {
-            line.translationStatus = 'failed';
-            line.translationError = e.toString();
-            warning = 'translationFailed';
-          }
-        }
-        try {
-          if (!_discarding && current.lines.contains(line)) {
-            await store.save(current);
-          }
-        } catch (e) {
-          error = e.toString();
-          unawaited(stop());
-        }
-        translating = false;
-        transcriptRevision++;
-        _notify();
-      }
-      _translationBatchRemaining = 0;
+  /// Starts queued lines while slots are free; each line that finishes
+  /// frees its slot for the next, and lines queued meanwhile start at once.
+  void _pumpTranslations() {
+    while (_translationsRunning < translationSlots) {
+      final next = _nextTranslation();
+      if (next == null) break;
+      _translationsRunning++;
+      _translationsDone ??= Completer<void>();
+      translating = true;
+      unawaited(
+        _translateLine(next.$1, next.$2)
+            .catchError((Object e, StackTrace s) {
+              AppLog.instance.error('translation', e, s);
+            })
+            .whenComplete(() {
+              _translationsRunning--;
+              translating = _translationsRunning > 0;
+              _pumpTranslations();
+              if (_translationsRunning == 0) {
+                final done = _translationsDone;
+                _translationsDone = null;
+                done?.complete();
+                _notify();
+              }
+            }),
+      );
     }
-    translating = false;
+  }
+
+  (TranscriptRecord, TranscriptLine)? _nextTranslation() {
+    while (!_discarding) {
+      if (_lineQueue.isNotEmpty) return _lineQueue.removeFirst();
+      if (_translationQueue.isEmpty) return null;
+      final (current, lines) = _translationQueue.removeFirst();
+      _lineQueue.addAll(lines.map((line) => (current, line)));
+    }
+    _lineQueue.clear();
+    return null;
+  }
+
+  Future<void> _translateLine(
+    TranscriptRecord current,
+    TranscriptLine line,
+  ) async {
+    final queued = _queuedAt.remove(line);
+    // A joined tail replaced this row while it waited.
+    if (_discarding || !current.lines.contains(line)) return;
     _notify();
+    if (queued != null) {
+      _translationWaits.add(
+        DateTime.now().difference(queued).inMilliseconds / 1000,
+      );
+    }
+    final clock = Stopwatch()..start();
+    try {
+      final translation = await translator.translate(
+        line.text,
+        current.language,
+        current.targetLanguage!,
+        context: translationContext.select(current, line),
+        rules: current.translationRules,
+        terms: current.translationTerms,
+      );
+      if (!_discarding && current.lines.contains(line)) {
+        line.translation = translation;
+        line.translationStatus = 'done';
+      }
+      lastTranslationSeconds = clock.elapsedMilliseconds / 1000;
+      _translationTimes.add(lastTranslationSeconds);
+    } catch (e) {
+      if (!_discarding && current.lines.contains(line)) {
+        line.translationStatus = 'failed';
+        line.translationError = e.toString();
+        warning = 'translationFailed';
+      }
+    }
+    if (!_discarding && current.lines.contains(line)) _saveSoon(current);
+    transcriptRevision++;
+    _notify();
+  }
+
+  /// One log line per session: how long lines waited for a slot and how
+  /// long the requests took, which tells a slow model from a long queue.
+  void _logTranslationTimes() {
+    if (_translationTimes.isEmpty) return;
+    String summary(List<double> values) {
+      final average = values.reduce((a, b) => a + b) / values.length;
+      final longest = values.reduce((a, b) => a > b ? a : b);
+      return 'avg ${average.toStringAsFixed(2)} s, '
+          'max ${longest.toStringAsFixed(2)} s';
+    }
+
+    AppLog.instance.info(
+      'translation',
+      '${_translationTimes.length} lines with ${translator.backend}: '
+          'request ${summary(_translationTimes)}'
+          '${_translationWaits.isEmpty ? '' : '; wait ${summary(_translationWaits)}'}',
+    );
   }
 
   Future<void> togglePause() async {
@@ -1689,8 +1758,9 @@ class RealtimeController extends ChangeNotifier {
         if (_discarding) {
           _queue.clear();
           _translationQueue.clear();
-          _cloudSaveTimer?.cancel();
-          _cloudSaveTimer = null;
+          _lineQueue.clear();
+          _saveTimer?.cancel();
+          _saveTimer = null;
         }
         for (final connection in _cloudLive.values) {
           connection.cancel();
@@ -1743,13 +1813,14 @@ class RealtimeController extends ChangeNotifier {
       );
       await _processing;
       await _translations;
+      _logTranslationTimes();
     } catch (e, stack) {
       error ??= e.toString();
       final saved = _savedStop;
       if (saved != null && !saved.isCompleted) saved.completeError(e, stack);
     } finally {
-      _cloudSaveTimer?.cancel();
-      _cloudSaveTimer = null;
+      _saveTimer?.cancel();
+      _saveTimer = null;
       for (final connection in _cloudLive.values) {
         connection.cancel();
       }
@@ -1827,6 +1898,8 @@ class RealtimeController extends ChangeNotifier {
       translator.stop();
       _queue.clear();
       _translationQueue.clear();
+      _lineQueue.clear();
+      _queuedAt.clear();
       levels.clear();
       levelHistory.clear();
       try {

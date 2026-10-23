@@ -182,9 +182,121 @@ void main() {
         '你好',
       );
       live.sharedHost.translator.stop();
-      expect(auth, ['Bearer compat-test-key']);
+      // The warm-up at prepare carries the same key.
+      expect(auth, isNotEmpty);
+      expect(auth.toSet(), {'Bearer compat-test-key'});
     },
   );
+
+  test(
+    'compatible services are asked not to reason; a refused setting steps down',
+    () async {
+      LocalLlmService.forgetReasoningSettings();
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final efforts = <Object?>[];
+      final budgets = <Object?>[];
+      var reasoning = '';
+      server.listen((request) async {
+        final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+        efforts.add(body['reasoning_effort']);
+        budgets.add(body['max_tokens']);
+        final refused = body['reasoning_effort'] == 'none';
+        request.response.statusCode = refused ? 400 : 200;
+        request.response.write(
+          jsonEncode(
+            refused
+                ? {
+                    'error': {
+                      'message':
+                          "Unsupported value: 'reasoning_effort' does not "
+                          "support 'none' with this model.",
+                    },
+                  }
+                : {
+                    'choices': [
+                      {
+                        'message': {
+                          'content': '你好',
+                          'reasoning_content': reasoning,
+                        },
+                        'finish_reason': 'stop',
+                      },
+                    ],
+                  },
+          ),
+        );
+        await request.response.close();
+      });
+      final service = LocalLlmService();
+      addTearDown(service.stop);
+      await service.prepare(
+        'http://127.0.0.1:${server.port}/v1',
+        'hybrid',
+        provider: LlmProvider.openAICompatible,
+      );
+      expect(await service.translate('Hello', 'en', 'zh'), '你好');
+      expect(await service.translate('Hello', 'en', 'zh'), '你好');
+      // The refusal is remembered: later requests start where it worked.
+      expect(efforts, ['none', 'minimal', 'minimal']);
+      expect(budgets, [512, 512, 512]);
+      // A model that reasons anyway gets room for it from then on, so its
+      // answer is not cut off and asked for again.
+      reasoning = 'The user wants Chinese.';
+      await service.translate('Hello', 'en', 'zh');
+      await service.translate('Hello', 'en', 'zh');
+      expect(budgets.skip(3), [512, 4096]);
+    },
+  );
+
+  test('lines refused together step down once', () async {
+    LocalLlmService.forgetReasoningSettings();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final efforts = <Object?>[];
+    server.listen((request) async {
+      final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+      efforts.add(body['reasoning_effort']);
+      final refused = body['reasoning_effort'] == 'none';
+      request.response.statusCode = refused ? 400 : 200;
+      request.response.write(
+        jsonEncode(
+          refused
+              ? {
+                  'error': {
+                    'message': "'reasoning_effort' does not support 'none'.",
+                  },
+                }
+              : {
+                  'choices': [
+                    {
+                      'message': {'content': '你好'},
+                      'finish_reason': 'stop',
+                    },
+                  ],
+                },
+        ),
+      );
+      await request.response.close();
+    });
+    final service = LocalLlmService();
+    addTearDown(service.stop);
+    await service.prepare(
+      'http://127.0.0.1:${server.port}/v1',
+      'hybrid',
+      provider: LlmProvider.openAICompatible,
+    );
+    await Future.wait([
+      for (var i = 0; i < RealtimeController.translationSlots; i++)
+        service.translate('Hello', 'en', 'zh'),
+    ]);
+    expect(efforts.where((effort) => effort == 'none'), hasLength(3));
+    expect(efforts.where((effort) => effort != 'none'), [
+      'minimal',
+      'minimal',
+      'minimal',
+    ]);
+  });
 
   test('manual models work without listing access', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

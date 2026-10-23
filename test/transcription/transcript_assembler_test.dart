@@ -253,12 +253,12 @@ void main() {
     );
     audio.events.add(snapshot(15000, partial: false, continues: true));
     await until(() => translator.calls.length == 1);
+    // The joined line gets its own answer while the stale one is pending.
+    translator.response = null;
     audio.events.add(snapshot(20000, start: 15000, partial: false));
     await until(
       () => live.record!.lines.single.text == 'The next sentence continues.',
     );
-    expect(live.record!.lines.single.translation, isNull);
-    translator.response = null;
     stale.complete('旧译文');
     await live.stop();
     expect(live.records.single.lines.single.translation, '测试译文');

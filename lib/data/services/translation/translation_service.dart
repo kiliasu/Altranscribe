@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
+import 'package:altranscribe/data/services/logging/app_log.dart';
 import 'package:altranscribe/data/services/cloud/cloud_api.dart';
 import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
@@ -19,13 +22,6 @@ class LlmHttpException extends HttpException {
   LlmHttpException(this.statusCode, String detail)
     : super('LLM $statusCode: $detail');
   final int statusCode;
-
-  bool get unsupportedThinkingSwitch =>
-      (statusCode == 400 || statusCode == 422) &&
-      RegExp(
-        r'chat_template_kwargs|enable_thinking',
-        caseSensitive: false,
-      ).hasMatch(message);
 
   bool get unsupportedSchema =>
       (statusCode == 400 || statusCode == 422) &&
@@ -109,18 +105,23 @@ abstract class TranslationService {
 
 /// Uses an existing local LLM server for translation and record summaries.
 class LocalLlmService implements TranslationService {
-  LocalLlmService({this.cloudApi});
+  LocalLlmService({this.cloudApi, this.warmUp = false});
   final CloudApi? cloudApi;
+
+  /// Loads a local model and opens the connection when a session prepares
+  /// the service, so the first line does not pay for it.
+  final bool warmUp;
   HttpClient? _client;
   Uri? _base;
   String _model = '';
   String _key = '';
   bool _jsonObjectOutput = false;
 
-  /// Local compatible servers (llama.cpp, vLLM, LM Studio) accept a template
-  /// switch that turns a hybrid model's thinking off; one that rejects it is
-  /// asked again without it.
-  bool _thinkingSwitch = true;
+  DateTime _statusCheckedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Every Ollama request asks for the same context: a model loaded with
+  /// another one is loaded again before it answers.
+  static const _ollamaContext = 8192;
   LlmProvider _provider = LlmProvider.ollama;
   @override
   String backend = 'Ollama';
@@ -324,7 +325,9 @@ class LocalLlmService implements TranslationService {
       throw const FormatException('translationModelMissing');
     }
     final key = await _compatibleKey(provider, base);
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 3)
+      ..idleTimeout = const Duration(minutes: 2);
     _client = client;
     try {
       if (provider == LlmProvider.ollama &&
@@ -343,6 +346,32 @@ class LocalLlmService implements TranslationService {
     } catch (_) {
       stop();
       rethrow;
+    }
+    if (warmUp) unawaited(_warmUp(client));
+  }
+
+  /// Loads the model and opens the connection while the session starts, and
+  /// learns which reasoning switches the server takes before the first line.
+  Future<void> _warmUp(HttpClient client) async {
+    try {
+      if (_provider == LlmProvider.ollama) {
+        // An empty chat loads the model without generating anything.
+        await _request(
+          client,
+          _endpoint(_base!, _provider, 'chat'),
+          body: {
+            'model': _model,
+            'messages': [],
+            'keep_alive': '30m',
+            'options': {'num_ctx': _ollamaContext},
+          },
+          timeout: const Duration(minutes: 2),
+        );
+      } else {
+        await _chat('Reply with one word.', 'Hi', maxTokens: 8);
+      }
+    } on Object {
+      // The first translation reports any real problem.
     }
   }
 
@@ -366,6 +395,11 @@ class LocalLlmService implements TranslationService {
     final client = _client;
     if (client == null || _base == null) throw StateError('llmUnavailable');
     final ollama = _provider == LlmProvider.ollama;
+    final quiet = _Quiet.of(_base!, _model);
+    // A model that reasons anyway needs room for it, or its answer is cut off
+    // and asked for again.
+    final budget = quiet.reasons ? max(maxTokens * 4, 4096) : maxTokens;
+    final host = _base!.host;
     final body = <String, Object?>{
       'model': _model,
       'stream': false,
@@ -383,19 +417,26 @@ class LocalLlmService implements TranslationService {
               },
           },
       if (ollama) ...{
-        'think': false,
-        'keep_alive': '5m',
+        'think': quiet.ollamaThink,
+        // Long enough that a pause in speech does not unload the model.
+        'keep_alive': '30m',
         'options': {
           'temperature': 0,
-          'num_ctx': 8192,
-          'num_predict': maxTokens,
+          'num_ctx': _ollamaContext,
+          'num_predict': budget,
         },
       } else ...{
         'temperature': 0,
-        'max_tokens': maxTokens,
-        // DeepSeek's default reasoning consumes the same output budget.
-        if (_base!.host == 'api.deepseek.com') 'thinking': {'type': 'disabled'},
-        if (!isOnline(_base!) && _thinkingSwitch)
+        'max_tokens': budget,
+        // Reasoning makes a line take seconds instead of a fraction of one,
+        // and can use the whole budget before any translation appears.
+        if (quiet.effort < _Quiet.efforts.length)
+          'reasoning_effort': _Quiet.efforts[quiet.effort],
+        if (quiet.vendorSwitch && _Quiet.thinkingHosts.contains(host))
+          'thinking': {'type': 'disabled'},
+        if (quiet.vendorSwitch && _Quiet.enableThinkingHosts.contains(host))
+          'enable_thinking': false,
+        if (!isOnline(_base!) && quiet.templateSwitch)
           'chat_template_kwargs': {'enable_thinking': false},
       },
       'messages': [
@@ -416,18 +457,25 @@ class LocalLlmService implements TranslationService {
     try {
       response = await send();
     } on LlmHttpException catch (error) {
-      if (body.containsKey('chat_template_kwargs') &&
-          client == _client &&
-          error.unsupportedThinkingSwitch) {
-        _thinkingSwitch = false;
-        return _chat(
-          instruction,
-          text,
-          maxTokens: maxTokens,
-          incompleteError: incompleteError,
-          jsonSchema: jsonSchema,
-          acceptCutOff: acceptCutOff,
-        );
+      // A server that rejects a reasoning switch is asked again without it.
+      final before = quiet.copy();
+      if (client == _client && quiet.relax(error, body)) {
+        try {
+          return await _chat(
+            instruction,
+            text,
+            maxTokens: maxTokens,
+            incompleteError: incompleteError,
+            jsonSchema: jsonSchema,
+            acceptCutOff: acceptCutOff,
+          );
+        } on LlmHttpException catch (again) {
+          // The same refusal without any switch was not about them.
+          if (before.dropsAll(quiet) && again.statusCode == error.statusCode) {
+            quiet.restore(before);
+          }
+          rethrow;
+        }
       }
       if (ollama ||
           jsonSchema == null ||
@@ -442,14 +490,8 @@ class LocalLlmService implements TranslationService {
     }
     final choice = (response['choices'] as List?)?.firstOrNull as Map?;
     final message = ollama ? response['message'] : choice?['message'];
-    final raw = (message as Map?)?['content'];
-    // Some local servers return a thinking model's reasoning in the content.
-    final content = raw is String
-        ? raw.replaceFirst(
-            RegExp(r'^\s*<think>(?:[\s\S]*?</think>|[\s\S]*$)'),
-            '',
-          )
-        : raw;
+    quiet.observe(_model, message as Map?, response);
+    final content = _withoutReasoning(message?['content']);
     final cutOff = ollama
         ? response['done'] == true && response['done_reason'] == 'length'
         : choice?['finish_reason'] == 'length';
@@ -473,27 +515,45 @@ class LocalLlmService implements TranslationService {
       }
       throw FormatException(incompleteError);
     }
-    if (ollama) {
-      try {
-        final state = await _request(
-          client,
-          _endpoint(_base!, _provider, 'ps'),
-          timeout: const Duration(seconds: 3),
-        );
-        for (final model in state['models'] as List) {
-          if (model['name'] == _model) {
-            backend = (model['size_vram'] as num? ?? 0) > 0
-                ? 'GPU · Ollama'
-                : 'CPU · Ollama';
-          }
-        }
-      } on Exception {
-        // A status query cannot invalidate completed output.
-      }
+    // Where Ollama runs the model is checked now and then, never on the way
+    // to showing a translation.
+    if (ollama &&
+        DateTime.now().difference(_statusCheckedAt) >
+            const Duration(minutes: 1)) {
+      _statusCheckedAt = DateTime.now();
+      unawaited(_checkBackend(client));
     }
     // A reply cut off mid-word ends at the last whole word.
     return (cutOff ? content.replaceFirst(RegExp(r'\s+\S*$'), '') : content)
         .trim();
+  }
+
+  /// The reply without reasoning that some servers and models put in front
+  /// of the answer.
+  static Object? _withoutReasoning(Object? content) => content is String
+      ? content.replaceFirst(
+          RegExp(r'^\s*<(think|thinking)>(?:[\s\S]*?</\1>|[\s\S]*$)'),
+          '',
+        )
+      : content;
+
+  Future<void> _checkBackend(HttpClient client) async {
+    try {
+      final state = await _request(
+        client,
+        _endpoint(_base!, _provider, 'ps'),
+        timeout: const Duration(seconds: 3),
+      );
+      for (final model in state['models'] as List) {
+        if (model['name'] == _model) {
+          backend = (model['size_vram'] as num? ?? 0) > 0
+              ? 'GPU · Ollama'
+              : 'CPU · Ollama';
+        }
+      }
+    } on Object {
+      // A status query cannot invalidate completed output.
+    }
   }
 
   Future<String> _cloudChat(
@@ -505,7 +565,94 @@ class LocalLlmService implements TranslationService {
   ) async {
     final api = cloudApi;
     if (api == null) throw StateError('cloudKeyMissing');
+    // The least reasoning this model accepts; a refusal moves one step on,
+    // and the step that worked is kept for the next request.
+    final key = '${_provider.name} $_model';
+    final steps = _provider == LlmProvider.gemini ? 2 : 3;
     String content;
+    for (
+      var step = _cloudSteps[key] ??= _firstStep(_provider, _model);
+      ;
+      step++
+    ) {
+      try {
+        content = await _cloudRequest(
+          api,
+          instruction,
+          text,
+          maxTokens,
+          incompleteError,
+          schema,
+          step,
+        );
+        _cloudSteps[key] = step;
+        break;
+      } on StateError catch (error) {
+        // Refused even without reasoning settings: the cause lies elsewhere.
+        if (error.message != 'cloudHttp400' || step >= steps) rethrow;
+      }
+    }
+    if (content.trim().isEmpty) {
+      throw FormatException(
+        incompleteError == 'incompleteTranslation'
+            ? 'translationEmpty'
+            : incompleteError,
+      );
+    }
+    return content.trim();
+  }
+
+  /// Per provider and model, the reasoning step that worked.
+  static final _cloudSteps = <String, int>{};
+
+  /// Forgets which reasoning settings servers and models accepted.
+  @visibleForTesting
+  static void forgetReasoningSettings() {
+    _cloudSteps.clear();
+    _Quiet._known.clear();
+  }
+
+  /// Where to start for models whose limits are known; others start at no
+  /// reasoning at all and step down after a refusal.
+  static int _firstStep(LlmProvider provider, String model) {
+    switch (provider) {
+      case LlmProvider.openAI:
+        if (RegExp(r'^(gpt-4|gpt-3|chatgpt-)').hasMatch(model)) return 3;
+        if (RegExp(r'^(o[1-9]|gpt-6\.1-sol)').hasMatch(model)) return 2;
+        if (RegExp(r'^(gpt-6-astra|gpt-5(-mini|-nano)?$)').hasMatch(model)) {
+          return 1;
+        }
+        return 0;
+      case LlmProvider.gemini:
+        return model.contains('pro') ? 1 : 0;
+      case LlmProvider.anthropic:
+        // Thinking cannot be turned off; low effort keeps it short.
+        if (RegExp(r'^claude-(opus-5-5|fable|mythos)').hasMatch(model)) {
+          return 2;
+        }
+        if (model.startsWith('claude-sonnet-5-5')) return 1;
+        if (RegExp(r'^claude-(opus-5|sonnet-5|haiku-5)').hasMatch(model)) {
+          return 0;
+        }
+        // These do not think unless asked, and take effort.
+        if (RegExp(r'^claude-(opus|sonnet)-4-[678]').hasMatch(model)) return 2;
+        // Older models take neither setting.
+        if (RegExp(r'^claude-.*(4-5|3-)').hasMatch(model)) return 3;
+        return 0;
+      default:
+        return 0;
+    }
+  }
+
+  Future<String> _cloudRequest(
+    CloudApi api,
+    String instruction,
+    String text,
+    int maxTokens,
+    String incompleteError,
+    Map<String, Object?>? schema,
+    int step,
+  ) async {
     if (_provider == LlmProvider.openAI) {
       final response = await api.json(
         'POST',
@@ -516,8 +663,10 @@ class LocalLlmService implements TranslationService {
           'instructions': instruction,
           'input': text,
           'max_output_tokens': maxTokens < 4096 ? 4096 : maxTokens,
-          if (RegExp(r'^gpt-(5\.6-(luna|terra|sol)|6-astra)').hasMatch(_model))
-            'reasoning': {'effort': 'none'},
+          if (step < 3)
+            'reasoning': {
+              'effort': const ['none', 'minimal', 'low'][step],
+            },
           if (schema != null)
             'text': {
               'format': {
@@ -545,7 +694,7 @@ class LocalLlmService implements TranslationService {
           if (part['type'] == 'output_text') output.write(part['text']);
         }
       }
-      content = output.toString();
+      return output.toString();
     } else if (_provider == LlmProvider.anthropic) {
       final response = await api.json(
         'POST',
@@ -557,9 +706,15 @@ class LocalLlmService implements TranslationService {
           'messages': [
             {'role': 'user', 'content': text},
           ],
-          if (schema != null)
+          // Thinking off where a model allows it ("between_tools" is how
+          // Sonnet 5.5 turns it off), otherwise the least effort.
+          if (step == 0) 'thinking': {'type': 'disabled'},
+          if (step == 1) 'thinking': {'type': 'between_tools'},
+          if (step < 3 || schema != null)
             'output_config': {
-              'format': {'type': 'json_schema', 'schema': schema},
+              if (step < 3) 'effort': 'low',
+              if (schema != null)
+                'format': {'type': 'json_schema', 'schema': schema},
             },
         },
       );
@@ -575,7 +730,8 @@ class LocalLlmService implements TranslationService {
           output.write(block['text']);
         }
       }
-      content = output.toString();
+      // With thinking off, a model may still wrap notes in thinking tags.
+      return _withoutReasoning(output.toString()) as String;
     } else {
       final response = await api.json(
         'POST',
@@ -587,9 +743,8 @@ class LocalLlmService implements TranslationService {
           'input': text,
           'generation_config': {
             'max_output_tokens': maxTokens < 4096 ? 4096 : maxTokens,
-            // Translation, titles and cleanup need no long reasoning; every
-            // listed Gemini model accepts the low level.
-            'thinking_level': 'low',
+            // Minimal is close to no thinking; Pro models start at low.
+            if (step < 2) 'thinking_level': const ['minimal', 'low'][step],
           },
           if (schema != null)
             'response_format': {
@@ -599,16 +754,8 @@ class LocalLlmService implements TranslationService {
             },
         },
       );
-      content = interactionText(response);
+      return interactionText(response);
     }
-    if (content.trim().isEmpty) {
-      throw FormatException(
-        incompleteError == 'incompleteTranslation'
-            ? 'translationEmpty'
-            : incompleteError,
-      );
-    }
-    return content.trim();
   }
 
   @override
@@ -1141,7 +1288,138 @@ class LocalLlmService implements TranslationService {
     _base = null;
     _key = '';
     _jsonObjectOutput = false;
-    _thinkingSwitch = true;
     // Shared servers belong to the user; never terminate them or unload models.
+  }
+}
+
+/// How to keep one model on one server from reasoning, learned from its
+/// answers: which switches it takes and whether it reasons regardless. Kept
+/// for the app's lifetime, so only the first request finds out.
+class _Quiet {
+  _Quiet();
+  static final _known = <String, _Quiet>{};
+  static _Quiet of(Uri base, String model) =>
+      _known.putIfAbsent('$base $model', _Quiet.new);
+
+  /// reasoning_effort values from least to more; past the end, none is sent.
+  static const efforts = ['none', 'minimal', 'low'];
+
+  /// Services whose own switch is `thinking: {type: disabled}`.
+  static const thinkingHosts = {
+    'api.deepseek.com',
+    'open.bigmodel.cn',
+    'api.z.ai',
+    'ark.cn-beijing.volces.com',
+  };
+
+  /// Services whose own switch is `enable_thinking: false`.
+  static const enableThinkingHosts = {
+    'dashscope.aliyuncs.com',
+    'dashscope-intl.aliyuncs.com',
+    'api.siliconflow.cn',
+    'api.siliconflow.com',
+    'api-inference.modelscope.cn',
+  };
+
+  int effort = 0;
+  bool templateSwitch = true;
+  bool vendorSwitch = true;
+
+  /// Ollama's think value; gpt-oss ignores false and takes a level instead.
+  Object ollamaThink = false;
+
+  /// The model reasons although asked not to.
+  bool reasons = false;
+
+  _Quiet copy() => _Quiet()
+    ..effort = effort
+    ..templateSwitch = templateSwitch
+    ..vendorSwitch = vendorSwitch
+    ..ollamaThink = ollamaThink
+    ..reasons = reasons;
+
+  void restore(_Quiet other) {
+    effort = other.effort;
+    templateSwitch = other.templateSwitch;
+    vendorSwitch = other.vendorSwitch;
+    ollamaThink = other.ollamaThink;
+  }
+
+  /// [after] sends none of the switches this state still sent.
+  bool dropsAll(_Quiet after) =>
+      after.effort >= efforts.length &&
+      !after.templateSwitch &&
+      !after.vendorSwitch &&
+      (effort < efforts.length || templateSwitch || vendorSwitch);
+
+  /// Gives up the switch a refusal names, or every switch when it names
+  /// none of them. False when nothing was left to give up.
+  bool relax(LlmHttpException error, Map<String, Object?> body) {
+    if (error.statusCode != 400 && error.statusCode != 422) return false;
+    final text = error.message.toLowerCase();
+    if (body.containsKey('chat_template_kwargs') &&
+        text.contains('chat_template_kwargs')) {
+      templateSwitch = false;
+    } else if (body.containsKey('reasoning_effort') &&
+        (text.contains('reasoning') || text.contains('effort'))) {
+      // Requests refused together move one step past what they sent.
+      final sent = efforts.indexOf(body['reasoning_effort'] as String);
+      effort = max(effort, sent + 1);
+    } else if ((body.containsKey('thinking') ||
+            body.containsKey('enable_thinking')) &&
+        text.contains('thinking')) {
+      vendorSwitch = false;
+    } else if (body['think'] is String && text.contains('think')) {
+      ollamaThink = false;
+      reasons = true;
+    } else if (!error.unsupportedSchema &&
+        RegExp(
+          r'parameter|argument|field|property|extra inputs',
+          caseSensitive: false,
+        ).hasMatch(error.message) &&
+        RegExp(
+          r'unrecognized|unknown|unexpected|not permitted|not allowed|'
+          r'unsupported|not supported|invalid',
+          caseSensitive: false,
+        ).hasMatch(error.message) &&
+        (body.containsKey('reasoning_effort') ||
+            body.containsKey('chat_template_kwargs') ||
+            body.containsKey('thinking') ||
+            body.containsKey('enable_thinking'))) {
+      // A complaint about some parameter that names none of them.
+      effort = efforts.length;
+      templateSwitch = false;
+      vendorSwitch = false;
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  /// Notes reasoning in a reply despite the switches.
+  void observe(String model, Map? message, Map response) {
+    final reasoning =
+        message?['reasoning_content'] ??
+        message?['reasoning'] ??
+        message?['thinking'];
+    final details = response['usage'] is Map
+        ? (response['usage'] as Map)['completion_tokens_details']
+        : null;
+    final tokens = details is Map
+        ? (details['reasoning_tokens'] as num? ?? 0)
+        : 0;
+    if ((reasoning is! String || reasoning.trim().isEmpty) && tokens <= 0) {
+      return;
+    }
+    if (message?['thinking'] is String && ollamaThink == false) {
+      // Ollama models such as gpt-oss ignore false but take a low level.
+      ollamaThink = 'low';
+    } else if (!reasons) {
+      reasons = true;
+      AppLog.instance.warn(
+        'translation',
+        '$model reasons although asked not to; replies take longer',
+      );
+    }
   }
 }

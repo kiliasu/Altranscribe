@@ -98,6 +98,8 @@ class FixtureHttpClient implements HttpClient {
   @override
   set connectionTimeout(Duration? value) => delegate.connectionTimeout = value;
   @override
+  set idleTimeout(Duration value) => delegate.idleTimeout = value;
+  @override
   void close({bool force = false}) => delegate.close(force: force);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -934,6 +936,113 @@ void main() {
     await engine.stop();
   });
 
+  test('cloud models are asked for the least reasoning they accept, remembered per model', () async {
+    LocalLlmService.forgetReasoningSettings();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final sent = <String>[];
+    server.listen((request) async {
+      final path = request.uri.path;
+      if (path == '/v1/models') {
+        request.response.write(
+          jsonEncode({
+            'data': [
+              {'id': 'gpt-next'},
+              {'id': 'claude-next'},
+            ],
+            'has_more': false,
+          }),
+        );
+      } else if (path == '/v1beta/models') {
+        request.response.write(
+          jsonEncode({
+            'models': [
+              {'name': 'models/gemini-next-pro'},
+            ],
+          }),
+        );
+      } else {
+        final body = jsonDecode(
+          await request.cast<List<int>>().transform(utf8.decoder).join(),
+        ) as Map;
+        if (path == '/v1/responses') {
+          final effort = (body['reasoning'] as Map?)?['effort'];
+          sent.add('openai $effort');
+          request.response.statusCode = effort == 'none' ? 400 : 200;
+          request.response.write(
+            jsonEncode({
+              'status': 'completed',
+              'output': [
+                {
+                  'type': 'message',
+                  'content': [
+                    {'type': 'output_text', 'text': '译文'},
+                  ],
+                },
+              ],
+            }),
+          );
+        } else if (path == '/v1/messages') {
+          final thinking = (body['thinking'] as Map?)?['type'];
+          final effort = (body['output_config'] as Map?)?['effort'];
+          sent.add('anthropic $thinking $effort');
+          // A model whose thinking cannot be turned off.
+          request.response.statusCode = thinking == null ? 200 : 400;
+          request.response.write(
+            jsonEncode({
+              'stop_reason': 'end_turn',
+              'content': [
+                {'type': 'text', 'text': '译文'},
+              ],
+            }),
+          );
+        } else {
+          final level = (body['generation_config'] as Map)['thinking_level'];
+          sent.add('gemini $level');
+          request.response.write(
+            jsonEncode({
+              'status': 'completed',
+              'steps': [
+                {
+                  'type': 'model_output',
+                  'content': [
+                    {'type': 'text', 'text': '译文'},
+                  ],
+                },
+              ],
+            }),
+          );
+        }
+      }
+      await request.response.close();
+    });
+    final llm = LocalLlmService(
+      cloudApi: CloudApi(
+        MemoryCredentials(),
+        clientFactory: () => FixtureHttpClient(server, []),
+      ),
+    );
+    addTearDown(llm.stop);
+    for (final (provider, model) in [
+      (LlmProvider.openAI, 'gpt-next'),
+      (LlmProvider.anthropic, 'claude-next'),
+      (LlmProvider.gemini, 'gemini-next-pro'),
+    ]) {
+      await llm.prepare('', model, provider: provider);
+      expect(await llm.translate('Test', 'en', 'zh'), '译文');
+      expect(await llm.translate('Test', 'en', 'zh'), '译文');
+    }
+    expect(sent, [
+      // OpenAI refuses none, so minimal is used from then on.
+      'openai none', 'openai minimal', 'openai minimal',
+      // Thinking off, then Sonnet 5.5's form of it, then low effort alone.
+      'anthropic disabled low', 'anthropic between_tools low',
+      'anthropic null low', 'anthropic null low',
+      // A Pro model starts at the lowest level it supports.
+      'gemini low', 'gemini low',
+    ]);
+  });
+
   test('OpenAI text uses Responses output items, not SDK output_text or chat completions', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => server.close(force: true));
@@ -1017,7 +1126,9 @@ void main() {
             {'role': 'user', 'content': 'Test'},
           ]);
           expect(body['max_tokens'], 4096);
-          expect(body.containsKey('output_config'), isFalse);
+          // An unknown model is first asked to translate without thinking.
+          expect(body['thinking'], {'type': 'disabled'});
+          expect(body['output_config'], {'effort': 'low'});
           request.response.write(
             jsonEncode({
               'stop_reason': stopReason,
