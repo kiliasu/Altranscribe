@@ -12,12 +12,13 @@ struct SettingsView: View {
     @State private var removeModel: URL?
 
     var body: some View {
+        // Each pane keeps its own height, so the window resizes when switching tabs as macOS settings do.
         TabView {
-            general.tabItem { Label(L("General"), systemImage: "gearshape") }
-            speech.tabItem { Label(L("Speech"), systemImage: "waveform") }
-            text.tabItem { Label(L("Text Models"), systemImage: "character.bubble") }
+            Tab(L("General"), systemImage: "gearshape") { general.frame(height: 590) }
+            Tab(L("Speech"), systemImage: "waveform") { speech.frame(height: 560) }
+            Tab(L("Text Models"), systemImage: "character.bubble") { text.frame(height: 520) }
         }
-        .frame(width: 650, height: 650)
+        .frame(width: 600)
         .onChange(of: model.settings) { _, _ in model.saveSettings() }
         .alert(L("Attention"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L("OK"), role: .cancel) { model.error = nil }
@@ -41,9 +42,20 @@ struct SettingsView: View {
                 }
             }
             Section(L("Floating Captions")) {
-                Slider(value: $model.settings.captionSize, in: 16...44, step: 1) {
-                    Text(L("Text Size"))
-                } minimumValueLabel: { Text("16").font(.caption) } maximumValueLabel: { Text("44").font(.caption) }
+                // Whole points only, so dragging saves settings once per step instead of on every movement.
+                LabeledContent(L("Text Size")) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "textformat.size.smaller").foregroundStyle(.secondary)
+                        Slider(value: Binding(get: { model.settings.captionSize },
+                                              set: { model.settings.captionSize = $0.rounded() }), in: 16...44)
+                            .frame(maxWidth: 220)
+                        Image(systemName: "textformat.size.larger").foregroundStyle(.secondary)
+                        Text("\(Int(model.settings.captionSize)) pt")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, alignment: .trailing)
+                    }
+                }
                 Toggle(L("Show only translation when available"), isOn: $model.settings.captionTranslationOnly)
                 Button(L("Show Caption Window")) { model.showCaptions() }
             }
@@ -58,8 +70,20 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                LabeledContent("Altranscribe", value: "0.8.0 · macOS")
-                Text("SwiftUI · Whisper / Metal · Nemotron / CPU").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 14) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Altranscribe").font(.headline)
+                        Text((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.8.0") + " · macOS")
+                            .foregroundStyle(.secondary)
+                        Text("SwiftUI · Whisper / Metal · Nemotron / CPU")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.vertical, 4)
             }
         }.formStyle(.grouped)
     }
@@ -81,18 +105,14 @@ struct SettingsView: View {
                 }
                 Section {
                     ForEach(WhisperModel.catalog) { item in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(item.title)
-                                Text(Localization.byteCount(item.bytes)).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
+                        ModelRow(title: item.title, detail: Localization.byteCount(item.bytes), symbol: "waveform",
+                                 inUse: installed(item) && model.settings.modelPath == model.paths.models.appendingPathComponent(item.filename).path) {
                             if model.downloadID == item.id {
                                 ProgressView().controlSize(.small)
                                 Button(L("Cancel")) { model.downloadTask?.cancel() }
                             } else if installed(item) {
                                 if model.settings.modelPath == model.paths.models.appendingPathComponent(item.filename).path {
-                                    Label(L("Selected"), systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary)
+                                    Label(L("Selected"), systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.tint)
                                 } else {
                                     Button(L("Use")) { model.settings.modelPath = model.paths.models.appendingPathComponent(item.filename).path }
                                 }
@@ -106,7 +126,7 @@ struct SettingsView: View {
                             } else {
                                 Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }.disabled(model.downloadID != nil)
                             }
-                        }.padding(.vertical, 3)
+                        }
                     }
                 } header: { Text(L("Multilingual Whisper Models")) }
                   footer: { Text(L("Tiny is useful for testing; Small balances speed and accuracy. Downloads are verified with SHA-256.")) }
@@ -121,20 +141,15 @@ struct SettingsView: View {
                 }
                 Section {
                     ForEach(NemotronModel.catalog) { item in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.multilingual ? L("3.5 Multilingual") : L("English · Default"))
-                                Text(Localization.byteCount(item.bytes))
-                                    .font(.caption).foregroundStyle(.secondary)
-                                Link(L("Model Card & License"), destination: item.modelCard).font(.caption)
-                            }
-                            Spacer()
+                        ModelRow(title: item.multilingual ? L("3.5 Multilingual") : L("English · Default"),
+                                 detail: Localization.byteCount(item.bytes), symbol: item.multilingual ? "globe" : "character.bubble",
+                                 link: item.modelCard, inUse: installed(item) && model.settings.nemotronModel.id == item.id) {
                             if model.downloadID == item.id {
                                 ProgressView().controlSize(.small)
                                 Button(L("Cancel")) { model.downloadTask?.cancel() }
                             } else if installed(item) {
                                 if model.settings.nemotronModel.id == item.id {
-                                    Label(L("Selected"), systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary)
+                                    Label(L("Selected"), systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.tint)
                                 } else {
                                     Button(L("Use")) { model.settings.nemotronModelID = item.id }
                                 }
@@ -144,7 +159,7 @@ struct SettingsView: View {
                                 Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }
                                     .disabled(model.downloadID != nil)
                             }
-                        }.padding(.vertical, 3)
+                        }
                     }
                 } header: { Text(L("Nemotron Models")) }
                   footer: { Text(L("The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation.")) }
@@ -247,6 +262,38 @@ struct SettingsView: View {
                 connectionStatus = LocalizedText("Models found: %@", String(models.count))
             } catch { model.error = LocalizedText(error: error) }
         }
+    }
+}
+
+/// One downloadable model: an icon tile that fills in when the model is in use, its name and size, and its actions.
+private struct ModelRow<Accessory: View>: View {
+    let title: String
+    let detail: String
+    let symbol: String
+    var link: URL?
+    let inUse: Bool
+    @ViewBuilder var accessory: Accessory
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(inUse ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
+                .frame(width: 32, height: 32)
+                .background(inUse ? AnyShapeStyle(.tint) : AnyShapeStyle(.tint.opacity(0.12)), in: .rect(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                HStack(spacing: 8) {
+                    Text(detail)
+                    if let link { Link(L("Model Card & License"), destination: link) }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            accessory
+        }
+        .padding(.vertical, 3)
     }
 }
 

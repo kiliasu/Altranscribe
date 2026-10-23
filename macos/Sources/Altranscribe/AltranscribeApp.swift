@@ -26,6 +26,7 @@ import AltranscribeCore
     @State private var model = AppModel()
     @AppStorage("interfaceLanguage") private var interfaceLanguage = "system"
     @AppStorage("appearance") private var appearance = "system"
+    @AppStorage("transcriptTextSize") private var textSize = 15.0
 
     init() {
         Self.updateSystemLanguage(UserDefaults.standard.string(forKey: InterfaceLanguage.preferenceKey) ?? "system")
@@ -46,7 +47,7 @@ import AltranscribeCore
                 .onAppear { delegate.model = model }
                 .onOpenURL { model.addFiles([$0]) }
         }
-        .defaultSize(width: 1120, height: 760)
+        .defaultSize(width: 1180, height: 780)
         .windowResizability(.contentMinSize)
         .onChange(of: interfaceLanguage) { _, value in
             Self.updateSystemLanguage(value)
@@ -57,6 +58,22 @@ import AltranscribeCore
                 Button(L("Import Audio or Video…")) { model.chooseFiles() }
                     .keyboardShortcut("o")
             }
+            CommandGroup(before: .toolbar) {
+                Button(L("Live Transcription")) { model.destination = .live }
+                    .keyboardShortcut("1")
+                Button(L("File Transcription")) { model.destination = .files }
+                    .keyboardShortcut("2")
+                Divider()
+                Button(L("Make Text Bigger")) { textSize = min(28, textSize + 1) }
+                    .keyboardShortcut("+")
+                Button(L("Make Text Smaller")) { textSize = max(11, textSize - 1) }
+                    .keyboardShortcut("-")
+                Button(L("Make Text Normal Size")) { textSize = 15 }
+                    .keyboardShortcut("0")
+                Divider()
+            }
+            SidebarCommands()
+            InspectorCommands()
             CommandMenu(L("Transcription")) {
                 Button(L("Start Transcription")) { model.startLive() }
                     .keyboardShortcut("r", modifiers: [.command, .shift]).disabled(model.busy)

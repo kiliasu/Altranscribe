@@ -3,15 +3,9 @@ import Observation
 import UniformTypeIdentifiers
 import AltranscribeCore
 
-enum Workspace: String, CaseIterable, Identifiable {
-    case live, files, library
-    var id: String { rawValue }
-    var title: String {
-        switch self { case .live: L("Live Transcription"); case .files: L("Files"); case .library: L("Library") }
-    }
-    var symbol: String {
-        switch self { case .live: "waveform"; case .files: "doc.badge.plus"; case .library: "books.vertical" }
-    }
+/// What the sidebar has selected: one of the two capture pages or a saved transcript.
+enum Destination: Hashable {
+    case live, files, transcript(UUID)
 }
 
 enum SessionPhase { case idle, preparing, recording, paused, finishing, files }
@@ -27,10 +21,9 @@ struct QueuedFile: Identifiable {
 
 @MainActor @Observable final class AppModel {
     var settings = AppSettings()
-    var workspace: Workspace? = .live
+    var destination: Destination? = .live
     var source: AudioSource = .microphone
     var records: [TranscriptRecord] = []
-    var selectedRecordID: UUID?
     var activeRecordID: UUID?
     var queue: [QueuedFile] = []
     var queueRunning = false
@@ -44,6 +37,9 @@ struct QueuedFile: Identifiable {
     var downloadTask: Task<Void, Never>?
     var modelRevision = 0
     var isPostProcessing = false
+    private(set) var postProcessingID: UUID?
+    var renamingRecordID: UUID?
+    var pendingDeletion: UUID?
     private(set) var pendingTranslations = 0
 
     let paths: AppPaths
@@ -76,7 +72,7 @@ struct QueuedFile: Identifiable {
 
     var busy: Bool { phase != .idle || isPostProcessing }
     var activeRecord: TranscriptRecord? { records.first { $0.id == activeRecordID } }
-    var selectedRecord: TranscriptRecord? { records.first { $0.id == selectedRecordID } }
+    var isCapturing: Bool { phase == .recording || phase == .paused }
     var filteredRecords: [TranscriptRecord] { records.filter { $0.matches(search) } }
     var currentCaption: TranscriptSegment? { activeRecord?.segments.last }
     var currentCaptionTranslation: TranscriptSegment? { activeRecord?.segments.last { $0.translation != nil } }
@@ -351,7 +347,20 @@ struct QueuedFile: Identifiable {
                 queue.append(QueuedFile(url: url))
             }
         }
-        workspace = .files
+        destination = .files
+    }
+    // The running queue addresses items by index, so it is only edited while idle.
+    func retryQueued(_ id: UUID) {
+        guard !queueRunning, let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        queue[index].status = .waiting; queue[index].error = nil; queue[index].progress = 0
+    }
+    func removeQueued(_ id: UUID) {
+        guard !queueRunning else { return }
+        queue.removeAll { $0.id == id }
+    }
+    func clearCompletedQueue() {
+        guard !queueRunning else { return }
+        queue.removeAll { $0.status == .completed }
     }
     func startQueue() {
         guard !busy, queue.contains(where: { $0.status == .waiting }) else { return }
@@ -408,8 +417,15 @@ struct QueuedFile: Identifiable {
     func deleteRecord(_ id: UUID) {
         do {
             try store.delete(id)
+            if destination == .transcript(id) {
+                // Like Notes and Mail, move the selection to the neighbouring transcript.
+                let visible = filteredRecords
+                let next = visible.firstIndex { $0.id == id }.flatMap { index in
+                    visible.indices.contains(index + 1) ? visible[index + 1] : index > 0 ? visible[index - 1] : nil
+                }
+                destination = next.map { .transcript($0.id) } ?? .live
+            }
             records.removeAll { $0.id == id }
-            if selectedRecordID == id { selectedRecordID = nil }
             if activeRecordID == id { activeRecordID = nil }
         } catch { self.error = LocalizedText(error: error) }
     }
@@ -462,10 +478,10 @@ struct QueuedFile: Identifiable {
         guard !busy else { return }
         let configuration = settings
         let summaryLanguage = InterfaceLanguage.current.speechCode
-        isPostProcessing = true
+        isPostProcessing = true; postProcessingID = record.id
         status = summary ? LocalizedText("Creating summary…") : LocalizedText("Translating…")
         work = Task {
-            defer { isPostProcessing = false; work = nil; status = LocalizedText("Ready") }
+            defer { isPostProcessing = false; postProcessingID = nil; work = nil; status = LocalizedText("Ready") }
             do {
                 let key = try KeychainStore.read(endpoint: configuration.textEndpoint)
                 if summary {
