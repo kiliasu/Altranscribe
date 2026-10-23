@@ -129,7 +129,7 @@ struct InspectorToggle: ToolbarContent {
     @Binding var isPresented: Bool
     var body: some ToolbarContent {
         ToolbarItem {
-            Button { isPresented.toggle() } label: {
+            Button { withAnimation(Motion.content) { isPresented.toggle() } } label: {
                 Label(L("Transcription Options"), systemImage: "sidebar.trailing")
             }
             .help((isPresented ? L("Hide Transcription Options") : L("Show Transcription Options")) + " ⌃⌘I")

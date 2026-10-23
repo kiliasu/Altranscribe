@@ -7,16 +7,19 @@ struct FilesView: View {
     @State private var targeted = false
 
     var body: some View {
-        Group {
+        // The drop zone hands over to the queue when the first file arrives, and returns when the last leaves.
+        ZStack {
             if model.queue.isEmpty {
                 DropZone(targeted: targeted) { model.chooseFiles() }
                     .padding(24)
+                    .transition(.page)
             } else {
                 List {
                     ForEach(model.queue) { QueueRow(model: model, item: $0) }
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
+                .animation(Motion.content, value: model.queue.map(\.id))
                 .overlay {
                     if targeted {
                         RoundedRectangle(cornerRadius: 18)
@@ -24,8 +27,10 @@ struct FilesView: View {
                             .background(.tint.opacity(0.05), in: .rect(cornerRadius: 18))
                             .padding(8)
                             .allowsHitTesting(false)
+                            .transition(.opacity)
                     }
                 }
+                .transition(.page)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -34,9 +39,10 @@ struct FilesView: View {
             return !urls.isEmpty
         } isTargeted: { targeted = $0 }
         .safeAreaBar(edge: .bottom) {
-            if !model.queue.isEmpty { QueueBar(model: model).padding(.bottom, 18) }
+            if !model.queue.isEmpty { QueueBar(model: model).padding(.bottom, 18).transition(.rise) }
         }
-        .animation(.smooth(duration: 0.2), value: targeted)
+        .animation(Motion.content, value: model.queue.isEmpty)
+        .animation(Motion.quick, value: targeted)
         .navigationTitle(L("File Transcription"))
         .navigationSubtitle(L("Supports audio and video that macOS can decode"))
         .toolbar {
@@ -93,6 +99,14 @@ private struct QueueRow: View {
     let model: AppModel
     let item: QueuedFile
     @State private var hovering = false
+    /// Marks only celebrate what finishes while the row is on screen, not work that was already done.
+    @State private var initialStatus: QueueStatus
+
+    init(model: AppModel, item: QueuedFile) {
+        self.model = model
+        self.item = item
+        _initialStatus = State(initialValue: item.status)
+    }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -104,18 +118,26 @@ private struct QueueRow: View {
                 Text(item.url.lastPathComponent)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if item.status == .processing {
-                    HStack(spacing: 10) {
-                        ProgressView(value: item.progress).controlSize(.small)
-                        Text(item.progress.formatted(.percent.precision(.fractionLength(0)).locale(InterfaceLanguage.current.locale)))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 36, alignment: .trailing)
+                // The caption cross-fades between waiting, the progress bar and the outcome.
+                ZStack(alignment: .leading) {
+                    if item.status == .processing {
+                        let percent = item.progress.formatted(.percent.precision(.fractionLength(0)).locale(InterfaceLanguage.current.locale))
+                        HStack(spacing: 10) {
+                            ProgressView(value: item.progress)
+                                .controlSize(.small)
+                                .animation(Motion.content, value: item.progress)
+                            Text(percent)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 36, alignment: .trailing)
+                                .rollingNumbers(percent)
+                        }
+                        .transition(.opacity)
+                    } else if let error = item.error {
+                        Text(error.text).font(.caption).foregroundStyle(.red).lineLimit(2).transition(.opacity)
+                    } else {
+                        Text(status).font(.caption).foregroundStyle(.secondary).transition(.opacity)
                     }
-                } else if let error = item.error {
-                    Text(error.text).font(.caption).foregroundStyle(.red).lineLimit(2)
-                } else {
-                    Text(status).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 8)
@@ -125,6 +147,8 @@ private struct QueueRow: View {
         .padding(.horizontal, 4)
         .contentShape(.rect)
         .onHover { hovering = $0 }
+        .animation(Motion.content, value: item.status)
+        .animation(Motion.quick, value: hovering)
         .contextMenu {
             if let id = item.recordID {
                 Button(L("Open Transcript"), systemImage: "text.page") { model.destination = .transcript(id) }
@@ -145,17 +169,17 @@ private struct QueueRow: View {
     @ViewBuilder private var trailing: some View {
         switch item.status {
         case .completed:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.title3)
+            DrawnCheckmark(animated: initialStatus != .completed).foregroundStyle(.green).font(.title3)
         case .failed:
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).font(.title3)
+            FailureMark(animated: initialStatus != .failed).font(.title3).transition(.pop)
         default:
             EmptyView()
         }
         if let id = item.recordID, item.status != .processing {
-            Button(L("View")) { model.destination = .transcript(id) }
+            Button(L("View")) { model.destination = .transcript(id) }.transition(.pop)
         }
         if item.status == .failed || item.status == .cancelled {
-            Button(L("Retry")) { model.retryQueued(item.id) }.disabled(model.queueRunning)
+            Button(L("Retry")) { model.retryQueued(item.id) }.disabled(model.queueRunning).transition(.pop)
         }
         Button { model.removeQueued(item.id) } label: {
             Image(systemName: "xmark.circle.fill").font(.title3)
@@ -181,42 +205,51 @@ private struct QueueRow: View {
 /// The floating queue controls: how far along the files are, and the one action that moves them on.
 private struct QueueBar: View {
     @Bindable var model: AppModel
+    @Namespace private var glass
 
     var body: some View {
         let waiting = model.queue.filter { $0.status == .waiting }.count
         let completed = model.queue.filter { $0.status == .completed }.count
+        // Start Queue morphs into Stop Queue and back; the summary and Clear Completed grow out of it.
         GlassEffectContainer(spacing: 12) {
             HStack(spacing: 12) {
                 if let summary = summary(waiting: waiting) {
                     HStack(spacing: 10) {
-                        if model.queueRunning { ProgressView().controlSize(.small) }
+                        if model.queueRunning { ProgressView().controlSize(.small).transition(.pop) }
                         Text(summary)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
+                            .rollingNumbers(summary)
                     }
                     .padding(.horizontal, 18)
                     .frame(height: 44)
                     .glassEffect(.regular, in: .capsule)
+                    .glassEffectID("summary", in: glass)
                 }
 
                 if model.queueRunning {
                     Button { model.cancel() } label: { Label(L("Stop Queue"), systemImage: "stop.fill").padding(.horizontal, 4) }
                         .buttonStyle(.glass)
                         .controlSize(.extraLarge)
+                        .glassEffectID("primary", in: glass)
                 } else {
                     if completed > 0 {
                         Button(L("Clear Completed")) { model.clearCompletedQueue() }
                             .buttonStyle(.glass)
                             .controlSize(.extraLarge)
+                            .glassEffectID("clear", in: glass)
                     }
                     Button { model.startQueue() } label: { Label(L("Start Queue"), systemImage: "play.fill").padding(.horizontal, 4) }
                         .buttonStyle(.glassProminent)
                         .controlSize(.extraLarge)
+                        .glassEffectID("primary", in: glass)
                         .disabled(model.busy || !model.modelReady || waiting == 0)
                 }
             }
         }
-        .animation(.spring(duration: 0.35, bounce: 0.15), value: model.queueRunning)
+        .animation(Motion.glass, value: model.queueRunning)
+        .animation(Motion.glass, value: waiting > 0)
+        .animation(Motion.glass, value: completed > 0)
     }
 
     /// Only what the rows cannot say at a glance: where a running queue is, or how much is left to start.
@@ -225,5 +258,17 @@ private struct QueueBar: View {
             return L("Transcribing %@ of %@", String(index + 1), String(model.queue.count))
         }
         return waiting > 0 ? L("%@ waiting", String(waiting)) : nil
+    }
+}
+
+/// A failed file's mark shakes once when the failure happens, the way a rejected password field does.
+private struct FailureMark: View {
+    var animated: Bool
+    @State private var attempts = 0
+    var body: some View {
+        Image(systemName: "exclamationmark.circle.fill")
+            .foregroundStyle(.red)
+            .symbolEffect(.wiggle, value: attempts)
+            .onAppear { if animated { attempts += 1 } }
     }
 }

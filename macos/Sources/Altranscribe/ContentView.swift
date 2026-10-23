@@ -74,6 +74,8 @@ private struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        // Transcripts slide into and out of the list as they are recorded, deleted or filtered.
+        .animation(Motion.content, value: model.filteredRecords.map(\.id))
         .searchable(text: $model.search, placement: .sidebar, prompt: Text(L("Search Transcripts")))
         .onDeleteCommand {
             if case .transcript(let id) = model.destination, !model.busy { model.pendingDeletion = id }
@@ -90,12 +92,16 @@ private struct LiveRow: View {
                 Text(L("Live Transcription"))
                 Spacer(minLength: 4)
                 if active {
-                    Text(timestamp(model.elapsed))
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Circle()
-                        .fill(model.phase == .recording ? Color.red : Color.orange)
-                        .frame(width: 7, height: 7)
+                    HStack(spacing: 6) {
+                        Text(timestamp(model.elapsed))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .rollingNumbers(timestamp(model.elapsed))
+                        Circle()
+                            .fill(model.phase == .recording ? Color.red : Color.orange)
+                            .frame(width: 7, height: 7)
+                    }
+                    .transition(.pop)
                 }
             }
         } icon: {
@@ -103,6 +109,8 @@ private struct LiveRow: View {
                 .symbolEffect(.variableColor.iterative, isActive: model.phase == .recording)
         }
         .tint(active ? .red : nil)
+        .animation(Motion.quick, value: active)
+        .animation(Motion.quick, value: model.phase == .paused)
     }
 }
 
@@ -118,12 +126,15 @@ private struct FilesRow: View {
                     ProgressView(value: current.progress)
                         .progressViewStyle(.circular)
                         .controlSize(.mini)
+                        .animation(Motion.content, value: current.progress)
+                        .transition(.pop)
                 }
             }
         } icon: {
             Image(systemName: "tray.and.arrow.down")
         }
         .badge(pending)
+        .animation(Motion.quick, value: model.queue.contains { $0.status == .processing })
     }
 }
 
@@ -148,11 +159,14 @@ private struct RecordRow: View {
                 .lineLimit(1)
             }
         } icon: {
+            // While recording the row shows a pulsing record mark; once saved it becomes its source's symbol.
             Image(systemName: isLive ? "record.circle" : record.source.symbol)
                 .foregroundStyle(isLive ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
                 .symbolEffect(.pulse, isActive: isLive)
+                .contentTransition(.symbolEffect(.replace))
         }
         .padding(.vertical, 2)
+        .animation(Motion.quick, value: isLive)
     }
 
     private var detail: String {
@@ -223,6 +237,7 @@ struct SessionInspector: View {
                     Label(L("The selected model is not downloaded yet."), systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundStyle(.orange)
+                        .transition(.rise)
                 }
                 if model.settings.speechProvider == .nemotron && !model.settings.nemotronModel.multilingual {
                     LabeledContent(L("Language"), value: "English")
@@ -271,6 +286,9 @@ struct SessionInspector: View {
         }
         .formStyle(.grouped)
         .disabled(model.busy)
+        .animation(Motion.content, value: model.modelReady)
+        .animation(Motion.content, value: model.settings.translate || model.settings.summarize)
+        .animation(Motion.content, value: model.settings.speechProvider)
     }
 
     private var compute: String {

@@ -21,15 +21,18 @@ struct LiveView: View {
     }
 
     var body: some View {
-        Group {
+        // A new session blurs the welcome page into its transcript; starting another blurs it back.
+        ZStack {
             if let record {
                 TranscriptScroll(record: record, live: live) {
                     RecordHeader(model: model, record: record, compact: true)
                 }
+                .transition(.page)
             } else {
-                LiveWelcome(model: model)
+                LiveWelcome(model: model).transition(.page)
             }
         }
+        .animation(Motion.content, value: record?.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .safeAreaBar(edge: .bottom) {
             TransportBar(model: model).padding(.bottom, 18)
@@ -58,9 +61,9 @@ private struct LiveWelcome: View {
                     .font(.system(size: 46, weight: .regular))
                     .foregroundStyle(.tint)
                     .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.breathe, isActive: model.phase == .preparing)
                     .frame(width: 112, height: 112)
-                    .background(.tint.opacity(0.1), in: .circle)
-                    .symbolEffect(.variableColor.iterative, isActive: model.phase == .preparing)
+                    .background(.tint.opacity(model.phase == .preparing ? 0.16 : 0.1), in: .circle)
                 VStack(spacing: 8) {
                     Text(L("Turn sound into words"))
                         .font(.largeTitle.weight(.bold))
@@ -73,24 +76,28 @@ private struct LiveWelcome: View {
                 FlowLayout(alignment: .center, spacing: 8, lineSpacing: 8) {
                     InfoChip(title: engine, symbol: model.settings.speechProvider.isLocal ? "cpu" : "cloud")
                     if model.settings.speechProvider != .nemotron || model.settings.nemotronModel.multilingual {
-                        InfoChip(title: languageName(model.settings.recognitionLanguage), symbol: "globe")
+                        InfoChip(title: languageName(model.settings.recognitionLanguage), symbol: "globe").transition(.pop)
                     }
                     if model.settings.translate {
                         InfoChip(title: L("Translate") + " → " + languageName(model.settings.targetLanguage), symbol: "translate")
+                            .transition(.pop)
                     }
-                    if model.settings.summarize { InfoChip(title: L("Summary"), symbol: "sparkles") }
+                    if model.settings.summarize { InfoChip(title: L("Summary"), symbol: "sparkles").transition(.pop) }
                     InfoChip(title: model.localProcessing ? L("On this Mac") : L("Uses an online API"),
                              symbol: model.localProcessing ? "lock.fill" : "network")
                 }
                 .frame(maxWidth: 520)
-                if !model.modelReady { ModelCallout() }
+                .animation(Motion.content, value: model.settings)
+                if !model.modelReady { ModelCallout().transition(.rise) }
             }
+            .animation(Motion.content, value: model.modelReady)
             .padding(40)
             .frame(maxWidth: .infinity)
             .containerRelativeFrame(.vertical, alignment: .center) { length, _ in length }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .animation(.smooth, value: model.source)
+        .animation(Motion.content, value: model.source)
+        .animation(Motion.content, value: model.phase == .preparing)
     }
 
     private var engine: String {
@@ -124,28 +131,46 @@ private struct ModelCallout: View {
     }
 }
 
-/// The floating Liquid Glass controls for a live session. The pieces morph into each other as the session moves on.
+/// The floating Liquid Glass controls for a live session. Each stage morphs into the next:
+/// the source picker becomes "Preparing…", then the running time; Start becomes Cancel, then Stop & Save;
+/// "Finishing…" closes with a drawn "Saved" before the picker and Start return.
 struct TransportBar: View {
     @Bindable var model: AppModel
     @Namespace private var glass
     @State private var levels = [Float](repeating: 0, count: 26)
     @State private var confirmDiscard = false
+    @State private var acknowledgedSave: Date?
+
+    /// "Saved" takes the place of the source picker for a moment after Stop and Save.
+    private var acknowledgingSave: Bool {
+        guard stage == .idle, let saved = model.sessionSavedAt, saved != acknowledgedSave else { return false }
+        return Date.now.timeIntervalSince(saved) < Motion.acknowledgement
+    }
+
+    private enum Stage { case idle, preparing, capturing, finishing }
+    private var stage: Stage {
+        if model.queueRunning || model.isPostProcessing { return .idle }
+        switch model.phase {
+        case .preparing: return .preparing
+        case .recording, .paused: return .capturing
+        case .finishing: return .finishing
+        case .idle, .files: return .idle
+        }
+    }
 
     var body: some View {
         GlassEffectContainer(spacing: 12) {
             HStack(spacing: 12) {
-                if model.queueRunning || model.isPostProcessing { idle }
-                else {
-                    switch model.phase {
-                    case .preparing: working(model.status.text, cancellable: true)
-                    case .recording, .paused: capturing
-                    case .finishing: working(model.status.text, cancellable: false)
-                    case .idle, .files: idle
-                    }
+                switch stage {
+                case .preparing: working(model.status.text, cancellable: true)
+                case .capturing: capturing
+                case .finishing: working(model.status.text, cancellable: false)
+                case .idle: idle
                 }
             }
         }
-        .animation(.spring(duration: 0.4, bounce: 0.15), value: model.phase)
+        .animation(Motion.glass, value: stage)
+        .animation(Motion.glass, value: acknowledgingSave)
         .onChange(of: model.meter) { _, level in
             levels.removeFirst()
             levels.append(model.phase == .recording ? level : 0)
@@ -153,23 +178,41 @@ struct TransportBar: View {
         .onChange(of: model.phase) { _, phase in
             if phase != .recording { levels = levels.map { _ in 0 } }
         }
+        .task(id: model.sessionSavedAt) {
+            guard let saved = model.sessionSavedAt else { return }
+            let remaining = Motion.acknowledgement - Date.now.timeIntervalSince(saved)
+            if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+            if !Task.isCancelled { acknowledgedSave = saved }
+        }
         .confirmationDialog(L("Discard this recording?"), isPresented: $confirmDiscard) {
             Button(L("Discard"), role: .destructive) { model.cancel(discardRecording: true) }
         } message: { Text(L("This deletes the transcript from this recording.")) }
     }
 
     @ViewBuilder private var idle: some View {
-        Picker(L("Audio Source"), selection: $model.source) {
-            ForEach([AudioSource.microphone, .system]) { Label($0.title, systemImage: $0.symbol).tag($0) }
+        if acknowledgingSave {
+            HStack(spacing: 8) {
+                DrawnCheckmark().foregroundStyle(.green)
+                Text(L("Saved"))
+            }
+            .font(.title3.weight(.medium))
+            .padding(.horizontal, 18)
+            .frame(height: 44)
+            .glassEffect(.regular, in: .capsule)
+            .glassEffectID("status", in: glass)
+        } else {
+            Picker(L("Audio Source"), selection: $model.source) {
+                ForEach([AudioSource.microphone, .system]) { Label($0.title, systemImage: $0.symbol).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .controlSize(.large)
+            .padding(5)
+            .glassEffect(.regular, in: .capsule)
+            .glassEffectID("status", in: glass)
+            .disabled(model.busy)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-        .controlSize(.large)
-        .padding(5)
-        .glassEffect(.regular, in: .capsule)
-        .glassEffectID("status", in: glass)
-        .disabled(model.busy)
 
         Button { model.startLive() } label: {
             Label(L("Start Transcription"), systemImage: "record.circle.fill")
@@ -197,23 +240,23 @@ struct TransportBar: View {
         .help((paused ? L("Resume") : L("Pause")) + " ⇧⌘P")
 
         HStack(spacing: 12) {
-            Circle()
-                .fill(paused ? Color.orange : Color.red)
-                .frame(width: 9, height: 9)
-                .opacity(paused ? 1 : 0.9)
-                .phaseAnimator([1.0, 0.35], trigger: paused) { dot, value in dot.opacity(paused ? 1 : value) }
+            RecordingDot(paused: paused)
             Text(timestamp(model.elapsed))
                 .font(.title3.monospacedDigit().weight(.medium))
-                .contentTransition(.numericText())
+                .rollingNumbers(timestamp(model.elapsed))
             LevelHistory(levels: levels)
                 .foregroundStyle(paused ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
             if model.pendingTranslations > 0 {
                 Label(String(model.pendingTranslations), systemImage: "translate")
                     .font(.callout.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .rollingNumbers(model.pendingTranslations)
                     .help(L("Pending translations: %@", String(model.pendingTranslations)))
+                    .transition(.pop)
             }
         }
+        .animation(Motion.quick, value: paused)
+        .animation(Motion.quick, value: model.pendingTranslations > 0)
         .padding(.horizontal, 18)
         .frame(height: 44)
         .glassEffect(.regular, in: .capsule)
@@ -242,7 +285,7 @@ struct TransportBar: View {
     @ViewBuilder private func working(_ text: String, cancellable: Bool) -> some View {
         HStack(spacing: 10) {
             ProgressView().controlSize(.small)
-            Text(text).foregroundStyle(.secondary)
+            Text(text).foregroundStyle(.secondary).contentTransition(.opacity)
         }
         .padding(.horizontal, 18)
         .frame(height: 44)
@@ -254,5 +297,18 @@ struct TransportBar: View {
                 .controlSize(.extraLarge)
                 .glassEffectID("primary", in: glass)
         }
+    }
+}
+
+/// Recording pulses red; pausing turns it a steady orange, so the state reads at a glance without words.
+private struct RecordingDot: View {
+    let paused: Bool
+    var body: some View {
+        Circle()
+            .fill(paused ? Color.orange : Color.red)
+            .frame(width: 9, height: 9)
+            .phaseAnimator([1.0, 0.35]) { dot, value in
+                dot.opacity(paused ? 1 : value)
+            } animation: { _ in .easeInOut(duration: 0.9) }
     }
 }

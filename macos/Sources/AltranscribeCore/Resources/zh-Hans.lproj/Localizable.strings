@@ -164,6 +164,7 @@
 "Save an API key for the speech service." = "请保存语音服务的 API 密钥。";
 "Save an API key for the text service." = "请保存文本服务的 API 密钥。";
 "Save an API key for this service in Settings first." = "请先在设置中保存此服务的 API 密钥。";
+"Saved" = "已保存";
 "Saved to Keychain" = "已保存至钥匙串";
 "Search Transcripts" = "搜索记录";
 "Select Model" = "选择模型";

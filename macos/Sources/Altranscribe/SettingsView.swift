@@ -111,9 +111,7 @@ struct SettingsView: View {
                                 ProgressView().controlSize(.small)
                                 Button(L("Cancel")) { model.downloadTask?.cancel() }
                             } else if installed(item) {
-                                if model.settings.modelPath == model.paths.models.appendingPathComponent(item.filename).path {
-                                    Label(L("Selected"), systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.tint)
-                                } else {
+                                if model.settings.modelPath != model.paths.models.appendingPathComponent(item.filename).path {
                                     Button(L("Use")) { model.settings.modelPath = model.paths.models.appendingPathComponent(item.filename).path }
                                 }
                                 Button(role: .destructive) { removeModel = model.paths.models.appendingPathComponent(item.filename) } label: { Image(systemName: "trash") }
@@ -148,9 +146,7 @@ struct SettingsView: View {
                                 ProgressView().controlSize(.small)
                                 Button(L("Cancel")) { model.downloadTask?.cancel() }
                             } else if installed(item) {
-                                if model.settings.nemotronModel.id == item.id {
-                                    Label(L("Selected"), systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.tint)
-                                } else {
+                                if model.settings.nemotronModel.id != item.id {
                                     Button(L("Use")) { model.settings.nemotronModelID = item.id }
                                 }
                                 Button(role: .destructive) { removeModel = item.directory(in: model.paths.models) } label: { Image(systemName: "trash") }
@@ -182,6 +178,10 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .disabled(model.busy)
+        // Switching engines, downloads finishing and models being deleted all rearrange the pane as content.
+        .animation(Motion.content, value: model.settings.speechProvider)
+        .animation(Motion.quick, value: model.downloadID)
+        .animation(Motion.quick, value: model.modelRevision)
         .confirmationDialog(L("Delete the downloaded model?"), isPresented: Binding(get: { removeModel != nil }, set: { if !$0 { removeModel = nil } })) {
             Button(L("Delete Model"), role: .destructive) {
                 guard let url = removeModel else { return }
@@ -216,9 +216,12 @@ struct SettingsView: View {
             Section(L("Available Models")) {
                 HStack {
                     Button(L("Fetch Models")) { fetchModels() }.disabled(loadingModels)
-                    if loadingModels { ProgressView().controlSize(.small) }
-                    if let connectionStatus { Text(connectionStatus.text).font(.caption).foregroundStyle(.secondary) }
+                    if loadingModels { ProgressView().controlSize(.small).transition(.pop) }
+                    if let connectionStatus {
+                        Text(connectionStatus.text).font(.caption).foregroundStyle(.secondary).transition(.opacity)
+                    }
                 }
+                .animation(Motion.quick, value: loadingModels)
                 if !models.isEmpty {
                     Picker(L("Select Model"), selection: $model.settings.textModel) {
                         if !models.contains(model.settings.textModel) {
@@ -230,7 +233,11 @@ struct SettingsView: View {
                 Text(L("Run Ollama locally with an installed text model. Online services use HTTPS; keys are saved separately for each API base URL. Fetching models does not run inference."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-        }.formStyle(.grouped).disabled(model.busy)
+        }
+        .formStyle(.grouped)
+        .disabled(model.busy)
+        .animation(Motion.content, value: models)
+        .animation(Motion.content, value: model.settings.textProvider)
     }
     private func installed(_ item: WhisperModel) -> Bool {
         _ = model.modelRevision
@@ -266,13 +273,21 @@ struct SettingsView: View {
 }
 
 /// One downloadable model: an icon tile that fills in when the model is in use, its name and size, and its actions.
+/// Choosing a model, or finishing its download, draws the Selected checkmark.
 private struct ModelRow<Accessory: View>: View {
     let title: String
     let detail: String
     let symbol: String
     var link: URL?
     let inUse: Bool
-    @ViewBuilder var accessory: Accessory
+    var accessory: Accessory
+    @State private var initiallyInUse: Bool
+
+    init(title: String, detail: String, symbol: String, link: URL? = nil, inUse: Bool, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title; self.detail = detail; self.symbol = symbol; self.link = link; self.inUse = inUse
+        self.accessory = accessory()
+        _initiallyInUse = State(initialValue: inUse)
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -291,9 +306,19 @@ private struct ModelRow<Accessory: View>: View {
                 .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
+            if inUse {
+                HStack(spacing: 5) {
+                    DrawnCheckmark(animated: !initiallyInUse)
+                    Text(L("Selected"))
+                }
+                .font(.callout)
+                .foregroundStyle(.tint)
+                .transition(.opacity)
+            }
             accessory
         }
         .padding(.vertical, 3)
+        .animation(Motion.quick, value: inUse)
     }
 }
 
@@ -310,8 +335,9 @@ struct CredentialEditor: View {
                     catch { message = LocalizedText(error: error) }
                 }
             }
-            if let message { Text(message.text).font(.caption).foregroundStyle(.secondary) }
+            if let message { Text(message.text).font(.caption).foregroundStyle(.secondary).transition(.rise) }
         }
+        .animation(Motion.content, value: message)
         .task {
             do { key = try KeychainStore.read(endpoint: endpoint) }
             catch { message = LocalizedText(error: error) }

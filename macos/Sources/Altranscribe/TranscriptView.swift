@@ -9,8 +9,14 @@ struct TranscriptScroll<Header: View>: View {
     var live: LiveState?
     @ViewBuilder var header: Header
     @AppStorage("transcriptTextSize") private var textSize = 15.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var follow = true
     private let bottom = "bottom"
+
+    /// Lines that have received their translation or its error, so arriving translations animate in.
+    private var settledTranslations: Int {
+        record.segments.reduce(0) { $0 + ($1.translation != nil || $1.translationError != nil ? 1 : 0) }
+    }
 
     private struct Metrics: Equatable {
         var offset: CGFloat, distance: CGFloat
@@ -23,18 +29,27 @@ struct TranscriptScroll<Header: View>: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     header
                     if let summary = record.summary {
-                        SummaryCard(summary: summary, textSize: textSize).padding(.bottom, 20)
+                        SummaryCard(summary: summary, textSize: textSize)
+                            .padding(.bottom, 20)
+                            .transition(.rise)
                     }
-                    ForEach(record.segments) { SegmentRow(segment: $0, textSize: textSize) }
+                    ForEach(record.segments) { SegmentRow(segment: $0, textSize: textSize).transition(.rise) }
                     if record.segments.isEmpty && live == nil {
                         Text(L("No speech was transcribed."))
                             .font(.system(size: textSize))
                             .foregroundStyle(.tertiary)
                             .padding(.top, 8)
                     }
-                    if let live, live != .finishing { ListeningIndicator(paused: live == .paused, textSize: textSize) }
+                    if let live, live != .finishing {
+                        ListeningIndicator(paused: live == .paused, textSize: textSize).transition(.rise)
+                    }
                     Color.clear.frame(height: 1).id(bottom)
                 }
+                // New lines, arriving translations, a new summary and the end of listening all move as content.
+                .animation(Motion.content, value: record.segments.count)
+                .animation(Motion.content, value: settledTranslations)
+                .animation(Motion.content, value: record.summary)
+                .animation(Motion.content, value: live)
                 .frame(maxWidth: 760, alignment: .leading)
                 .padding(.horizontal, 36)
                 .padding(.top, 28)
@@ -52,30 +67,36 @@ struct TranscriptScroll<Header: View>: View {
                 else if new.content == old.content && new.container == old.container && new.insets == old.insets
                             && new.offset < old.offset - 0.5 { follow = false }
             }
-            .onChange(of: record.segments.count) { _, _ in followLatest(proxy) }
-            .onChange(of: record.segments.last?.text) { _, _ in followLatest(proxy) }
-            .onChange(of: textSize) { _, _ in followLatest(proxy) }
+            // A new line glides into view; a line that grows keeps pace with a shorter glide.
+            .onChange(of: record.segments.count) { _, _ in followLatest(proxy, Motion.content) }
+            .onChange(of: record.segments.last?.text) { _, _ in followLatest(proxy, Motion.quick) }
+            .onChange(of: settledTranslations) { _, _ in followLatest(proxy, Motion.content) }
+            .onChange(of: textSize) { _, _ in followLatest(proxy, nil) }
             .onAppear { if live != nil { proxy.scrollTo(bottom, anchor: .bottom) } }
             .overlay(alignment: .bottom) {
                 if live != nil && !follow {
                     Button {
                         follow = true
-                        withAnimation(.smooth) { proxy.scrollTo(bottom, anchor: .bottom) }
+                        scroll(proxy, Motion.content)
                     } label: {
                         Label(L("Jump to Latest"), systemImage: "arrow.down")
                     }
                     .buttonStyle(.glass)
                     .padding(.bottom, 14)
-                    .transition(.blurReplace)
+                    .transition(.rise)
                 }
             }
-            .animation(.smooth(duration: 0.25), value: follow)
+            .animation(Motion.content, value: follow)
         }
     }
 
-    private func followLatest(_ proxy: ScrollViewProxy) {
+    private func followLatest(_ proxy: ScrollViewProxy, _ animation: Animation?) {
         guard live != nil, follow else { return }
-        proxy.scrollTo(bottom, anchor: .bottom)
+        scroll(proxy, animation)
+    }
+    private func scroll(_ proxy: ScrollViewProxy, _ animation: Animation?) {
+        if let animation, !reduceMotion { withAnimation(animation) { proxy.scrollTo(bottom, anchor: .bottom) } }
+        else { proxy.scrollTo(bottom, anchor: .bottom) }
     }
 }
 
@@ -99,11 +120,13 @@ struct SegmentRow: View {
                         .font(.system(size: textSize))
                         .lineSpacing(textSize * 0.3)
                         .foregroundStyle(.secondary)
+                        .transition(.rise)
                 }
                 if let error = segment.translationError {
                     Label(error.text, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.orange)
+                        .transition(.rise)
                 }
             }
             .textSelection(.enabled)
@@ -119,13 +142,18 @@ private struct ListeningIndicator: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 18) {
             Color.clear.frame(width: 58, height: 1)
-            Label(paused ? L("Paused") : L("Listening"), systemImage: paused ? "pause.fill" : "waveform")
-                .font(.system(size: max(11, textSize - 2)))
-                .foregroundStyle(.tertiary)
-                .symbolEffect(.variableColor.iterative, isActive: !paused)
-                .contentTransition(.symbolEffect(.replace))
+            HStack(spacing: 6) {
+                Image(systemName: paused ? "pause.fill" : "waveform")
+                    .symbolEffect(.variableColor.iterative, isActive: !paused)
+                    .contentTransition(.symbolEffect(.replace))
+                Text(paused ? L("Paused") : L("Listening"))
+                    .contentTransition(.opacity)
+            }
+            .font(.system(size: max(11, textSize - 2)))
+            .foregroundStyle(.tertiary)
         }
         .padding(.vertical, textSize * 0.55)
+        .animation(Motion.quick, value: paused)
     }
 }
 
@@ -172,6 +200,7 @@ struct RecordHeader: View {
                         .onChange(of: editing) { _, focused in if !focused { commit() } }
                 } else {
                     Text(record.title)
+                        .contentTransition(.opacity)
                         .onTapGesture(count: 2) { if !model.busy { model.renamingRecordID = record.id } }
                 }
             }
@@ -189,6 +218,7 @@ struct RecordHeader: View {
                 if record.status == .interrupted || record.status == .failed {
                     Label(record.status.title, systemImage: record.status == .failed ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(record.status == .failed ? .red : .orange)
+                        .transition(.pop)
                 }
             }
             .font(.callout)
@@ -201,9 +231,14 @@ struct RecordHeader: View {
                     .padding(.vertical, 9)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.orange.opacity(0.1), in: .rect(cornerRadius: 10))
+                    .transition(.rise)
             }
         }
         .padding(.bottom, compact ? 18 : 26)
+        // A generated title, a new status or an error settle in like other content; renaming itself stays immediate.
+        .animation(Motion.content, value: record.title)
+        .animation(Motion.content, value: record.status)
+        .animation(Motion.content, value: record.error)
     }
 
     private func commit() {
@@ -235,7 +270,7 @@ struct TranscriptPage: View {
             if model.postProcessingID == record.id {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
-                    Text(model.status.text).foregroundStyle(.secondary)
+                    Text(model.status.text).foregroundStyle(.secondary).rollingNumbers(model.status.text)
                     Spacer()
                     Button(L("Cancel")) { model.cancel() }
                 }
@@ -244,8 +279,10 @@ struct TranscriptPage: View {
                 .padding(.vertical, 10)
                 .background(.fill.quaternary, in: .rect(cornerRadius: 12))
                 .padding(.bottom, 20)
+                .transition(.rise)
             }
         }
+        .animation(Motion.content, value: model.postProcessingID)
         .navigationTitle(record.title)
         .toolbar(removing: .title)
         .toolbar {

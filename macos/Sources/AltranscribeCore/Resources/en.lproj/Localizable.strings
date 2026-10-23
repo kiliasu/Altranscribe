@@ -164,6 +164,7 @@
 "Save an API key for the speech service." = "Save an API key for the speech service.";
 "Save an API key for the text service." = "Save an API key for the text service.";
 "Save an API key for this service in Settings first." = "Save an API key for this service in Settings first.";
+"Saved" = "Saved";
 "Saved to Keychain" = "Saved to Keychain";
 "Search Transcripts" = "Search Transcripts";
 "Select Model" = "Select Model";

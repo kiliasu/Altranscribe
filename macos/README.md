@@ -2,7 +2,7 @@
 
 基于 `origin/dev` 的 `e90c412`，独立实现的原生 macOS 应用。界面使用 SwiftUI / AppKit，音频使用 AVFoundation / ScreenCaptureKit。本地支持 Nemotron 流式识别（sherpa-onnx / CPU）和 Whisper（whisper.cpp / Metal），直接运行在应用进程中。不包含 Flutter、WebView 或本地 HTTP 推理服务器。
 
-最低系统 macOS 26；本机使用 Xcode 27、Swift 6.4、macOS 27.0.1 / Apple Silicon 开发。界面按 macOS 26 设计规范实现：侧栏按日期列出全部记录并可搜索，工具栏、检查器、表单、菜单、对话框和文件选择器均为系统控件；实时与文件转写的控制条以及悬浮字幕使用系统 Liquid Glass。Intel Mac 未验证。
+最低系统 macOS 26；本机使用 Xcode 27、Swift 6.4、macOS 27.0.1 / Apple Silicon 开发。界面按 macOS 26 设计规范实现：侧栏按日期列出全部记录并可搜索，工具栏、检查器、表单、菜单、对话框和文件选择器均为系统控件；实时与文件转写的控制条以及悬浮字幕使用系统 Liquid Glass。动效遵循同一套规则：新内容由下方升起，原位状态交叉淡化，控制条在各阶段之间形变，完成的任务以绘制的对勾收尾；开启「减弱动态效果」后只保留淡入淡出。Intel Mac 未验证。
 
 ## 本地构建
 

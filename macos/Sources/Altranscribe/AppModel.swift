@@ -40,6 +40,8 @@ struct QueuedFile: Identifiable {
     private(set) var postProcessingID: UUID?
     var renamingRecordID: UUID?
     var pendingDeletion: UUID?
+    /// When the last live session ended through Stop and Save, set in the same update that returns to idle.
+    var sessionSavedAt: Date?
     private(set) var pendingTranslations = 0
 
     let paths: AppPaths
@@ -153,6 +155,7 @@ struct QueuedFile: Identifiable {
         beginActivity()
         work = Task { [self] in
             var recordID: UUID?
+            var saved = false
             do {
                 let keys = try await prepare(configuration)
                 let chunks = try await capture.start(source: source, chunkSeconds: configuration.speechProvider == .nemotron ? 0.32 : 8) { [weak self] level, duration in
@@ -171,6 +174,7 @@ struct QueuedFile: Identifiable {
                 }
                 phase = .finishing
                 try await finishRecord(id, configuration: configuration, textKey: keys.textKey, summaryLanguage: summaryLanguage)
+                saved = true
             } catch is CancellationError {
                 if let recordID { finishInterrupted(recordID) }
             } catch {
@@ -183,6 +187,7 @@ struct QueuedFile: Identifiable {
             await whisper.unload()
             await nemotron.unload()
             if discard, let recordID { deleteRecord(recordID) }
+            if saved { sessionSavedAt = .now }
             phase = .idle; meter = 0; status = LocalizedText("Ready"); work = nil
             endActivity()
         }

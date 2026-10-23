@@ -4,6 +4,7 @@ import AltranscribeCore
 /// A floating Liquid Glass panel for captions, kept above other apps and in every Space, like Live Captions.
 @MainActor final class CaptionWindow {
     private let panel: NSPanel
+    private var wantsVisible = false
     init(model: AppModel) {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 200),
                         styleMask: [.titled, .closable, .resizable, .nonactivatingPanel, .fullSizeContentView],
@@ -25,12 +26,34 @@ import AltranscribeCore
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.contentView = NSHostingView(rootView: CaptionView(model: model) { [weak self] in self?.panel.orderOut(nil) })
+        panel.contentView = NSHostingView(rootView: CaptionView(model: model) { [weak self] in self?.hide() })
         if let frame = NSScreen.main?.visibleFrame {
             panel.setFrameOrigin(NSPoint(x: frame.midX - 380, y: frame.minY + 60))
         }
     }
-    func show() { panel.makeKeyAndOrderFront(nil) }
+    /// The panel fades in where it was left, and fades out before it leaves the screen.
+    func show() {
+        wantsVisible = true
+        if !panel.isVisible { panel.alphaValue = 0 }
+        panel.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            panel.animator().alphaValue = 1
+        }
+    }
+    func hide() {
+        wantsVisible = false
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            panel.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                // Showing it again mid-fade wins over the fade-out.
+                guard let self, !self.wantsVisible else { return }
+                self.panel.orderOut(nil)
+            }
+        }
+    }
     func updateLanguage() { panel.title = L("Altranscribe Captions") }
 }
 
@@ -49,6 +72,7 @@ private struct CaptionView: View {
                 Text(model.isCapturing || model.phase == .finishing ? model.status.text : "Altranscribe")
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
                 Spacer()
                 if hovering {
                     HStack(spacing: 6) {
@@ -62,10 +86,13 @@ private struct CaptionView: View {
                 }
             }
             .frame(height: 26)
+            .animation(Motion.quick, value: model.phase)
             ScrollView {
                 captions
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.smooth(duration: 0.25), value: model.currentCaption?.text)
+                    // A new sentence rises in as the previous one lifts away; a sentence that grows stays put.
+                    .animation(Motion.content, value: model.currentCaption?.id)
+                    .animation(Motion.content, value: model.currentCaptionTranslation?.id)
             }
             .defaultScrollAnchor(.bottom)
             .scrollIndicators(.never)
@@ -76,7 +103,7 @@ private struct CaptionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .glassEffect(.regular, in: .rect(cornerRadius: 26))
         .ignoresSafeArea()
-        .onHover { value in withAnimation(.smooth(duration: 0.2)) { hovering = value } }
+        .onHover { value in withAnimation(Motion.quick) { hovering = value } }
         .id(interfaceLanguage)
         .environment(\.locale, InterfaceLanguage.current.locale)
     }
@@ -88,25 +115,37 @@ private struct CaptionView: View {
             if let segment = model.currentCaption {
                 let translated = model.currentCaptionTranslation
                 if !translationOnly || translated == nil {
-                    Text(segment.text)
-                        .font(.system(size: size, weight: .semibold))
-                        .textSelection(.enabled)
+                    // Each slot is a ZStack, so the outgoing and incoming sentence share one place while they cross.
+                    ZStack(alignment: .topLeading) {
+                        Text(segment.text)
+                            .font(.system(size: size, weight: .semibold))
+                            .textSelection(.enabled)
+                            .id(segment.id)
+                            .transition(.rise)
+                    }
                 }
                 if let translated, let translation = translated.translation {
-                    if translated.id != segment.id && !translationOnly {
-                        Text(L("Translation") + " · " + timestamp(translated.start))
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                    ZStack(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if translated.id != segment.id && !translationOnly {
+                                Text(L("Translation") + " · " + timestamp(translated.start))
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Text(translation)
+                                .font(.system(size: translationOnly ? size : size * 0.92, weight: translationOnly ? .semibold : .regular))
+                                .foregroundStyle(translationOnly ? .primary : .secondary)
+                                .textSelection(.enabled)
+                        }
+                        .id(translated.id)
+                        .transition(.rise)
                     }
-                    Text(translation)
-                        .font(.system(size: translationOnly ? size : size * 0.92, weight: translationOnly ? .semibold : .regular))
-                        .foregroundStyle(translationOnly ? .primary : .secondary)
-                        .textSelection(.enabled)
                 }
             } else {
                 Text(L("Captions appear here when transcription starts."))
                     .font(.system(size: size * 0.8))
                     .foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
         }
     }
