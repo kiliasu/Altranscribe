@@ -1,0 +1,97 @@
+# macOS 本地验证
+
+日期：2026-10-23。迁移基线：`origin/dev` / `e90c412`。本地分支：`codex/native-macos`。
+
+环境：macOS 27.0.1、Xcode 27.0、Swift 6.4、Apple M3 Pro。部署目标 macOS 26.0，交付包为 arm64。
+
+## 再次全面复查（2026-10-23）
+
+- 复查全部原生 Swift 源码、Whisper C++ 桥接和构建脚本，覆盖音频采集、模型生命周期、文件队列、API 请求、翻译与摘要、取消和错误处理、记录持久化、导出、本地化及原生窗口。仅修改已实际复现的问题，未扩展功能或调整无关代码。
+- **修复关闭主窗口后「跟随系统」失效。** 修复前的实机步骤：切换中文并重启 → 关闭主窗口 → 在设置中选择「跟随系统」→ 重启。应用仍显示中文；读回 `interfaceLanguage=system`，但应用的 `AppleLanguages` 仍为 `zh-Hans`，系统首选语言实际是 `en-US`。原因是语言同步监听依附已关闭的主窗口内容，启动时又跳过了 system 的清理。
+- 将语言监听移到持续存在的 SwiftUI Scene，启动时也同步 system 设置。打包后重复上述步骤：主窗口关闭时切换到中文会保存系统菜单语言；切回 System 立即恢复英文并移除应用语言覆盖；重启后应用和 macOS 标准菜单均为英文。最后恢复用户原有的 System 偏好，原有记录仍可读取。
+- 只复用 **5 项现有测试，0 失败、0 跳过**：1 项真实英语 Nemotron 流式/文件队列测试、3 项工作流回归、1 项本地化与导出覆盖测试。未增加测试用例数量，未运行全套测试。
+- Nemotron 使用本地 JFK 样本连续拼接四次，共 44 秒，跨越流式分段与 20 秒文件块边界。流式解码和文件队列均完成；磁盘记录有 12 个唯一段落，`ask not` 出现 4 次、`country` 出现 8 次，末句完整，全部时间戳落在 0–44 秒内。测试通过文件解码与采集缓冲注入进行，**未播放音频，也不将其作为真实系统音频或长时间录音验证**。
+- Release 构建、`codesign --verify --deep --strict` 与 ZIP 完整性检查通过；本地 `.app` 和 `Altranscribe-macOS-arm64.zip` 已更新。测试日志、44 秒输入及保存结果副本位于 `.build/full-review/`；修改前的应用入口文件位于 `.build/full-review/before/`。本轮没有新增真人麦克风、外接设备或在线付费 API 验证。
+
+## 实际系统音频与麦克风采集（2026-10-23）
+
+- 实机复现麦克风启动即退出：`AudioCapture.start` 中的 AVAudioEngine tap 闭包继承 MainActor 隔离，实际由 `RealtimeMessenger.mServiceQueue` 调用，触发 Swift 6 executor 断言。明确将回调标记为 `@Sendable`；回调仍复制缓冲后交给现有串行采集队列，不把实时音频处理搬到主线程。
+- 修复后使用内置 MacBook Pro Microphone（48 kHz）实际启动：输入电平有响应；暂停时计时保持在 2 秒，停止后返回 Ready，记录保存为 completed。**按用户要求，真人语音识别验证留待稍后**；此次不将空白记录视为语音识别成功。
+- 系统音频最初返回 `SCStreamError.userDeclined`；随后在系统设置读回 Altranscribe 的「Screen & System Audio Recording」权限已开启，重开应用后采集成功。补上该错误的中英文授权路径与重开提示；未修改或绕过 TCC 数据库。
+- 用户确认使用静音播放验证。播放前两次读取系统设置，确认 MacBook Pro Speakers 输出音量为 0、Mute 开启；保持该状态，通过另一进程播放公开 `jfk.wav`，由 **ScreenCaptureKit 实际采集**，并由本机 Nemotron 英语模型流式识别。没有将 WAV 直接送入转写接口，也没有在此次系统音频测试中外放。
+- 实时显示 3 段完整原文，末句 `ask what you can do for your country` 保留。暂停时计时保持在 21 秒，恢复后可停止并返回 Ready；磁盘读回 source=system、status=completed、language=en、无错误。保存结果副本：`build/macos/system-audio-validation.json`。
+- 仅复用 **3 项 CaptureTests + 1 项 LocalizationTests，共 4 项测试通过，0 失败**；未增加测试数量或运行全套模型测试。日志：`.build/live-capture-tests.log`、`.build/live-capture-permission-tests.log`；崩溃样本及原代码：`.build/live-capture-before/`。
+- 最终 Release 构建及签名验证通过；重开最终应用后，记录库显示上述系统音频记录 Completed，3 段文本和末句均保留。本次创建的 3 条空白测试记录移到 `.build/live-capture-before/empty-test-records/` 可恢复归档，测试前已有记录保持不变。
+
+## 中英文 i18n 对齐（2026-10-23）
+
+- 对照原项目 `lib/app/app.dart`、`lib/app/l10n/strings.dart`、`localized_issue.dart`、`home_screen.dart` 和 `record_export.dart`：保留简体中文 / English、即时切换应用文案、按界面语言生成摘要及导出说明；macOS 版另保留「跟随系统」及偏好持久化。
+- 228 个成对的原生本地化条目覆盖保留功能的界面、自定义菜单、提示、状态和应用错误；日期、文件大小及导出标题使用所选语言。系统错误及未知旧错误保留系统返回的诊断文本。
+- **仅新增 2 项测试，复用 3 项工作流测试，共 5 项通过，0 失败、0 跳过。** 检查资源键和占位符一致、源代码文案无遗漏、语言回退、旧字符串错误与记录读取、结构化错误读回、双语 HTML / Markdown，以及摘要请求使用捕获的界面语言。API 测试使用 URLProtocol，未调用付费服务。
+- Release 构建与 `codesign --verify --deep --strict` 通过。应用内包含双语 SwiftPM 资源包及两种语言的权限说明；4 个 `.strings` 文件通过 `plutil -lint`。
+- 实际操作打包后的 `.app`：英文 → 简体中文 → 英文 → 跟随系统；主窗口、三个设置页、自定义菜单、状态和已打开的悬浮字幕均更新。重启后保持简体中文，macOS 标准菜单与 NSSavePanel 也显示中文。
+- 原有 JFK 记录正常读取，中文日期及「已完成」状态正确，英语原文保留。通过中文 NSSavePanel 导出 `build/macos/jfk-i18n-zh.html`，读回确认中文文稿标题、页脚、页面语言标记及完整英文末句。
+- 验证后恢复原有「跟随系统」设置。未新增麦克风/系统录音授权或重复运行真实模型推理。
+- 日志：`.build/i18n-tests.log`、`.build/i18n-package.log`；修改前副本：`.build/i18n-before/`。
+
+## 使用细节审阅与修复（2026-10-23）
+
+对照 dev 的实时控制器、Nemotron 标点修订、翻译队列及记录操作，限定于已经保留的 macOS 功能。确认并修复以下会影响使用的问题：
+
+| 问题与触发条件 | 修复结果 |
+| --- | --- |
+| 英语 Nemotron 沿用旧的中文源语言设置，或重新翻译旧记录时改变了当前源语言；原文可能被直接当作译文 | 翻译使用该条记录实际保存的源语言 |
+| 实时识别等待每次翻译请求，慢服务会拖住字幕并可能导致音频队列溢出 | 独立的有界翻译队列；拥堵仅影响翻译，原文继续保存；停止保存会排空，取消会中断请求 |
+| Nemotron 在已完成句子上补标点时，整行覆盖会清空已有译文；再次请求失败后译文丢失 | 原位更新原文和时间，保留已完成译文及其状态，不重复请求 |
+| 重新翻译逐句写入，新目标语言的后续请求失败后，记录混杂两种语言 | 全部完成后原子替换；失败和取消都保留之前的记录；补齐进度、取消及前文上下文 |
+| 设置文件无法解码时，初始化提前结束，正常的转写记录也不加载 | 设置与记录分别读取，显示设置错误并继续恢复记录 |
+
+- 修复前 3 项针对性回归测试均失败，证实以上场景；修复后 3 项全部通过。
+- 额外复用 1 项现有英语 Nemotron 真模型测试，验证流式末句、文件队列和保存，共 **4 项测试通过、0 失败、0 跳过**；未运行完整测试集。
+- 新增回归使用 URLProtocol 控制慢响应、503 和取消，不依赖在线凭证或付费 API。另覆盖翻译队列上限、停止等待、字幕保留最近译文及持久化读回。
+- Release 构建与 `codesign --verify --deep --strict` 通过。实际应用以英语 Nemotron 导入 JFK 样本并完成转写，重启后完整文本仍可读取；原生字幕窗口可打开与关闭。通过 NSSavePanel 导出 `build/macos/jfk-detail-review.html`，读回确认末句保留。
+- 日志：`.build/detail-review-before-tests.log`、`.build/detail-review-tests.log`、`.build/detail-review-package.log`。本次修改前的相关源文件副本保留于 `.build/detail-review-before/`。
+- 真实麦克风、系统声音及付费 API 仍未新增验证。
+
+## Nemotron 增量接入（2026-10-23 10:20 PDT）
+
+- 原生 Swift 直接调用 sherpa-onnx 1.13.8 C API，ONNX Runtime 1.28.1，CPU / INT8；两者静态链接，不依赖外部服务或 Python。
+- 默认采用英语版，语言固定为 English；3.5 多语言版可选。旧设置可读取且保留既有引擎选择，本机应用已切换为 Nemotron 英语版。
+- **本次只新增并运行 2 项测试**，0 失败、0 跳过；没有重复运行下方的原有完整测试集。
+  - 默认英语、切换多语言、旧设置兼容。
+  - 两个真实模型共用一次流水线验证：按 320 ms 送入实际 AVAudioConverter / CaptureSink，停止前有增量文本，停止保留末尾 country，重复 finish 无重复文本；文件队列完成，时间戳不越界，记录保存可读回。
+- 公开 `jfk.wav`（11 秒）实测：英文模型 CPU 解码约 **0.97 秒**，3.5 多语言约 **1.05 秒**。Debug 构建，单次短样本；不含模型加载、下载或真实等待音频的时间，不代表端到端延迟、功耗或长录音基准。
+- 模型由应用相同的下载代码获取，固定版本，全部 8 个文件通过 SHA-256；随后复制到本机应用的 Models 目录供直接使用。
+- Release 构建及 ad-hoc 签名验证通过；动态依赖仅系统框架/运行时，应用包内含依赖许可证。
+- 实际启动 `.app`，设置中可见 English · Default / Selected、3.5 Multilingual；导入 JFK 后显示 `nemotron-en-0.6b · Completed`，记录库中可见完整末句。
+- 未新增麦克风/系统录音授权，未测试真实环境录音；流式验证使用公开 WAV 注入真实采集缓冲管线。未额外评测中文准确率或付费 API。
+- 本次日志：`.build/nemotron-tests.log`、`.build/nemotron-package.log`。模型验证目录：`.build/nemotron-validation/`。
+
+## 首次迁移自动验证（历史记录）
+
+- Release 编译成功，Swift 6 并发检查通过。
+- 13 项 Core 测试 + 3 项 Capture 测试通过，0 失败、0 跳过（已提供真实模型和音频）。
+- 内置 Tiny 模型 SHA-256 为 `be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21`，与 dev 的模型目录一致。
+- whisper.cpp 在 Metal GPU 上处理其仓库随附的 `samples/jfk.wav`，结果包含正确的 “ask not” / “country”。
+- 48 kHz 立体声文件转换为 16 kHz 单声道；保留不足 20 秒的最后片段；MOV 的延迟音轨保持来源时间对齐。
+- 合成实时音频经过真实 AVAudioConverter：暂停期间不摄入新音频，恢复后时间连续，停止时排空转换器和尾段；队列过载明确报错。
+- 验证 API 认证与端点约束、云端结果截断、错误脱敏、无自动重试、双语搜索、原子保存、重启恢复和 HTML 转义。
+- `codesign --verify --deep --strict` 通过。应用动态依赖仅包含 macOS 系统框架和系统 Swift 运行时；Whisper 静态链接。
+
+## 首次迁移应用操作（历史记录）
+
+- 从打包后的 `.app` 启动，识别内置 Tiny 模型。
+- 通过原生 NSOpenPanel 导入公开测试 WAV，启动队列并显示 Completed。
+- 进入记录库查看实际转写文本；退出重开后，记录仍可读取。
+- 使用记录菜单和 NSSavePanel 导出 `build/macos/jfk.html`，读回文件确认内容。
+- 记录库分栏布局曾在界面验证中触发 AppKit 约束循环，已改为稳定的 SwiftUI 布局并重新验证导航。
+- 设置的通用、语音模型和文本模型页面均可打开；本机 Ollama 未运行时显示明确连接错误。
+- 原生悬浮字幕窗口可打开与关闭，关闭后主应用继续存在；使用系统 Liquid Glass，支持标准窗口调整大小。
+
+## 未验证的外部条件
+
+- 系统音频已有上方实机验证；麦克风真实设备启动、暂停和停止已验证，真人语音识别仍按用户要求留待稍后。未验证外接设备切换、蓝牙音频及长时间录音。
+- 未使用付费 API 凭证进行在线推理；API 处理使用协议替身覆盖。本机没有运行 Ollama，未执行本机文本模型推理。
+- 未在 Intel Mac 或 macOS 26 实机运行；未做开发者证书签名、公证、发布或远程推送。
+
+构建日志与完整测试输出保存在本地被 Git 忽略的 `.build/macos-package.log` 和 `.build/macos-integration.log`。

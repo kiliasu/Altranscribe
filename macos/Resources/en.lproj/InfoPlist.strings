@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "Altranscribe uses your microphone to transcribe speech when you start a recording.";
+"NSAudioCaptureUsageDescription" = "Altranscribe captures system audio only when you start system audio transcription.";
