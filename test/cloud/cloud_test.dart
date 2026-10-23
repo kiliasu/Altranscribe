@@ -524,6 +524,64 @@ void main() {
     },
   );
 
+  for (final merged in [false, true]) {
+    test(
+      merged
+          ? 'Gemini stops cleanly when one completion answered two sentences'
+          : 'Gemini keeps the last sentence when the one before completes late',
+      () async {
+        var audio = 0;
+        final fixture = await SocketFixture.start((socket, event) {
+          if (event.containsKey('setup')) {
+            send(socket, {'setupComplete': {}});
+          } else if (event['realtimeInput']?['audio'] != null) {
+            // The first sentence completes only once the second was sent.
+            if (++audio == 3) {
+              send(socket, {
+                'serverContent': {
+                  'inputTranscription': {
+                    'text': merged ? 'First. Second.' : 'First.',
+                  },
+                  'generationComplete': true,
+                },
+              });
+            }
+          } else if (event['realtimeInput']?['audioStreamEnd'] == true &&
+              !merged) {
+            send(socket, {
+              'serverContent': {
+                'inputTranscription': {'text': 'Second.'},
+                'generationComplete': true,
+              },
+            });
+          }
+        });
+        final texts = <String>[];
+        final live = CloudLive(
+          credentials: MemoryCredentials(),
+          provider: SpeechProvider.gemini,
+          directTranslation: false,
+          source: 'microphone',
+          language: 'en',
+          targetLanguage: null,
+          connect: fixture.connect,
+          onText: (e) => texts.add(e.text),
+          onError: (error) => fail(error),
+          drainTimeout: const Duration(seconds: 1),
+        );
+        await live.start();
+        live.add(voice(1600), 0, 100);
+        live.add(Uint8List(12800), 100, 500);
+        live.add(voice(1600), 500, 600);
+        for (var i = 0; i < 400 && texts.isEmpty; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        await live.finish();
+        expect(texts, merged ? ['First. Second.'] : ['First.', 'Second.']);
+      },
+    );
+  }
+
   test('Gemini stops at once after audio the server never heard', () async {
     var ended = false;
     final fixture = await SocketFixture.start((socket, event) {

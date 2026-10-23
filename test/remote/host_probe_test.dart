@@ -23,16 +23,20 @@ class SettingsStore extends MemoryStore {
 /// A paired host that proves itself at once but holds its details until
 /// [release] completes, like one answering slowly over Wi-Fi.
 class SlowHost {
-  SlowHost._(this.server, this.token);
+  SlowHost._(this.server, this.token, this.models);
   final HttpServer server;
   final String token;
+  final List<String> models;
   final asked = Completer<void>();
   final release = Completer<void>();
   String get address => 'http://127.0.0.1:${server.port}';
 
-  static Future<SlowHost> start(String token) async {
+  static Future<SlowHost> start(
+    String token, {
+    List<String> models = const ['a-llm'],
+  }) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final host = SlowHost._(server, token);
+    final host = SlowHost._(server, token, models);
     server.listen(host._answer);
     return host;
   }
@@ -66,8 +70,8 @@ class SlowHost {
           'hostId': 'host-a',
           'busy': false,
           'llmProvider': 'ollama',
-          'llmModel': 'a-llm',
-          'llmModels': ['a-llm'],
+          'llmModel': models.first,
+          'llmModels': models,
         }),
       );
     }
@@ -197,4 +201,106 @@ void main() {
       expect(store.saved['remoteHostId'], '');
     },
   );
+
+  test(
+    'a connection that answers after a local session started leaves it alone',
+    () async {
+      final slow = await SlowHost.start('a' * 43);
+      addTearDown(() => slow.server.close(force: true));
+      final live = savingController(SettingsStore())..useRemote = false;
+      addTearDown(live.dispose);
+      final connecting = live.connectRemote(
+        slow.address,
+        slow.token,
+        '',
+        hostId: 'host-a',
+      );
+      await slow.asked.future;
+      await live.start(microphone: true, system: false, language: 'en');
+      slow.release.complete();
+      await expectLater(
+        connecting,
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'recordBusy'),
+        ),
+      );
+      expect(live.useRemote, isFalse);
+      expect(live.remoteConnection.address, isEmpty);
+      expect(await live.credentials.readNamed('remote-host'), isEmpty);
+      // The session keeps transcribing with its own engine.
+      (live.audio as FakeAudio).events.add(chunk('microphone', 0));
+      for (var i = 0; i < 600 && live.record!.lines.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(live.record!.lines, isNotEmpty);
+      expect(live.error, isNull);
+      await live.stop();
+    },
+  );
+
+  test('a connection given up while it waits changes nothing', () async {
+    final slow = await SlowHost.start('a' * 43);
+    addTearDown(() => slow.server.close(force: true));
+    final store = SettingsStore();
+    final live = savingController(store);
+    addTearDown(live.dispose);
+    final connecting = live.connectRemote(
+      slow.address,
+      slow.token,
+      '',
+      hostId: 'host-a',
+    );
+    await slow.asked.future;
+    live.cancelHostConnection();
+    slow.release.complete();
+    await expectLater(
+      connecting,
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          'remoteCancelled',
+        ),
+      ),
+    );
+    expect(live.remoteConnection.address, isEmpty);
+    expect(store.saved, isEmpty);
+    expect(await live.credentials.readNamed('remote-host'), isEmpty);
+  });
+
+  test('a text model chosen on one host is not carried to another', () async {
+    final first = await SlowHost.start('a' * 43, models: ['a-llm', 'a-large']);
+    first.release.complete();
+    addTearDown(() => first.server.close(force: true));
+    final second = SharedHost(
+      engine: FakeEngine(),
+      translator: FakeTranslator(),
+    );
+    await startHost(second);
+    addTearDown(() async {
+      await second.stop();
+      second.dispose();
+    });
+    final token = (await second.devices.create('Client')).token;
+    final store = SettingsStore();
+    final live = savingController(store);
+    addTearDown(live.dispose);
+    await live.connectRemote(first.address, first.token, '', hostId: 'host-a');
+    live.remoteLlmModel = 'a-large';
+    // Connecting to the same host again keeps a choice it still offers.
+    await live.connectRemote(first.address, first.token, '', hostId: 'host-a');
+    expect(live.remoteLlmModel, 'a-large');
+    await live.connectRemote(
+      second.address,
+      token,
+      '',
+      hostId: second.devices.hostId,
+    );
+    expect(live.remoteLlmModel, isEmpty);
+    expect(store.saved['remoteLlmModel'], '');
+    expect(live.sessionLlmModel, 'test-llm');
+    live.remoteLlmModel = 'test-llm';
+    await live.forgetHost();
+    expect(store.saved['remoteLlmModel'], '');
+  });
 }

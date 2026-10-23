@@ -486,6 +486,22 @@ class RealtimeController extends ChangeNotifier {
     }
   }
 
+  /// Bumped when a host connection starts or is given up, so only the newest
+  /// attempt takes effect.
+  int _connectAttempt = 0;
+
+  /// Gives up a host connection still in progress, as when its dialog closes.
+  void cancelHostConnection() => _connectAttempt++;
+
+  /// A connection that answers after it was given up, or after a session or
+  /// file task started, must not switch the engine under that task.
+  void _stillWanted(int attempt) {
+    if (attempt != _connectAttempt) {
+      throw const FormatException('remoteCancelled');
+    }
+    if (active || updatingRecordId != null) throw StateError('recordBusy');
+  }
+
   Future<void> connectRemote(
     String address,
     String token,
@@ -493,6 +509,16 @@ class RealtimeController extends ChangeNotifier {
     String hostId = '',
   }) async {
     if (active || updatingRecordId != null) throw StateError('recordBusy');
+    await _connectRemote(address, token, name, hostId, ++_connectAttempt);
+  }
+
+  Future<void> _connectRemote(
+    String address,
+    String token,
+    String name,
+    String hostId,
+    int attempt,
+  ) async {
     final candidate = RemoteConnection(
       address: address,
       token: token,
@@ -502,7 +528,15 @@ class RealtimeController extends ChangeNotifier {
     final client = RemoteClient(candidate);
     try {
       final info = await client.connect();
+      _stillWanted(attempt);
       await credentials.writeNamed('remote-host', token);
+      try {
+        _stillWanted(attempt);
+      } catch (_) {
+        // The saved credential stays with the host that stays saved.
+        await credentials.writeNamed('remote-host', remoteConnection.token);
+        rethrow;
+      }
       _hostGeneration++;
       remoteConnection.address = remoteUri(address).toString();
       remoteConnection.token = token.trim();
@@ -515,6 +549,8 @@ class RealtimeController extends ChangeNotifier {
       hostSeen = DateTime.now();
       useRemote = true;
       speechProvider = SpeechProvider.whisper;
+      // A model chosen on another host may not be offered here.
+      if (!hostLlmModels.contains(remoteLlmModel)) remoteLlmModel = '';
       // Connecting means using the host, for text too when it shares a model.
       if (info['llmModel'] is String) hostLlm = true;
       await saveSettings();
@@ -536,6 +572,7 @@ class RealtimeController extends ChangeNotifier {
     String name = '',
   }) async {
     if (active || updatingRecordId != null) throw StateError('recordBusy');
+    final attempt = ++_connectAttempt;
     final client = RemoteClient(RemoteConnection(address: address));
     final grant = await client.pair(
       code,
@@ -543,11 +580,13 @@ class RealtimeController extends ChangeNotifier {
       MobilePlatform.android ? 'android' : 'windows',
     );
     AppLog.instance.info('remote', 'Paired with host ${grant['hostId']}');
-    await connectRemote(
+    _stillWanted(attempt);
+    await _connectRemote(
       address,
       grant['token'] as String,
       name.trim().isEmpty ? grant['name'] as String? ?? '' : name,
-      hostId: grant['hostId'] as String,
+      grant['hostId'] as String,
+      attempt,
     );
   }
 
@@ -566,6 +605,7 @@ class RealtimeController extends ChangeNotifier {
       ..name = ''
       ..hostId = ''
       ..info = null;
+    remoteLlmModel = '';
     hostStatus = HostStatus.unknown;
     hostSeen = null;
     _scheduleHostProbes();

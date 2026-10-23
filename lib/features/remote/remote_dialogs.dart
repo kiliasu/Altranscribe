@@ -77,6 +77,8 @@ class _RemoteConnectionState extends State<RemoteConnectionDialog> {
 
   @override
   void dispose() {
+    // Closing the dialog while it connects gives the connection up.
+    if (busy) widget.controller.cancelHostConnection();
     address.dispose();
     secret.dispose();
     super.dispose();
@@ -133,7 +135,7 @@ class _RemoteConnectionState extends State<RemoteConnectionDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: busy ? null : () => Navigator.pop(context),
+        onPressed: () => Navigator.pop(context),
         child: Text(t('cancel')),
       ),
       FilledButton(

@@ -64,6 +64,10 @@ class FfmpegAudioDecoder implements AudioFileDecoder {
         '-map',
         '0:a:0',
         '-vn',
+        // A soundtrack that starts after the video keeps its place on the
+        // video's clock: silence fills the start. Later timing stays as is.
+        '-af',
+        'aresample=async=1:min_hard_comp=100000:first_pts=0',
         '-ac',
         '1',
         '-ar',

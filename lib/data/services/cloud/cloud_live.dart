@@ -83,6 +83,17 @@ class CloudLive {
   String _input = '', _output = '';
   DateTime? _lastTranscriptAt;
   bool _generationCompleted = false;
+
+  /// Gemini answers each turn of speech with a completion, in order, without
+  /// saying which audio it covered. Runs of voice it has not answered yet,
+  /// where the last voice ended, and whether the open turn has text.
+  int _unansweredRuns = 0, _lastVoiceMs = -1;
+  bool _turnText = false;
+  DateTime _lastEventAt = DateTime.now();
+
+  /// How long the server must stay quiet after the stream end before a stop
+  /// gives up on text it may still owe.
+  static const _settleTime = Duration(seconds: 3);
   final _texts = <String, String>{};
   final _ranges = <String, (int, int)>{};
   final _commits = Queue<(int, int, bool)>();
@@ -241,6 +252,11 @@ class CloudLive {
     }
     final voice = pcm.isNotEmpty && sqrt(energy / (pcm.length / 2)) >= 0.002;
     if (voice) {
+      // Voice after a pause is a run the server may answer on its own.
+      if (_lastVoiceMs < 0 || _quietBytes >= sampleRate * 2 * 3 ~/ 10) {
+        _unansweredRuns++;
+      }
+      _lastVoiceMs = endMs;
       _windowHasVoice = true;
       _awaitingOutput = true;
     }
@@ -379,6 +395,7 @@ class CloudLive {
 
   void handle(Map<String, dynamic> event) {
     if (_cancelled) return;
+    _lastEventAt = DateTime.now();
     final eventId = event['event_id'] as String?;
     if (eventId != null && !_eventIds.add(eventId)) return;
     if (_eventIds.length > 4096) _eventIds.remove(_eventIds.first);
@@ -477,6 +494,7 @@ class CloudLive {
           }
           if (input != null || output != null) _continuous();
         } else {
+          if (interim != null || input != null) _turnText = true;
           if (interim != null) {
             // The server heard speech it has not finished, however quiet it
             // was here: a stop waits for its final text.
@@ -503,12 +521,23 @@ class CloudLive {
             content['turnComplete'] == true) {
           _awaitingOutput = false;
           _generationCompleted = true;
+          // A turn's text answers one run; a second signal for it does not.
+          if (_turnText && _unansweredRuns > 0) _unansweredRuns--;
+          _turnText = false;
         }
         if (content['interrupted'] == true) _fail('cloudIncomplete');
       }
     }
     _signal();
   }
+
+  /// Voice from the last few seconds that no completion has answered. Older
+  /// voice would have been answered by now; only a merged turn leaves it.
+  bool get _mayOweText =>
+      provider == SpeechProvider.gemini &&
+      !directTranslation &&
+      _unansweredRuns > 0 &&
+      _lastMs - _lastVoiceMs < 10000;
 
   void _signal() {
     final changed = _changed;
@@ -585,10 +614,26 @@ class CloudLive {
       bool pending() => provider == SpeechProvider.openAI
           ? (directTranslation ? !_closedByServer : _pendingCommits > 0)
           : _awaitingOutput;
-      while (pending() && _failure == null && !_cancelled) {
+      final ended = DateTime.now();
+      while (_failure == null && !_cancelled) {
         final remaining = deadline.difference(DateTime.now());
-        if (remaining.isNegative) throw TimeoutException('drain');
-        await _changed.future.timeout(remaining);
+        if (pending()) {
+          if (remaining.isNegative) throw TimeoutException('drain');
+          await _changed.future.timeout(remaining);
+          continue;
+        }
+        // A completion that arrived late may have answered an earlier
+        // sentence than the last one sent, so Gemini may still owe that one:
+        // keep listening until the connection has been quiet for a while.
+        if (!_mayOweText) break;
+        final heard = _lastEventAt.isAfter(ended) ? _lastEventAt : ended;
+        final quiet = _settleTime - DateTime.now().difference(heard);
+        if (quiet <= Duration.zero || remaining <= Duration.zero) break;
+        try {
+          await _changed.future.timeout(quiet < remaining ? quiet : remaining);
+        } on TimeoutException {
+          break;
+        }
       }
       if (_failure != null) throw StateError(_failure!);
     } on TimeoutException {
