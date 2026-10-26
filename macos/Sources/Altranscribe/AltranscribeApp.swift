@@ -3,6 +3,9 @@ import AltranscribeCore
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        AppAppearance.apply(UserDefaults.standard.string(forKey: "appearance") ?? "system", animated: false)
+    }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model, model.busy else { return .terminateNow }
         let alert = NSAlert()
@@ -43,7 +46,6 @@ import AltranscribeCore
             ContentView(model: model)
                 .id(interfaceLanguage)
                 .environment(\.locale, InterfaceLanguage.current.locale)
-                .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .onAppear { delegate.model = model }
                 .onOpenURL { model.addFiles([$0]) }
         }
@@ -53,6 +55,7 @@ import AltranscribeCore
             Self.updateSystemLanguage(value)
             model.captions?.updateLanguage()
         }
+        .onChange(of: appearance) { _, value in AppAppearance.apply(value) }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(L("Import Audio or Video…")) { model.chooseFiles() }
@@ -92,7 +95,6 @@ import AltranscribeCore
             SettingsView(model: model)
                 .id(interfaceLanguage)
                 .environment(\.locale, InterfaceLanguage.current.locale)
-                .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         }
         // Only the page picker sits in the title bar, as in the main window's Settings page. (SwiftUI applies the
         // hidden title here but keeps the preference toolbar style; SettingsView switches the window to unified.)
