@@ -1,14 +1,17 @@
 import SwiftUI
+import Observation
 import AltranscribeCore
 
 /// A floating Liquid Glass panel for captions, kept above other apps and in every Space, like Live Captions.
-@MainActor final class CaptionWindow {
+@MainActor @Observable final class CaptionWindow: NSObject, NSWindowDelegate {
     private let panel: NSPanel
-    private var wantsVisible = false
+    private(set) var isVisible = false
     init(model: AppModel) {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 200),
                         styleMask: [.titled, .closable, .resizable, .nonactivatingPanel, .fullSizeContentView],
                         backing: .buffered, defer: false)
+        super.init()
+        panel.delegate = self
         panel.title = L("Altranscribe Captions")
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
@@ -33,27 +36,28 @@ import AltranscribeCore
     }
     /// The panel fades in where it was left, and fades out before it leaves the screen.
     func show() {
-        wantsVisible = true
+        isVisible = true
         if !panel.isVisible { panel.alphaValue = 0 }
-        panel.makeKeyAndOrderFront(nil)
+        panel.orderFront(nil)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
             panel.animator().alphaValue = 1
         }
     }
     func hide() {
-        wantsVisible = false
+        isVisible = false
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
                 // Showing it again mid-fade wins over the fade-out.
-                guard let self, !self.wantsVisible else { return }
+                guard let self, !self.isVisible else { return }
                 self.panel.orderOut(nil)
             }
         }
     }
+    func windowWillClose(_ notification: Notification) { isVisible = false }
     func updateLanguage() { panel.title = L("Altranscribe Captions") }
 }
 

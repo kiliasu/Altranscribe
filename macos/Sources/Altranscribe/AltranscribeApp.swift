@@ -84,7 +84,7 @@ import AltranscribeCore
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                     .disabled(model.phase != .recording && model.phase != .paused)
                 Divider()
-                Button(L("Floating Captions")) { model.showCaptions() }
+                Toggle(L("Floating Captions"), isOn: $model.captionsVisible)
                     .keyboardShortcut("c", modifiers: [.command, .shift])
             }
         }

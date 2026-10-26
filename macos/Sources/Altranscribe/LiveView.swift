@@ -43,8 +43,9 @@ struct LiveView: View {
         .navigationSubtitle(model.isCapturing || model.phase == .finishing ? model.status.text : model.source.title)
         .toolbar {
             ToolbarItem {
-                Button { model.showCaptions() } label: { Label(L("Floating Captions"), systemImage: "captions.bubble") }
-                    .help(L("Floating Captions") + " ⇧⌘C")
+                Toggle(isOn: $model.captionsVisible) { Label(L("Floating Captions"), systemImage: "captions.bubble") }
+                    .toggleStyle(.button)
+                    .help(L(model.captionsVisible ? "Hide Caption Window" : "Show Caption Window") + " ⇧⌘C")
             }
             ToolbarSpacer(.fixed)
             InspectorToggle(isPresented: $showInspector)

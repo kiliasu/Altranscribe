@@ -81,6 +81,7 @@
 "HTTP %@. Rate limit or quota exceeded." = "HTTP %@。请求限流或额度不足。";
 "HTTP %@. The request did not complete. It was not retried." = "HTTP %@。请求未完成，未自动重试。";
 "Helps recognize names and terms without rewriting the original text." = "帮助识别专有名词，不会自动修改原文。";
+"Hide Caption Window" = "隐藏字幕窗口";
 "Hide Transcription Options" = "隐藏转写选项";
 "Import" = "导入";
 "Import Audio or Video…" = "导入音频或视频…";

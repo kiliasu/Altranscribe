@@ -528,6 +528,13 @@ struct QueuedFile: Identifiable {
         }
     }
 
+    var captionsVisible: Bool {
+        get { captions?.isVisible ?? false }
+        set {
+            if newValue { showCaptions() }
+            else { captions?.hide() }
+        }
+    }
     func showCaptions() {
         if captions == nil { captions = CaptionWindow(model: self) }
         captions?.show()

@@ -81,6 +81,7 @@
 "HTTP %@. Rate limit or quota exceeded." = "HTTP %@. Rate limit or quota exceeded.";
 "HTTP %@. The request did not complete. It was not retried." = "HTTP %@. The request did not complete. It was not retried.";
 "Helps recognize names and terms without rewriting the original text." = "Helps recognize names and terms without rewriting the original text.";
+"Hide Caption Window" = "Hide Caption Window";
 "Hide Transcription Options" = "Hide Transcription Options";
 "Import" = "Import";
 "Import Audio or Video…" = "Import Audio or Video…";
