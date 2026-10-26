@@ -450,3 +450,26 @@
 "The model did not return a complete text result." = "The model did not return a complete text result.";
 "Ready on this Mac" = "Ready on this Mac";
 "Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready." = "Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready.";
+
+// Live audio and caption controls
+"Automatic" = "Automatic";
+"2 seconds · Faster" = "2 seconds · Faster";
+"4 seconds · Balanced" = "4 seconds · Balanced";
+"8 seconds · More context" = "8 seconds · More context";
+"Live Audio" = "Live Audio";
+"Live Audio Chunks" = "Live Audio Chunks";
+"Automatic cuts at pauses and waits at most 4 seconds. Shorter chunks respond faster but have less context." = "Automatic cuts at pauses and waits at most 4 seconds. Shorter chunks respond faster but have less context.";
+"Continuous streaming · No audio slicing" = "Continuous streaming · No audio slicing";
+"Adaptive gain for quiet speech" = "Adaptive gain for quiet speech";
+"Apple microphone voice processing" = "Apple microphone voice processing";
+"Gain helps quiet or distant voices. Apple's microphone processing reduces noise but may suppress distant speakers; leave it off for lectures or virtual inputs. It only processes microphone input and may lower other apps' audio." = "Gain helps quiet or distant voices. Apple's microphone processing reduces noise but may suppress distant speakers; leave it off for lectures or virtual inputs. It only processes microphone input and may lower other apps' audio.";
+"Apple voice processing is unavailable for this input. Turn it off or select another microphone." = "Apple voice processing is unavailable for this input. Turn it off or select another microphone.";
+"Live audio follows the chunk setting above. Files use 20-second chunks. Stopping retains the final audio. Recognition stays on this Mac." = "Live audio follows the chunk setting above. Files use 20-second chunks. Stopping retains the final audio. Recognition stays on this Mac.";
+"Apple Speech streams words as you speak. Stable phrases are translated without waiting for a long pause; stopping finalizes the last words." = "Apple Speech streams words as you speak. Stable phrases are translated without waiting for a long pause; stopping finalizes the last words.";
+"A custom endpoint must implement audio/transcriptions. Live audio follows the chunk setting above; Realtime transcription is OpenAI only." = "A custom endpoint must implement audio/transcriptions. Live audio follows the chunk setting above; Realtime transcription is OpenAI only.";
+"Custom endpoints use the live chunk setting above and chunks of up to ten minutes for files." = "Custom endpoints use the live chunk setting above and chunks of up to ten minutes for files.";
+"Caption Settings" = "Caption Settings";
+"Visible Sentences" = "Visible Sentences";
+"Provisional translation" = "Provisional translation";
+
+"Starting audio capture…" = "Starting audio capture…";

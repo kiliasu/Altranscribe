@@ -21,8 +21,11 @@ public actor NativeNemotron {
     private var handle: NemotronHandle?
     private var language = "en"
     private var multilingual = false
+    private var live = false
     private var origin: Double = 0
     private var audioEnd: Double = 0
+    private var lastTokenUpdate: Double = 0
+    private var leadingSilence: AudioChunk?
     private var tokens: [String] = []
     private var times: [Double] = []
     private var committed = 0
@@ -30,7 +33,7 @@ public actor NativeNemotron {
     private var previous: TranscriptSegment?
     public init() {}
 
-    public func load(model: NemotronModel, directory: URL, language: String) throws {
+    public func load(model: NemotronModel, directory: URL, language: String, live: Bool = false) throws {
         try Task.checkCancellation()
         guard model.isComplete(at: directory) else {
             throw AppError("Download the selected Nemotron model in Settings first.")
@@ -58,18 +61,35 @@ public actor NativeNemotron {
         handle = NemotronHandle(recognizer)
         multilingual = model.multilingual
         self.language = model.multilingual ? language : "en"
+        self.live = live
         try Task.checkCancellation()
     }
 
     public func beginStream() {
         handle?.closeStream()
         tokens = []; times = []; committed = 0; previous = nil
-        segmentID = UUID(); origin = 0; audioEnd = 0
+        segmentID = UUID(); origin = 0; audioEnd = 0; lastTokenUpdate = 0; leadingSilence = nil
     }
 
     public func accept(_ chunk: AudioChunk) throws -> NemotronUpdate {
         try Task.checkCancellation()
         guard let handle else { throw AppError("Nemotron is not loaded.") }
+        var chunk = chunk
+        if live && handle.stream == nil {
+            // Long digital silence can spoil Nemotron's first utterance. Keep a short pre-roll
+            // without feeding minutes of zeroes into its encoder; do not gate quiet speech.
+            let silent = !chunk.samples.isEmpty && chunk.samples.allSatisfy { abs($0) < 0.000001 }
+            if silent {
+                let count = min(5_120, chunk.samples.count)
+                leadingSilence = AudioChunk(samples: Array(chunk.samples.suffix(count)),
+                    start: chunk.start + Double(chunk.samples.count - count) / 16_000)
+                return NemotronUpdate()
+            }
+            if let leadingSilence, abs(leadingSilence.start + leadingSilence.duration - chunk.start) < 0.01 {
+                chunk = AudioChunk(samples: leadingSilence.samples + chunk.samples, start: leadingSilence.start)
+            }
+            leadingSilence = nil
+        }
         var update = NemotronUpdate()
         // A media edit can jump forward in time. Close the old stream without fabricating a long silence.
         if handle.stream != nil, abs(chunk.start - audioEnd) > 0.02 {
@@ -122,7 +142,9 @@ public actor NativeNemotron {
         defer { SherpaOnnxDestroyOnlineRecognizerResult(result) }
         let value = result.pointee
         guard value.count > 0, let rawTokens = value.tokens_arr, let timestamps = value.timestamps else { return }
-        tokens = (0..<Int(value.count)).map { rawTokens[$0].map { String(cString: $0) } ?? "" }
+        let next = (0..<Int(value.count)).map { rawTokens[$0].map { String(cString: $0) } ?? "" }
+        if next != tokens { lastTokenUpdate = audioEnd }
+        tokens = next
         times = (0..<Int(value.count)).map { Double(timestamps[$0]) }
     }
 
@@ -149,15 +171,17 @@ public actor NativeNemotron {
         }
         while committed < tokens.count {
             let first = times[committed], last = times[tokens.count - 1]
-            let gap = audioEnd - origin - last
-            let pause = tokens.count - committed < 8 ? 2.6 : 1.5
+            let gap = live ? audioEnd - lastTokenUpdate : audioEnd - origin - last
+            let pause = live ? 2.6 : (tokens.count - committed < 8 ? 2.6 : 1.5)
             var cut = tokens.count
             if !closing, gap < pause {
-                guard last - first >= 15 else { break }
+                guard last - first >= (live ? 3 : 15) else { break }
                 var widest = 0.0
-                for i in (committed + 1)..<tokens.count where times[i] - first >= 8 {
+                for i in (committed + 1)..<tokens.count where times[i] - first >= (live ? 1 : 8) {
+                    if live && (tokens[i].first?.isWhitespace != true || last - times[i] < 0.25) { continue }
                     if times[i] - times[i - 1] >= widest { widest = times[i] - times[i - 1]; cut = i }
                 }
+                if live && cut == tokens.count { break } // Retain an unfinished word until the next word arrives.
             }
             if let line = piece(committed..<cut) { result.append(line); previous = line }
             committed = cut; segmentID = UUID()

@@ -46,6 +46,12 @@ public struct RecordStore: Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let url = paths.records.appendingPathComponent("\(record.id).json")
         var snapshot = record
+        // Interim translations are UI feedback, not a saved translation of the final sentence.
+        for index in snapshot.segments.indices where snapshot.segments[index].translationIsProvisional == true {
+            snapshot.segments[index].translation = nil
+            snapshot.segments[index].translationIsProvisional = nil
+            snapshot.segments[index].translationSource = nil
+        }
         snapshot.version = 2
         try encoder.encode(snapshot).write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)

@@ -7,17 +7,20 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
     let queue = DispatchQueue(label: "app.altranscribe.capture", qos: .userInitiated)
     let stream: AsyncThrowingStream<AudioChunk, Error>
     private let continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
-    private var chunker: AudioChunker
+    private var chunker: LiveAudioChunker
+    private var gain = AdaptiveInputGain()
+    private let adaptiveGain: Bool
     private var paused = false
     private var finished = false
     private var converter: AVAudioConverter?
     private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
     let meter: @Sendable (Float, Double) -> Void
 
-    init(chunkSeconds: Double = 8, meter: @escaping @Sendable (Float, Double) -> Void) {
-        chunker = AudioChunker(seconds: chunkSeconds)
+    init(chunkSeconds: Double = 8, automaticChunks: Bool = false, adaptiveGain: Bool = false, meter: @escaping @Sendable (Float, Double) -> Void) {
+        chunker = LiveAudioChunker(seconds: chunkSeconds, automatic: automaticChunks)
+        self.adaptiveGain = adaptiveGain
         // Keep the same 64-second audio budget for both streaming and batch engines.
-        let capacity = max(1, Int(ceil(64 / chunkSeconds)))
+        let capacity = max(1, Int(ceil(64 / (automaticChunks ? min(1, chunkSeconds) : chunkSeconds))))
         let pair = AsyncThrowingStream<AudioChunk, Error>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
         stream = pair.stream; continuation = pair.continuation; self.meter = meter
     }
@@ -79,6 +82,7 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
 
     private func accept(_ samples: [Float]) {
         if samples.isEmpty { return }
+        let samples = adaptiveGain ? gain.process(samples) : samples
         let rms = sqrt(samples.reduce(Float.zero) { $0 + $1 * $1 } / Float(samples.count))
         for chunk in chunker.append(samples) { emit(chunk) }
         meter(min(1, rms * 8), chunker.duration)
@@ -137,8 +141,8 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
     private var screenStream: SCStream?
     private var sink: CaptureSink?
 
-    func start(source: AudioSource, chunkSeconds: Double = 8, meter: @escaping @Sendable (Float, Double) -> Void) async throws -> AsyncThrowingStream<AudioChunk, Error> {
-        let sink = CaptureSink(chunkSeconds: chunkSeconds, meter: meter)
+    func start(source: AudioSource, chunkSeconds: Double = 8, automaticChunks: Bool = false, adaptiveGain: Bool = false, voiceProcessing: Bool = false, meter: @escaping @Sendable (Float, Double) -> Void) async throws -> AsyncThrowingStream<AudioChunk, Error> {
+        let sink = CaptureSink(chunkSeconds: chunkSeconds, automaticChunks: automaticChunks, adaptiveGain: adaptiveGain && !(source == .microphone && voiceProcessing), meter: meter)
         self.sink = sink
         do {
             if source == .microphone {
@@ -148,6 +152,15 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
                 try Task.checkCancellation()
                 let engine = AVAudioEngine()
                 let input = engine.inputNode
+                if voiceProcessing {
+                    do {
+                        try input.setVoiceProcessingEnabled(true)
+                        input.isVoiceProcessingAGCEnabled = adaptiveGain
+                        input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
+                    } catch {
+                        throw AppError("Apple voice processing is unavailable for this input. Turn it off or select another microphone.")
+                    }
+                }
                 let format = input.outputFormat(forBus: 0)
                 guard format.sampleRate > 0, format.channelCount > 0 else {
                     throw AppError("No microphone is available.")

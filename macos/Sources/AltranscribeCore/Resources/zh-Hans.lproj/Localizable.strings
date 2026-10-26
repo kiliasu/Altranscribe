@@ -450,3 +450,26 @@
 "The model did not return a complete text result." = "模型未返回完整的文本结果。";
 "Ready on this Mac" = "本机已就绪";
 "Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready." = "使用 Apple 系统模型在本机翻译和生成摘要，无需 API 密钥或内置模型文件。长文稿会分段汇总。需要 Apple Intelligence 已开启且模型就绪。";
+
+// Live audio and caption controls
+"Automatic" = "自动";
+"2 seconds · Faster" = "2 秒 · 更快";
+"4 seconds · Balanced" = "4 秒 · 均衡";
+"8 seconds · More context" = "8 秒 · 更多上下文";
+"Live Audio" = "实时音频";
+"Live Audio Chunks" = "音频切片";
+"Automatic cuts at pauses and waits at most 4 seconds. Shorter chunks respond faster but have less context." = "自动模式在停顿处分句，最长等待 4 秒。切片越短，响应越快，但上下文越少。";
+"Continuous streaming · No audio slicing" = "持续流式识别 · 无需切片";
+"Adaptive gain for quiet speech" = "小声语音自适应增益";
+"Apple microphone voice processing" = "苹果麦克风语音增强";
+"Gain helps quiet or distant voices. Apple's microphone processing reduces noise but may suppress distant speakers; leave it off for lectures or virtual inputs. It only processes microphone input and may lower other apps' audio." = "增益可增强小声或较远的人声。苹果麦克风处理可降低噪声，但可能抑制远处的说话人；课堂或虚拟输入建议关闭。此选项只处理麦克风输入，并可能降低其他应用的音量。";
+"Apple voice processing is unavailable for this input. Turn it off or select another microphone." = "当前输入无法使用苹果语音增强，请关闭此选项或选择其他麦克风。";
+"Live audio follows the chunk setting above. Files use 20-second chunks. Stopping retains the final audio. Recognition stays on this Mac." = "实时音频遵循上方的切片设置；文件按 20 秒处理。停止时会保留并处理末尾音频。识别在本机完成。";
+"Apple Speech streams words as you speak. Stable phrases are translated without waiting for a long pause; stopping finalizes the last words." = "Apple Speech 会在说话时持续更新文字，短句稳定后即可翻译，无需等待长时间停顿。停止时会完成末尾的识别。";
+"A custom endpoint must implement audio/transcriptions. Live audio follows the chunk setting above; Realtime transcription is OpenAI only." = "自定义服务必须实现 audio/transcriptions 接口。实时音频遵循上方的切片设置；Realtime 转录仅适用于 OpenAI。";
+"Custom endpoints use the live chunk setting above and chunks of up to ten minutes for files." = "自定义服务使用上方的实时切片设置；文件切片最长为十分钟。";
+"Caption Settings" = "字幕设置";
+"Visible Sentences" = "显示句数";
+"Provisional translation" = "暂定译文";
+
+"Starting audio capture…" = "正在启动音频采集…";

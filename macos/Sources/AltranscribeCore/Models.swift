@@ -78,6 +78,21 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var vocabulary = ""
     public var captionSize = 24.0
     public var captionTranslationOnly = false
+    public var liveChunkMode: LiveChunkMode?
+    public var adaptiveInputGain: Bool?
+    public var microphoneVoiceProcessing: Bool?
+    public var captionSentenceCount: Int?
+
+    public var usesBatchLiveAudio: Bool {
+        !usesCloudLive && ![SpeechProvider.nemotron, .appleSpeech].contains(speechProvider)
+    }
+    public var liveChunkSeconds: Double {
+        if usesCloudLive || speechProvider == .appleSpeech { return 0.1 }
+        if speechProvider == .nemotron { return 0.32 }
+        return (liveChunkMode ?? .automatic).seconds
+    }
+    public var visibleCaptionCount: Int { min(8, max(1, captionSentenceCount ?? 3)) }
+
     public init() {}
 
     public var nemotronModel: NemotronModel {
@@ -241,6 +256,8 @@ public struct TranscriptSegment: Codable, Equatable, Identifiable, Sendable {
     public var text: String
     public var translation: String?
     public var translationError: LocalizedText?
+    public var translationIsProvisional: Bool?
+    public var translationSource: String?
     public var estimated = false
     public init(start: Double, end: Double, text: String, estimated: Bool = false) {
         self.start = start; self.end = end; self.text = text; self.estimated = estimated
@@ -294,6 +311,9 @@ public func timestamp(_ seconds: Double) -> String {
 public struct AudioChunk: Sendable {
     public var samples: [Float]
     public var start: Double
+    public var containsSpeech: Bool
     public var duration: Double { Double(samples.count) / 16_000 }
-    public init(samples: [Float], start: Double) { self.samples = samples; self.start = start }
+    public init(samples: [Float], start: Double, containsSpeech: Bool = true) {
+        self.samples = samples; self.start = start; self.containsSpeech = containsSpeech
+    }
 }

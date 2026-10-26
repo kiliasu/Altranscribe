@@ -80,9 +80,15 @@ struct QueuedFile: Identifiable {
     private let capture = AudioCapture()
     private var cloudSpeech: CloudSpeechSession?
     private var work: Task<Void, Never>?
-    private var translationWork: Task<Void, Never>?
-    private var translationQueue: [TranscriptSegment] = []
-    private var translatingID: UUID?
+    private var translationTasks: [UUID: Task<Void, Never>] = [:]
+    private struct TranslationJob {
+        var segment: TranscriptSegment
+        var provisional: Bool
+    }
+    private var translationQueue: [TranslationJob] = []
+    private var draftTranslation: Task<Void, Never>?
+    private var partialID: UUID?
+    private var lastDraftTranslation = Date.distantPast
     private var discard = false
     private var deferredSave: Task<Void, Never>?
     private var activity: NSObjectProtocol?
@@ -112,6 +118,10 @@ struct QueuedFile: Identifiable {
         guard phase == .recording || phase == .paused || phase == .finishing,
               let record = activeRecord, record.source != .file else { return nil }
         return record
+    }
+    var captionSegments: [TranscriptSegment] { Array((captionRecord?.segments ?? []).suffix(settings.visibleCaptionCount)) }
+    func isTranslationPending(_ id: UUID) -> Bool {
+        translationTasks[id] != nil || translationQueue.contains { $0.segment.id == id }
     }
     var currentCaption: TranscriptSegment? { captionRecord?.segments.last }
     var currentCaptionTranslation: TranscriptSegment? { captionRecord?.segments.last { $0.translation != nil } }
@@ -219,12 +229,12 @@ struct QueuedFile: Identifiable {
             }
         }
         if configuration.speechProvider == .whisper {
-            try await whisper.load(model: configuration.effectiveModelPath, useGPU: configuration.useGPU)
+            try await whisper.load(model: configuration.effectiveModelPath, useGPU: configuration.useGPU, live: live)
         } else if configuration.speechProvider == .nemotron {
             let model = configuration.nemotronModel
-            try await nemotron.load(model: model, directory: model.directory(in: paths.models), language: configuration.recognitionLanguage)
+            try await nemotron.load(model: model, directory: model.directory(in: paths.models), language: configuration.recognitionLanguage, live: live)
         } else if configuration.speechProvider == .fluidAudio {
-            try await fluidAudio.load(model: configuration.fluidAudioModel, models: paths.models)
+            try await fluidAudio.load(model: configuration.fluidAudioModel, models: paths.models, live: live)
         } else if configuration.speechProvider == .appleSpeech {
             try await appleSpeech.load(locale: configuration.appleSpeechLocale)
         } else {
@@ -236,8 +246,8 @@ struct QueuedFile: Identifiable {
         return (speechKey, textKey)
     }
 
-    private func beginActivity() {
-        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: L("Transcribing audio"))
+    private func beginActivity(live: Bool = false) {
+        activity = ProcessInfo.processInfo.beginActivity(options: live ? [.userInitiated, .latencyCritical, .idleSystemSleepDisabled] : [.userInitiated, .idleSystemSleepDisabled], reason: L("Transcribing audio"))
     }
     private func endActivity() {
         if let activity { ProcessInfo.processInfo.endActivity(activity); self.activity = nil }
@@ -271,8 +281,9 @@ struct QueuedFile: Identifiable {
         let source = source
         phase = .preparing; status = LocalizedText("Preparing…")
         elapsed = 0; meter = 0; discard = false
-        beginActivity()
-        work = Task { [self] in
+        lastDraftTranslation = .distantPast; partialID = nil
+        beginActivity(live: true)
+        work = Task(priority: .userInitiated) { [self] in
             var recordID: UUID?
             var saved = false
             do {
@@ -292,8 +303,16 @@ struct QueuedFile: Identifiable {
                     cloudSpeech = speech
                     try await speech.start()
                 }
-                let chunkSeconds = configuration.usesCloudLive ? 0.1 : configuration.speechProvider == .nemotron ? 0.32 : 8
-                let chunks = try await capture.start(source: source, chunkSeconds: chunkSeconds) { [weak self] level, duration in
+                if configuration.speechProvider == .appleSpeech {
+                    try await appleSpeech.startLive(vocabulary: configuration.vocabulary, onUpdate: { [weak self] update in
+                        try await self?.saveSegments(update.finalized, partial: update.partial, recordID: id,
+                                                     configuration: configuration, textKey: keys.textKey)
+                    }, onFailure: { [weak self] in await self?.capture.stop() })
+                }
+                status = LocalizedText("Starting audio capture…")
+                let chunks = try await capture.start(source: source, chunkSeconds: configuration.liveChunkSeconds,
+                    automaticChunks: configuration.usesBatchLiveAudio && (configuration.liveChunkMode ?? .automatic) == .automatic,
+                    adaptiveGain: configuration.adaptiveInputGain ?? true, voiceProcessing: configuration.microphoneVoiceProcessing ?? false) { [weak self] level, duration in
                     Task { @MainActor in
                         guard let self, self.phase == .recording else { return }
                         self.meter = level; self.elapsed = duration
@@ -304,9 +323,11 @@ struct QueuedFile: Identifiable {
                 for try await chunk in chunks {
                     try Task.checkCancellation()
                     if let cloudSpeech { try await cloudSpeech.accept(chunk) }
+                    else if configuration.speechProvider == .appleSpeech { try await appleSpeech.acceptLive(chunk) }
                     else { try await process(chunk, recordID: id, configuration: configuration, keys: keys) }
                 }
                 phase = .finishing
+                if configuration.speechProvider == .appleSpeech { try await appleSpeech.finishLive() }
                 if let cloudSpeech, try await !cloudSpeech.finish(), let index = records.firstIndex(where: { $0.id == id }) {
                     records[index].error = await cloudSpeech.warning?.message
                         ?? LocalizedText("The preview translation service did not confirm the final output. Review the last sentence.")
@@ -321,8 +342,14 @@ struct QueuedFile: Identifiable {
             }
             await capture.stop()
             await cloudSpeech?.cancel(); cloudSpeech = nil
-            translationWork?.cancel()
-            await translationWork?.value
+            await drainTranslations(cancel: true)
+            if let recordID, let index = records.firstIndex(where: { $0.id == recordID }) {
+                for line in records[index].segments.indices where records[index].segments[line].translationIsProvisional == true {
+                    records[index].segments[line].translation = nil
+                    records[index].segments[line].translationIsProvisional = nil
+                    records[index].segments[line].translationSource = nil
+                }
+            }
             await whisper.unload()
             await nemotron.unload()
             await fluidAudio.unload()
@@ -349,12 +376,13 @@ struct QueuedFile: Identifiable {
     func cancel(discardRecording: Bool = false) {
         discard = discardRecording
         work?.cancel()
-        translationWork?.cancel()
+        translationTasks.values.forEach { $0.cancel() }
         status = LocalizedText("Stopping…")
         Task { await cloudSpeech?.cancel(); await capture.stop() }
     }
 
     private func process(_ chunk: AudioChunk, recordID: UUID, configuration: AppSettings, keys: (speechKey: String, textKey: String)) async throws {
+        if configuration.usesBatchLiveAudio && !configuration.speechProvider.isLocal && !chunk.containsSpeech { return }
         let segments: [TranscriptSegment]
         var partial: TranscriptSegment?
         if configuration.speechProvider == .whisper {
@@ -378,6 +406,10 @@ struct QueuedFile: Identifiable {
                               recordID: UUID, configuration: AppSettings, textKey: String) async throws {
         try Task.checkCancellation()
         guard let index = records.firstIndex(where: { $0.id == recordID }) else { return }
+        if let partial { partialID = partial.id }
+        if segments.contains(where: { $0.id == partialID }) {
+            partialID = nil; draftTranslation?.cancel()
+        }
         var changed = false
         for segment in segments + (partial.map { [$0] } ?? []) {
             if segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
@@ -389,6 +421,14 @@ struct QueuedFile: Identifiable {
             }
             if let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) {
                 if records[index].segments[line].text != segment.text || records[index].segments[line].end != segment.end {
+                    let old = records[index].segments[line]
+                    if translationText(old.text) != translationText(segment.text),
+                       old.translationIsProvisional != true || !translationText(segment.text).hasPrefix(translationText(old.translationSource ?? old.text)) {
+                        records[index].segments[line].translation = nil
+                        records[index].segments[line].translationError = nil
+                        records[index].segments[line].translationIsProvisional = nil
+                        records[index].segments[line].translationSource = nil
+                    }
                     records[index].segments[line].text = segment.text
                     records[index].segments[line].end = segment.end
                     changed = true
@@ -409,7 +449,8 @@ struct QueuedFile: Identifiable {
             for segment in segments {
                 try Task.checkCancellation()
                 guard let line = records[index].segments.first(where: { $0.id == segment.id }),
-                      line.translation == nil, line.translationError == nil else { continue }
+                      line.translation == nil || line.translationIsProvisional == true,
+                      line.translationError == nil else { continue }
                 if records[index].source == .file {
                     if fileRun?.recordID == recordID { fileRun?.stage = .translating }
                     try await translateSegment(line, recordID: recordID, configuration: configuration, textKey: textKey)
@@ -417,10 +458,29 @@ struct QueuedFile: Identifiable {
                     try enqueueTranslation(line, recordID: recordID, configuration: configuration, textKey: textKey)
                 }
             }
+            if let partial, records[index].source != .file, configuration.speechProvider == .appleSpeech,
+               configuration.textProvider != .gemini {
+                scheduleDraftTranslation(partial.id, recordID: recordID, configuration: configuration, textKey: textKey)
+            }
         }
     }
 
-    private func translateSegment(_ segment: TranscriptSegment, recordID: UUID, configuration: AppSettings, textKey: String) async throws {
+    private func scheduleDraftTranslation(_ id: UUID, recordID: UUID, configuration: AppSettings, textKey: String) {
+        guard draftTranslation == nil else { return }
+        draftTranslation = Task(priority: .userInitiated) {
+            defer { draftTranslation = nil }
+            do {
+                try await Task.sleep(for: .seconds(max(0.6, 4 - Date().timeIntervalSince(lastDraftTranslation))))
+                guard partialID == id, let line = records.first(where: { $0.id == recordID })?.segments.first(where: { $0.id == id }),
+                      line.text.count >= 8, line.translationSource != line.text else { return }
+                lastDraftTranslation = .now
+                try enqueueTranslation(line, recordID: recordID, configuration: configuration, textKey: textKey, provisional: true)
+            } catch is CancellationError { }
+            catch { self.error = LocalizedText(error: error) }
+        }
+    }
+
+    private func translateSegment(_ segment: TranscriptSegment, recordID: UUID, configuration: AppSettings, textKey: String, provisional: Bool = false) async throws {
         guard let record = records.first(where: { $0.id == recordID }) else { return }
         let context = record.segments.filter { $0.start < segment.start }.suffix(3).map(\.text).joined(separator: "\n")
         var translation: String?
@@ -432,15 +492,25 @@ struct QueuedFile: Identifiable {
         try Task.checkCancellation()
         guard let index = records.firstIndex(where: { $0.id == recordID }),
               let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) else { return }
+        let current = translationText(records[index].segments[line].text), requested = translationText(segment.text)
+        guard current == requested || (provisional && current.hasPrefix(requested)) else { return }
+        // A draft failure must not prevent the eventual final translation.
+        if provisional && failure != nil { return }
         records[index].segments[line].translation = translation
         records[index].segments[line].translationError = failure
+        records[index].segments[line].translationIsProvisional = provisional ? true : nil
+        records[index].segments[line].translationSource = provisional ? segment.text : nil
         try store.save(records[index])
     }
 
-    private func enqueueTranslation(_ segment: TranscriptSegment, recordID: UUID, configuration: AppSettings, textKey: String) throws {
-        guard translatingID != segment.id, !translationQueue.contains(where: { $0.id == segment.id }) else { return }
+    private func enqueueTranslation(_ segment: TranscriptSegment, recordID: UUID, configuration: AppSettings, textKey: String, provisional: Bool = false) throws {
+        if let queued = translationQueue.firstIndex(where: { $0.segment.id == segment.id }) {
+            translationQueue[queued] = TranslationJob(segment: segment, provisional: provisional)
+            return
+        }
         // Text-service latency must not fill the audio queue or stop recognition.
         guard translationQueue.count < 8 else {
+            if provisional { return }
             if let index = records.firstIndex(where: { $0.id == recordID }),
                let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) {
                 records[index].segments[line].translationError = LocalizedText("Translation is falling behind. The original text was saved; translate it later from Library.")
@@ -448,23 +518,43 @@ struct QueuedFile: Identifiable {
             }
             return
         }
-        translationQueue.append(segment)
+        translationQueue.append(TranslationJob(segment: segment, provisional: provisional))
         pendingTranslations += 1
-        guard translationWork == nil else { return }
-        translationWork = Task {
-            defer {
-                translationQueue.removeAll(); translatingID = nil
-                pendingTranslations = 0; translationWork = nil
-            }
-            while !translationQueue.isEmpty, !Task.isCancelled {
-                let next = translationQueue.removeFirst()
-                translatingID = next.id
-                do { try await translateSegment(next, recordID: recordID, configuration: configuration, textKey: textKey) }
-                catch is CancellationError { break }
-                catch { self.error = LocalizedText(error: error); cancel(); break }
-                pendingTranslations -= 1
+        startTranslations(recordID: recordID, configuration: configuration, textKey: textKey)
+    }
+
+    private func startTranslations(recordID: UUID, configuration: AppSettings, textKey: String) {
+        // Keep Gemini and the shared on-device model serial; other text services get two bounded lanes.
+        let limit = [.apple, .gemini].contains(configuration.textProvider) ? 1 : 2
+        while translationTasks.count < limit,
+              let index = translationQueue.firstIndex(where: { translationTasks[$0.segment.id] == nil }) {
+            let next = translationQueue.remove(at: index)
+            translationTasks[next.segment.id] = Task(priority: .userInitiated) {
+                defer {
+                    translationTasks[next.segment.id] = nil
+                    pendingTranslations = translationQueue.count + translationTasks.count
+                    if !Task.isCancelled { startTranslations(recordID: recordID, configuration: configuration, textKey: textKey) }
+                }
+                do { try await translateSegment(next.segment, recordID: recordID, configuration: configuration, textKey: textKey, provisional: next.provisional) }
+                catch is CancellationError { }
+                catch { self.error = LocalizedText(error: error); cancel() }
             }
         }
+    }
+
+    private func translationText(_ text: String) -> String {
+        text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
+    }
+
+    private func drainTranslations(cancel: Bool = false) async {
+        draftTranslation?.cancel(); await draftTranslation?.value
+        draftTranslation = nil; partialID = nil
+        if cancel {
+            translationQueue.removeAll()
+            translationTasks.values.forEach { $0.cancel() }
+        }
+        while let task = translationTasks.values.first { await task.value }
+        pendingTranslations = 0
     }
 
     func finishRecord(_ id: UUID, configuration: AppSettings, textKey: String, summaryLanguage: String = InterfaceLanguage.current.speechCode) async throws {
@@ -473,7 +563,7 @@ struct QueuedFile: Identifiable {
             let tail = try await nemotron.finish()
             try await saveSegments(tail.finalized, recordID: id, configuration: configuration, textKey: textKey)
         }
-        await translationWork?.value
+        await drainTranslations()
         try Task.checkCancellation()
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
         if configuration.summarize, !records[index].segments.isEmpty {

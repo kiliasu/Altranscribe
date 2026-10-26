@@ -24,7 +24,7 @@ private final class ResponseGate: @unchecked Sendable {
     private var requests: [WorkflowProtocol] = []
     func receive(_ request: WorkflowProtocol) { lock.withLock { requests.append(request) } }
     var count: Int { lock.withLock { requests.count } }
-    func reply(_ text: String) { lock.withLock { requests.first }?.reply(text) }
+    func reply(_ text: String, index: Int = 0) { lock.withLock { requests.indices.contains(index) ? requests[index] : nil }?.reply(text) }
     var last: WorkflowProtocol? { lock.withLock { requests.last } }
 }
 
@@ -91,23 +91,69 @@ private final class ResponseGate: @unchecked Sendable {
         WorkflowProtocol.handler = { backlog.receive($0) }
         try await app.saveSegments([TranscriptSegment(start: 6, end: 7, text: "Waiting")], recordID: record.id, configuration: settings, textKey: "")
         try await waitUntil { backlog.count == 1 }
-        WorkflowProtocol.handler = { $0.reply("已翻译") }
         for i in 0..<10 {
             let segment = TranscriptSegment(start: Double(i + 8), end: Double(i + 9), text: "Retain original \(i)")
             try await app.saveSegments([segment], recordID: record.id, configuration: settings, textKey: "")
         }
-        XCTAssertEqual(app.pendingTranslations, 9, "Keep a bounded backlog of eight waiting translations plus the active one")
+        try await waitUntil { backlog.count == 2 }
+        XCTAssertEqual(app.pendingTranslations, 10, "Keep two active translations and at most eight waiting")
+        WorkflowProtocol.handler = { $0.reply("已翻译") }
         XCTAssertNotNil(app.records.first?.segments.last?.translationError)
         XCTAssertEqual(app.records.first?.segments.last?.text, "Retain original 9")
         let finishingSettings = settings
         let finish = Task { try await app.finishRecord(record.id, configuration: finishingSettings, textKey: "") }
         await Task.yield()
         XCTAssertEqual(app.records.first?.status, .inProgress, "Stop and Save must wait for pending translations")
+        backlog.reply("先完成的第二句", index: 1)
+        try await waitUntil { app.records.first?.segments.contains(where: { $0.translation == "先完成的第二句" }) == true }
+        XCTAssertEqual(app.records.first?.status, .inProgress, "A later translation must arrive while the first is still pending")
         backlog.reply("等待")
         try await finish.value
         XCTAssertEqual(app.pendingTranslations, 0)
         XCTAssertEqual(app.records.first?.status, .completed)
         XCTAssertEqual(try app.store.load().records.first?.segments, app.records.first?.segments)
+    }
+
+    func testApplePartialTranslationRemainsProvisionalUntilFinal() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root); WorkflowProtocol.handler = nil }
+        let app = app(at: root)
+        let record = TranscriptRecord(title: "Draft", source: .microphone, language: "en", speechModel: "Apple SpeechTranscriber")
+        app.records = [record]
+        var settings = AppSettings(); settings.speechProvider = .appleSpeech; settings.translate = true; settings.textModel = "test-model"
+        WorkflowProtocol.handler = { $0.reply("初步译文") }
+        var line = TranscriptSegment(start: 0, end: 2, text: "This is an early phrase")
+        try await app.saveSegments([], partial: line, recordID: record.id, configuration: settings, textKey: "")
+        try await waitUntil { app.records[0].segments[0].translationIsProvisional == true }
+        XCTAssertNil(try app.store.load().records.first?.segments.first?.translation, "Do not persist a draft as the final translation")
+        WorkflowProtocol.handler = { $0.reply("完整译文") }
+        line.text += " followed by the final words."
+        try await app.saveSegments([line], recordID: record.id, configuration: settings, textKey: "")
+        try await app.finishRecord(record.id, configuration: settings, textKey: "")
+        XCTAssertEqual(app.records[0].segments[0].translation, "完整译文")
+        XCTAssertNil(app.records[0].segments[0].translationIsProvisional)
+        XCTAssertEqual(try app.store.load().records.first?.segments.first?.translation, "完整译文")
+    }
+
+    func testRevisedLiveTextCannotReceiveAnOlderTranslation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root); WorkflowProtocol.handler = nil }
+        let app = app(at: root)
+        let record = TranscriptRecord(title: "Revision", source: .microphone, language: "en", speechModel: "whisper")
+        app.records = [record]
+        var settings = AppSettings(); settings.translate = true; settings.textModel = "test-model"
+        let gate = ResponseGate(); WorkflowProtocol.handler = { gate.receive($0) }
+        var line = TranscriptSegment(start: 0, end: 2, text: "The first draft")
+        try await app.saveSegments([line], recordID: record.id, configuration: settings, textKey: "")
+        try await waitUntil { gate.count == 1 }
+        line.text = "The corrected final sentence"
+        try await app.saveSegments([line], recordID: record.id, configuration: settings, textKey: "")
+        gate.reply("旧译文")
+        try await waitUntil { gate.count == 2 }
+        XCTAssertNil(app.records[0].segments[0].translation, "Stale text must never overwrite the correction")
+        gate.reply("修正后的译文", index: 1)
+        try await app.finishRecord(record.id, configuration: settings, textKey: "")
+        XCTAssertEqual(app.records[0].segments[0].translation, "修正后的译文")
     }
 
     func testRetranslationIsAtomicAndUsesRecordedLanguage() async throws {
@@ -191,7 +237,14 @@ private final class ResponseGate: @unchecked Sendable {
             app.phase = phase
             XCTAssertEqual(app.currentCaption?.text, "Last words of the session", "\(phase)")
         }
+        app.records[0].segments += (1...4).map { TranscriptSegment(start: Double($0), end: Double($0 + 1), text: "Sentence \($0)") }
+        XCTAssertEqual(app.captionSegments.map(\.text), ["Sentence 2", "Sentence 3", "Sentence 4"])
+        app.settings.captionSentenceCount = 1
+        XCTAssertEqual(app.captionSegments.map(\.text), ["Sentence 4"])
+        app.settings.captionSentenceCount = 8
+        XCTAssertEqual(app.captionSegments.count, 5)
         app.phase = .idle
+        XCTAssertTrue(app.captionSegments.isEmpty)
         XCTAssertNil(app.currentCaption, "An ended session must not linger in idle captions")
         var file = TranscriptRecord(title: "Lecture", source: .file, language: "en", speechModel: "whisper")
         file.segments = [TranscriptSegment(start: 0, end: 1, text: "File text")]

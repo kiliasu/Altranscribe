@@ -14,9 +14,10 @@ private final class SegmentCollector {
 
 public actor NativeWhisper {
     private var handle: WhisperHandle?
+    private var liveTail: LiveBatchTail?
     public init() {}
 
-    public func load(model: String, useGPU: Bool) throws {
+    public func load(model: String, useGPU: Bool, live: Bool = false) throws {
         try Task.checkCancellation()
         guard FileManager.default.fileExists(atPath: model), !model.isEmpty else {
             throw AppError("Download or select a Whisper model in Settings first.")
@@ -25,13 +26,15 @@ public actor NativeWhisper {
             throw AppError("Could not load the Whisper model. Check the file, or try disabling Metal.")
         }
         handle = WhisperHandle(pointer)
+        liveTail = live ? LiveBatchTail() : nil
         try Task.checkCancellation()
     }
 
     public func transcribe(_ chunk: AudioChunk, language: String, vocabulary: String) async throws -> [TranscriptSegment] {
         try Task.checkCancellation()
         guard let handle else { throw AppError("The local model is not loaded.") }
-        guard !chunk.samples.isEmpty else { return [] }
+        let chunk = liveTail?.input(chunk) ?? chunk
+        guard chunk.containsSpeech, !chunk.samples.isEmpty else { return [] }
         // Avoid generating text for digital silence without filtering actual words.
         let energy = chunk.samples.reduce(Float.zero) { $0 + $1 * $1 } / Float(chunk.samples.count)
         if energy < 0.00000001 { return [] }
@@ -52,15 +55,16 @@ public actor NativeWhisper {
         } onCancel: { handle.cancel() }
         try Task.checkCancellation()
         guard result == 0 else { throw AppError("Local transcription failed. Earlier text was retained.") }
-        return collector.segments.map {
+        let segments = collector.segments.map {
             var segment = $0
             segment.start = chunk.start + min(chunk.duration, max(0, segment.start))
             segment.end = chunk.start + min(chunk.duration, max(0, segment.end))
             return segment
         }
+        return liveTail?.results(segments) ?? segments
     }
 
-    public func unload() { handle = nil }
+    public func unload() { handle = nil; liveTail = nil }
 }
 
 public struct AudioChunker: Sendable {

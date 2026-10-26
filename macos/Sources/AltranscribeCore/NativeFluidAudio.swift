@@ -28,9 +28,10 @@ public enum FluidAudioModel: String, CaseIterable, Identifiable, Sendable {
 
 public actor NativeFluidAudio {
     private var manager: AsrManager?
+    private var liveTail: LiveBatchTail?
     public init() {}
 
-    public func load(model: FluidAudioModel, models: URL) async throws {
+    public func load(model: FluidAudioModel, models: URL, live: Bool = false) async throws {
         try Task.checkCancellation()
         guard model.isInstalled(in: models) else {
             throw AppError("Download a FluidAudio model in Settings first.")
@@ -38,13 +39,15 @@ public actor NativeFluidAudio {
         let manager = AsrManager()
         try await manager.loadModels(model.load(from: models))
         self.manager = manager
+        liveTail = live ? LiveBatchTail() : nil
         try Task.checkCancellation()
     }
 
     public func transcribe(_ chunk: AudioChunk) async throws -> [TranscriptSegment] {
         try Task.checkCancellation()
         guard let manager else { throw AppError("The local model is not loaded.") }
-        guard !chunk.samples.isEmpty,
+        let chunk = liveTail?.input(chunk) ?? chunk
+        guard chunk.containsSpeech, !chunk.samples.isEmpty,
               chunk.samples.reduce(Float.zero, { $0 + $1 * $1 }) / Float(chunk.samples.count) >= 0.00000001 else { return [] }
         // Each capture/file chunk is independent; decoder state must not leak between files.
         var state = try TdtDecoderState()
@@ -55,11 +58,12 @@ public actor NativeFluidAudio {
         let timings = result.tokenTimings ?? []
         let start = min(chunk.duration, max(0, timings.first?.startTime ?? 0))
         let end = min(chunk.duration, max(start, timings.last?.endTime ?? chunk.duration))
-        return [TranscriptSegment(start: chunk.start + start, end: chunk.start + end, text: text, estimated: timings.isEmpty)]
+        let segments = [TranscriptSegment(start: chunk.start + start, end: chunk.start + end, text: text, estimated: timings.isEmpty)]
+        return liveTail?.results(segments) ?? segments
     }
 
     public func unload() async {
         await manager?.cleanup()
-        manager = nil
+        manager = nil; liveTail = nil
     }
 }
