@@ -268,7 +268,11 @@ struct SessionInspector: View {
             } header: {
                 Text(L("Text Processing"))
             } footer: {
-                if model.settings.translate || model.settings.summarize {
+                if model.destination != .files && model.settings.usesDirectSpeechTranslation {
+                    Label(model.settings.liveSpeechModel, systemImage: "waveform")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if (model.settings.translate && !(model.destination != .files && model.settings.usesDirectSpeechTranslation)) || model.settings.summarize {
                     Label(model.settings.effectiveTextModel.isEmpty ? L("Configure a text model in Settings.") : model.settings.effectiveTextModel,
                           systemImage: model.settings.effectiveTextModel.isEmpty ? "exclamationmark.triangle" : "character.bubble")
                         .font(.caption)
@@ -283,7 +287,9 @@ struct SessionInspector: View {
                 } header: {
                     Text(L("Vocabulary"))
                 } footer: {
-                    Text(L("Helps recognize names and terms without rewriting the original text."))
+                    Text(model.destination != .files && model.settings.usesDirectSpeechTranslation ?
+                         L("Vocabulary hints apply to transcription, not direct speech translation.") :
+                         L("Helps recognize names and terms without rewriting the original text."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

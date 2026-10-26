@@ -244,6 +244,27 @@ struct SettingsView: View {
             } else {
                 Section(L("Service")) {
                     if model.settings.speechProvider == .compatible {
+                        DisclosureGroup(L("Endpoint Override")) {
+                            TextField(L("API Base URL"), text: $model.settings.speechBaseURL)
+                            Button(L("Use OpenAI Endpoint")) { model.settings.speechBaseURL = "https://api.openai.com/v1" }
+                            Text(L("Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    CredentialEditor(endpoint: model.settings.speechEndpoint).id(model.settings.speechEndpoint)
+                }
+                if model.settings.usesCloudLive {
+                    Section(L("Live Speech")) {
+                        Toggle(L("Translate directly from audio"), isOn: Binding(get: { model.settings.cloudDirectTranslation ?? true },
+                                                                              set: { model.settings.cloudDirectTranslation = $0 }))
+                        LabeledContent(L("Transcription"), value: model.settings.speechProvider == .gemini ? "gemini-3.5-transcribe-live" : "gpt-live-transcribe")
+                        LabeledContent(L("Direct Translation"), value: model.settings.speechProvider == .gemini ? "gemini-3.5-live-translate-preview" : "gpt-realtime-translate")
+                        Text(L("When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section(L("File Transcription")) {
+                    if model.settings.speechProvider == .compatible {
                         ModelNamePicker(presets: OpenAITranscriptionModel.allCases.map(\.rawValue),
                                         selection: $model.settings.speechModel, overrideName: $model.settings.speechModelOverride)
                         if model.settings.openAITranscriptionModel?.isDeprecated == true {
@@ -254,20 +275,22 @@ struct SettingsView: View {
                             Text(L("This model does not accept vocabulary hints. This app uses its text output without speaker labels."))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        DisclosureGroup(L("Endpoint Override")) {
-                            TextField(L("API Base URL"), text: $model.settings.speechBaseURL)
-                            Button(L("Use OpenAI Endpoint")) { model.settings.speechBaseURL = "https://api.openai.com/v1" }
-                            Text(L("Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio."))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
                     } else {
-                        TextField(L("Model"), text: $model.settings.geminiSpeechModel)
+                        Picker(L("File Transcription Model"), selection: Binding(get: { model.settings.effectiveGeminiSpeechModel },
+                                                                                set: { model.settings.geminiSpeechModel = $0 })) {
+                            Text("gemini-3.5-transcribe").tag("gemini-3.5-transcribe")
+                        }
                     }
-                    CredentialEditor(endpoint: model.settings.speechEndpoint).id(model.settings.speechEndpoint)
                 }
                 Section {
-                    Text(L("Live audio is sent in approximately 8-second chunks; files in 20-second chunks. Timestamps are estimates. Paid inference requests are not retried automatically."))
+                    Text(model.settings.usesCloudLive ?
+                         L("Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically.") :
+                         L("Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files."))
                         .font(.caption).foregroundStyle(.secondary)
+                    if model.settings.speechProvider == .gemini {
+                        Text(L("Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             if model.settings.supportsVocabulary {
@@ -313,7 +336,11 @@ struct SettingsView: View {
                     }
                 }
                 ModelNamePicker(presets: textModels, selection: $model.settings.textModel, overrideName: $model.settings.textModelOverride)
-                Text(L("Translation and summary use the same text model. For local services, fetch the installed models or use an override."))
+                if model.settings.textProvider == .anthropic {
+                    TextField(L("Workspace ID (optional)"), text: Binding(get: { model.settings.anthropicWorkspaceID ?? "" },
+                                                                         set: { model.settings.anthropicWorkspaceID = $0 }))
+                }
+                Text(L("File translation and summaries use this text model. Live direct speech translation uses the speech service. For local services, fetch installed models or use an override."))
                     .font(.caption).foregroundStyle(.secondary)
                 CredentialEditor(endpoint: model.settings.textEndpoint).id(model.settings.textEndpoint)
             }
@@ -372,11 +399,12 @@ struct SettingsView: View {
         loadingModels = true; connectionStatus = nil
         let endpoint = model.settings.textEndpoint
         let provider = model.settings.textProvider
+        let workspace = model.settings.anthropicWorkspaceID
         Task {
             defer { loadingModels = false }
             do {
                 let key = try KeychainStore.read(endpoint: endpoint)
-                let fetched = try await APIClient().models(endpoint: endpoint, provider: provider, key: key)
+                let fetched = try await APIClient().models(endpoint: endpoint, provider: provider, key: key, workspace: workspace)
                 guard endpoint == model.settings.textEndpoint, provider == model.settings.textProvider else { return }
                 models = fetched
                 connectionStatus = LocalizedText("Models found: %@", String(models.count))
