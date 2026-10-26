@@ -4,12 +4,21 @@
 
 环境：macOS 27.0.1、Xcode 27.0、Swift 6.4、Apple M3 Pro。部署目标 macOS 26.0，交付包为 arm64。
 
+## 文本模型预选与最终交互检查（2026-10-25）
+
+- 按 OpenAI、Google、Anthropic 官方目录增加文本预选，翻译与摘要共用模型，名称 override 单独保存。Ollama / 自定义端点继续获取服务端模型列表；切换服务清除旧列表并选择相应服务的预选，旧配置不会在启动时被强制替换。
+- 仅新增 **1 项文本模型请求 / 持久化回归**：覆盖三种服务的 override 请求路由、认证头、有效模型名称、关闭 override 后恢复预选，以及缺少新可选字段的旧设置解码。此轮共涉及 4 项不同测试（另 3 项为已有的 Tiny 真模型、本地化和转录请求回归），没有运行完整测试集。首次本地化检查发现一条遗漏说明，补齐后单独重跑通过。
+- 最终打包应用实际点击验证：Whisper 目录与本机 Tiny 选用；OpenAI 6 个转录预选；选择 diarize 后词汇输入隐藏，override 为 `gpt-transcribe` 后恢复；关闭 override 回到原预选。文本页验证 OpenAI / Gemini 列表、预选切换、override 往返及切换 Anthropic 后自动使用该服务的预选。设置顶栏和分组卡片保持原生布局。
+- 测试结束恢复原 `settings.json`（与备份逐字节一致），再次打开最终应用，原语音引擎、5 条文稿和翻译 / 摘要开关正常读取。本机 Tiny 的 SHA-256 与原包一致；没有播放音频、采集新录音或调用付费 API。API 验证限于请求与模拟响应，未验证账户实际模型权限。
+- 最终 Release 构建、严格签名及 ZIP 完整性通过，压缩包内 30 个应用文件与实际运行的 `.app` 一致。ZIP 从 `86,898,683` 字节减至 `17,169,868` 字节；不再带模型权重。二进制 SHA-256：`a11ba5ba9db7955e83217ce6df897c6dd807eeefc9577a7f042020903e08f0f1`。
+- 日志与设置备份：`.build/model-presets-2026-10-25/`，包括 `text-model-tests.log`、`localization-final-tests.log`、`final-package.log`。所有提交和应用包仅保存在本地。
+
 ## OpenAI 转录模型预选（2026-10-25）
 
 - 核对 [官方文件转录指南](https://developers.openai.com/api/docs/guides/speech-to-text) 和 [接口参数](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)，并参照 Flutter `cloud_file_engine.dart` 的 `gpt-transcribe` / `languages[]` 用法。文件模型与 Realtime 模型分开，保留分段请求方式。
 - 增加 6 个文件转录预选、独立模型名称 override 与服务地址覆盖入口。保留旧设置的 provider 编码与自定义地址；新设置默认 `gpt-transcribe`。界面按实际模型控制词汇输入，旧模型注明官方停用日期。
 - 扩展原有 **1 项 API 请求回归**，覆盖 6 个官方预选和未知本机模型 override：验证模型名称、语言字段、关键词 / prompt 的发送或省略、diarize 分块参数及结果时间戳；无效模型或词汇在请求发出前拒绝。另复用 1 项本地化检查，均通过。所有 API 响应均为 URLProtocol 替身，没有真实付费推理。
-- 日志：`.build/model-presets-2026-10-25/speech-api-tests.log`。最终界面和分发包将在文本模型预选完成后统一检查。
+- 日志：`.build/model-presets-2026-10-25/speech-api-tests.log`。最终界面和分发包已在文本模型预选完成后统一检查，见上节。
 
 ## 模型按需下载（2026-10-25）
 

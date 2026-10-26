@@ -269,10 +269,10 @@ struct SessionInspector: View {
                 Text(L("Text Processing"))
             } footer: {
                 if model.settings.translate || model.settings.summarize {
-                    Label(model.settings.textModel.isEmpty ? L("Configure a text model in Settings.") : model.settings.textModel,
-                          systemImage: model.settings.textModel.isEmpty ? "exclamationmark.triangle" : "character.bubble")
+                    Label(model.settings.effectiveTextModel.isEmpty ? L("Configure a text model in Settings.") : model.settings.effectiveTextModel,
+                          systemImage: model.settings.effectiveTextModel.isEmpty ? "exclamationmark.triangle" : "character.bubble")
                         .font(.caption)
-                        .foregroundStyle(model.settings.textModel.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(model.settings.effectiveTextModel.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
                 }
             }
             if model.settings.supportsVocabulary {

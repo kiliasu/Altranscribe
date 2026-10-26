@@ -66,7 +66,6 @@
 "Engine" = "Engine";
 "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline." = "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline.";
 "English · Default" = "English · Default";
-"Enter Manually" = "Enter Manually";
 "Enter a complete API URL without credentials, query parameters or a username." = "Enter a complete API URL without credentials, query parameters or a username.";
 "Enter a text model name in Settings." = "Enter a text model name in Settings.";
 "Export" = "Export";
@@ -111,7 +110,6 @@
 "Microphone" = "Microphone";
 "Model" = "Model";
 "Model Card & License" = "Model Card & License";
-"Model Name" = "Model Name";
 "Model checksum failed. The download was not installed." = "Model checksum failed. The download was not installed.";
 "Model download failed. Please try again." = "Model download failed. Please try again.";
 "Models found: %@" = "Models found: %@";
@@ -232,6 +230,7 @@
 "Translating %@/%@" = "Translating %@/%@";
 "Translating…" = "Translating…";
 "Translation" = "Translation";
+"Translation and summary use the same text model. For local services, fetch the installed models or use an override." = "Translation and summary use the same text model. For local services, fetch the installed models or use an override.";
 "Translation is falling behind. The original text was saved; translate it later from Library." = "Translation is falling behind. The original text was saved; translate it later from the transcript's menu.";
 "Translation or summary is enabled. Configure a text model in Settings first." = "Translation or summary is enabled. Configure a text model in Settings first.";
 "Turn sound into words" = "Turn sound into words";

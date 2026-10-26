@@ -302,11 +302,19 @@ struct SettingsView: View {
                     HStack {
                         Text(L("Presets")).foregroundStyle(.secondary)
                         Spacer()
-                        Button("Ollama") { model.settings.textBaseURL = "http://127.0.0.1:11434/v1"; model.settings.textModel = ""; models = [] }
-                        Button("OpenAI") { model.settings.textBaseURL = "https://api.openai.com/v1"; model.settings.textModel = "gpt-4.1-mini"; models = [] }
+                        Button("Ollama") {
+                            model.settings.textBaseURL = "http://127.0.0.1:11434/v1"
+                            model.settings.textModel = ""; model.settings.textModelOverride = nil; models = []
+                        }
+                        Button("OpenAI") {
+                            model.settings.textBaseURL = "https://api.openai.com/v1"
+                            model.settings.textModel = TextModelPresets.openAI[0]; model.settings.textModelOverride = nil; models = []
+                        }
                     }
                 }
-                TextField(L("Model Name"), text: $model.settings.textModel)
+                ModelNamePicker(presets: textModels, selection: $model.settings.textModel, overrideName: $model.settings.textModelOverride)
+                Text(L("Translation and summary use the same text model. For local services, fetch the installed models or use an override."))
+                    .font(.caption).foregroundStyle(.secondary)
                 CredentialEditor(endpoint: model.settings.textEndpoint).id(model.settings.textEndpoint)
             }
             Section(L("Available Models")) {
@@ -318,14 +326,6 @@ struct SettingsView: View {
                     }
                 }
                 .animation(Motion.quick, value: loadingModels)
-                if !models.isEmpty {
-                    Picker(L("Select Model"), selection: $model.settings.textModel) {
-                        if !models.contains(model.settings.textModel) {
-                            Text(model.settings.textModel.isEmpty ? L("Enter Manually") : model.settings.textModel).tag(model.settings.textModel)
-                        }
-                        ForEach(models, id: \.self) { Text($0).tag($0) }
-                    }
-                }
                 Text(L("Run Ollama locally with an installed text model. Online services use HTTPS; keys are saved separately for each API base URL. Fetching models does not run inference."))
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -333,6 +333,15 @@ struct SettingsView: View {
         .disabled(model.busy)
         .animation(Motion.content, value: models)
         .animation(Motion.content, value: model.settings.textProvider)
+        .onChange(of: model.settings.textEndpoint) { _, _ in models = []; connectionStatus = nil }
+        .onChange(of: model.settings.textProvider) { _, _ in
+            model.settings.textModel = model.settings.textModelPresets.first ?? ""
+            model.settings.textModelOverride = nil
+        }
+    }
+    private var textModels: [String] {
+        let presets = model.settings.textModelPresets
+        return presets + models.filter { !presets.contains($0) }
     }
     private var chunkedLocalNote: some View {
         Section {

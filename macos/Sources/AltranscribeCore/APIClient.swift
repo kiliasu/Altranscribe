@@ -140,7 +140,8 @@ public final class APIClient: Sendable {
     }
 
     public func complete(system: String, user: String, settings: AppSettings, key: String) async throws -> String {
-        guard !settings.textModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let model = settings.effectiveTextModel
+        guard !model.isEmpty else {
             throw AppError("Enter a text model name in Settings.")
         }
         var body: [String: Any]
@@ -149,13 +150,13 @@ public final class APIClient: Sendable {
         switch settings.textProvider {
         case .compatible:
             auth = "bearer"; path = "chat/completions"
-            body = ["model": settings.textModel, "messages": [["role": "system", "content": system], ["role": "user", "content": user]], "stream": false]
+            body = ["model": model, "messages": [["role": "system", "content": system], ["role": "user", "content": user]], "stream": false]
         case .gemini:
-            auth = "google"; path = "models/\(try modelComponent(settings.textModel)):generateContent"
+            auth = "google"; path = "models/\(try modelComponent(model)):generateContent"
             body = ["system_instruction": ["parts": [["text": system]]], "contents": [["parts": [["text": user]]]]]
         case .anthropic:
             auth = "anthropic"; path = "messages"
-            body = ["model": settings.textModel, "max_tokens": 4096, "system": system, "messages": [["role": "user", "content": user]]]
+            body = ["model": model, "max_tokens": 4096, "system": system, "messages": [["role": "user", "content": user]]]
         }
         let result = try await send(request(endpoint: settings.textEndpoint, path: path, key: key, auth: auth,
                                             body: JSONSerialization.data(withJSONObject: body)))

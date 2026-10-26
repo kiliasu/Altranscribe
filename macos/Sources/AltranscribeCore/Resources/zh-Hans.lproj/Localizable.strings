@@ -66,7 +66,6 @@
 "Engine" = "引擎";
 "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline." = "默认采用英语版。字幕随讲话更新，停顿后定稿；停止时会补齐最后一句。识别过程无需联网。";
 "English · Default" = "英语版 · 默认";
-"Enter Manually" = "手动输入";
 "Enter a complete API URL without credentials, query parameters or a username." = "请输入完整 API 地址，不含密钥、查询参数或用户名。";
 "Enter a text model name in Settings." = "请在设置中填写文本模型名称。";
 "Export" = "导出";
@@ -111,7 +110,6 @@
 "Microphone" = "麦克风";
 "Model" = "模型";
 "Model Card & License" = "模型说明与许可";
-"Model Name" = "模型名称";
 "Model checksum failed. The download was not installed." = "模型校验失败，未安装下载内容。";
 "Model download failed. Please try again." = "模型下载失败，请稍后重试。";
 "Models found: %@" = "找到 %@ 个模型";
@@ -232,6 +230,7 @@
 "Translating %@/%@" = "正在翻译 %@/%@";
 "Translating…" = "正在翻译…";
 "Translation" = "译文";
+"Translation and summary use the same text model. For local services, fetch the installed models or use an override." = "翻译和摘要共用此文本模型。本机服务可获取已安装模型，或使用自定义名称。";
 "Translation is falling behind. The original text was saved; translate it later from Library." = "翻译暂时跟不上，原文已保存；可稍后在该记录的菜单中翻译。";
 "Translation or summary is enabled. Configure a text model in Settings first." = "已开启翻译或摘要，请先在设置中填写文本模型。";
 "Turn sound into words" = "让声音成为文字";

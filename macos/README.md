@@ -71,6 +71,8 @@ OpenAI 音频转录提供原生模型预选，默认 `gpt-transcribe`，并保�
 
 按 [2026-10-25 核对的官方文档](https://developers.openai.com/api/docs/guides/speech-to-text)，`gpt-transcribe` 使用 `languages[]` 和逐条 `keywords[]`；旧模型使用 `language`，支持词汇提示时才发送 `prompt`。`gpt-4o-transcribe-diarize` 不发送提示词，使用 `chunking_strategy=auto` 和 JSON 文本结果，本应用不展示其说话人标记。旧模型 `whisper-1`、GPT-4o Transcribe / Mini / Diarize 仍列为兼容选项，界面注明官方计划于 **2027-02-26** 停用。Override 若匹配已知模型，也会采用对应参数；未知名称不发送词汇提示。
 
+翻译与摘要共用一个文本模型选择器，包含按服务划分的预选及独立名称 override。2026-10-25 核对的预选为 [OpenAI](https://developers.openai.com/api/docs/models) 的 GPT-6 Luna / GPT-6.1 Sol / GPT-6 Astra、[Gemini](https://ai.google.dev/gemini-api/docs/models) 的 3.5 Flash-Lite / 3.8 Flash / 4 Argon，以及 [Anthropic](https://platform.claude.com/docs/en/models/overview) 的 Haiku / Sonnet / Opus 5.5。Ollama 和其他自定义端点从「获取模型」列出该服务提供的名称，也可直接 override；不会把 OpenAI 预选套到本机服务。可用性仍取决于服务和账户权限。
+
 快捷键：导入 ⌘O；开始 ⇧⌘R；暂停/继续 ⇧⌘P；停止保存 ⇧⌘S；悬浮字幕 ⇧⌘C；实时 / 文件转写 ⌘1 / ⌘2；文字放大 / 缩小 / 默认大小 ⌘+ / ⌘− / ⌘0；转写选项 ⌃⌘I；删除所选记录 ⌫。
 
 ## 舍弃的范围与限制

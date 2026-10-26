@@ -65,6 +65,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var textProvider: TextProvider = .compatible
     public var textBaseURL = "http://127.0.0.1:11434/v1"
     public var textModel = ""
+    public var textModelOverride: String?
     public var sourceLanguage = "auto"
     public var targetLanguage = "zh"
     public var translate = false
@@ -109,6 +110,17 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case .compatible: textBaseURL
         case .gemini: "https://generativelanguage.googleapis.com/v1beta"
         case .anthropic: "https://api.anthropic.com/v1"
+        }
+    }
+    public var effectiveTextModel: String {
+        (textModelOverride ?? textModel).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    public var textModelPresets: [String] {
+        switch textProvider {
+        case .compatible:
+            URL(string: textBaseURL)?.host?.lowercased() == "api.openai.com" ? TextModelPresets.openAI : []
+        case .gemini: TextModelPresets.gemini
+        case .anthropic: TextModelPresets.anthropic
         }
     }
     public static var languages: [(String, String)] { [

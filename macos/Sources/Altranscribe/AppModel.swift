@@ -102,7 +102,7 @@ struct QueuedFile: Identifiable {
         var speechKey = ""
         var textKey = ""
         if configuration.translate || configuration.summarize {
-            guard !configuration.textModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard !configuration.effectiveTextModel.isEmpty else {
                 throw AppError("Translation or summary is enabled. Configure a text model in Settings first.")
             }
             let endpoint = try APIEndpoint(configuration.textEndpoint)

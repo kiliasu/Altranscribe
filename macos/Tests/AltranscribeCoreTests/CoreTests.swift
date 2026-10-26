@@ -175,6 +175,48 @@ final class APITests: XCTestCase, @unchecked Sendable {
             XCTFail("Truncated output must not be marked complete")
         } catch { XCTAssertTrue(error is AppError) }
     }
+    func testTextModelOverridesRouteToSelectedProviderAndPersist() async throws {
+        for provider in TextProvider.allCases {
+            var settings = AppSettings(); settings.textProvider = provider
+            settings.textBaseURL = "https://api.openai.com/v1"
+            settings.textModel = try XCTUnwrap(settings.textModelPresets.first)
+            let selected = try XCTUnwrap(settings.textModelPresets.last)
+            settings.textModelOverride = " \(selected) "
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+            XCTAssertEqual(restored, settings)
+            StubProtocol.handler = { request in
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: self.requestBody(request)) as? [String: Any])
+                switch provider {
+                case .compatible:
+                    XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/chat/completions")
+                    XCTAssertEqual(body["model"] as? String, selected)
+                    XCTAssertNil(body["temperature"])
+                    return (200, Data(#"{"choices":[{"finish_reason":"stop","message":{"content":"translation"}}]}"#.utf8))
+                case .gemini:
+                    XCTAssertEqual(request.url?.path, "/v1beta/models/\(selected):generateContent")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "x-goog-api-key"), "test-key")
+                    return (200, Data(#"{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"translation"}]}}]}"#.utf8))
+                case .anthropic:
+                    XCTAssertEqual(request.url?.absoluteString, "https://api.anthropic.com/v1/messages")
+                    XCTAssertEqual(body["model"] as? String, selected)
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "test-key")
+                    return (200, Data(#"{"stop_reason":"end_turn","content":[{"type":"text","text":"translation"}]}"#.utf8))
+                }
+            }
+            let output = try await client().translate("Hello", sourceLanguage: "en", context: "", settings: restored, key: "test-key")
+            XCTAssertEqual(output, "translation")
+            settings.textModelOverride = nil
+            XCTAssertEqual(settings.effectiveTextModel, settings.textModel)
+        }
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(AppSettings())) as? [String: Any])
+        old.removeValue(forKey: "speechModelOverride"); old.removeValue(forKey: "textModelOverride")
+        old["speechProvider"] = "compatible"; old["speechModel"] = "custom-speech"
+        old["textModel"] = "custom-text"
+        let migrated = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: old))
+        XCTAssertEqual(migrated.effectiveSpeechModel, "custom-speech")
+        XCTAssertEqual(migrated.effectiveTextModel, "custom-text")
+        XCTAssertNil(migrated.speechModelOverride); XCTAssertNil(migrated.textModelOverride)
+    }
     func testAPIFailureDoesNotExposeProviderBodyOrRetry() async throws {
         var calls = 0
         StubProtocol.handler = { _ in calls += 1; return (401, Data(#"{"error":{"message":"secret-key and transcript"}}"#.utf8)) }
