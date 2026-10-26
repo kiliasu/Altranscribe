@@ -318,10 +318,6 @@
 
 "Direct from audio" = "直接从音频";
 
-"Direct translation returns both the original and translated text and needs only the speech key. Generated audio is never played, but the service still bills it." = "直接翻译同时返回原文与译文，只需语音服务密钥。生成的音频不会播放，但服务仍按音频输出计费。";
-
-"Direct translation with source text" = "直接翻译并保留原文";
-
 "Duration" = "时长";
 
 "Enter a new key to replace the saved one" = "输入新密钥以替换已保存的密钥";
@@ -349,12 +345,6 @@
 "No model selected" = "未选择模型";
 
 "Not configured" = "未配置";
-
-"Not used" = "未使用";
-
-"Off" = "关闭";
-
-"On" = "开启";
 
 "OpenAI / Compatible" = "OpenAI / 兼容服务";
 
@@ -390,8 +380,6 @@
 
 "Transcribe" = "转录";
 
-"Translate directly, keeping the source text" = "直接翻译，同时保留原文";
-
 "Translate or Summarize Again" = "重新翻译或生成摘要";
 
 "Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio." = "翻译未开启，实时会话按转录运行。开启翻译后才会直接从音频翻译。";
@@ -400,3 +388,29 @@
 
 "Turn On Translate" = "开启翻译";
 
+/* Home session setup and live mode (2026-10-26). */
+"Choose a Text Model" = "选择文本模型";
+
+"Choose a Text Model…" = "选择文本模型…";
+
+"Creates a summary with the text model when the session ends." = "会话结束后用文本模型生成摘要。";
+
+"Directly from audio" = "直接从音频翻译";
+
+"Live Translation" = "实时翻译方式";
+
+"No Translation" = "不翻译";
+
+"Spoken Language" = "语音语言";
+
+"Transcribe, then use the text model" = "先转录，再用文本模型翻译";
+
+"Transcription uses %@. Direct translation uses %@, returns both the original and translated text, and needs only the speech key. Generated audio is never played, but the service still bills it." = "转录使用 %@。直接翻译使用 %@，同时返回原文与译文，只需语音服务密钥。生成的音频不会播放，但服务仍按音频输出计费。";
+
+"Translate Directly" = "直接翻译";
+
+"Translate to %@" = "翻译为%@";
+"No Whisper model is selected." = "未选择 Whisper 模型。";
+
+"The selected Whisper model file is missing." = "所选 Whisper 模型文件不存在。";
+"Text" = "文本";

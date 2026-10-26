@@ -15,12 +15,17 @@ final class LocalizationTests: XCTestCase {
             XCTAssertEqual(key.components(separatedBy: "%@").count, chinese[key]!.components(separatedBy: "%@").count, key)
         }
         let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let pattern = try NSRegularExpression(pattern: #"\b(?:L|LocalizedText|AppError)\(("(?:\\.|[^"\\])*")"#)
+        let literal = #""(?:\\.|[^"\\])*""#
+        // A key passed directly, or either branch of a condition passed in its place: L(flag ? "A" : "B").
+        let direct = try NSRegularExpression(pattern: #"\b(?:L|LocalizedText|AppError)\(("# + literal + ")")
+        let conditional = try NSRegularExpression(pattern: #"\b(?:L|LocalizedText|AppError)\([^()"]*\?\s*("# + literal + #")\s*:\s*("# + literal + ")")
         for case let file as URL in FileManager.default.enumerator(at: package.appendingPathComponent("Sources"), includingPropertiesForKeys: nil)! where file.pathExtension == "swift" {
             let text = try String(contentsOf: file, encoding: .utf8)
-            for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-                let literal = String(text[Range(match.range(at: 1), in: text)!])
-                let key = try JSONDecoder().decode(String.self, from: Data(literal.utf8))
+            let range = NSRange(text.startIndex..., in: text)
+            let matches = direct.matches(in: text, range: range).map { [$0.range(at: 1)] } +
+                conditional.matches(in: text, range: range).map { [$0.range(at: 1), $0.range(at: 2)] }
+            for capture in matches.flatMap({ $0 }) {
+                let key = try JSONDecoder().decode(String.self, from: Data(String(text[Range(capture, in: text)!]).utf8))
                 XCTAssertNotNil(english[key], "Missing translation in \(file.lastPathComponent): \(key)")
             }
         }

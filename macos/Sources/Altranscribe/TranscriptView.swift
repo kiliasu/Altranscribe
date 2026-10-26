@@ -172,8 +172,8 @@ struct SummaryCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(18)
-        .background(.tint.opacity(0.07), in: .rect(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.tint.opacity(0.14)) }
+        // Content layer: a standard fill in the grouped radius, no outline.
+        .background(.fill.quaternary, in: .rect(cornerRadius: Radius.group))
     }
 }
 
@@ -230,7 +230,7 @@ struct RecordHeader: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.orange.opacity(0.1), in: .rect(cornerRadius: 10))
+                    .background(.orange.opacity(0.1), in: .rect(cornerRadius: Radius.group))
                     .transition(.rise)
             }
         }
@@ -277,7 +277,7 @@ struct TranscriptPage: View {
                 .font(.callout)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(.fill.quaternary, in: .rect(cornerRadius: 12))
+                .background(.fill.quaternary, in: .rect(cornerRadius: Radius.group))
                 .padding(.bottom, 20)
                 .transition(.rise)
             }

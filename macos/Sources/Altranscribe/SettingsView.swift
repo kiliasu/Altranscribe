@@ -62,12 +62,12 @@ struct SettingsView: View {
                 Label(L("A session is running. Speech and text settings unlock when it ends."), systemImage: "lock.fill")
                     .foregroundStyle(.secondary)
             }
-            .transition(.rise)
+            .transition(.swap)
         }
         switch model.settingsPage {
-        case .general: general.transition(.rise)
-        case .speech: speech.transition(.rise)
-        case .text: text.transition(.rise)
+        case .general: general.transition(.swap)
+        case .speech: speech.transition(.swap)
+        case .text: text.transition(.swap)
         }
     }
 
@@ -139,8 +139,7 @@ struct SettingsView: View {
                 Picker(L("Speech Engine"), selection: $model.settings.speechProvider) {
                     ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
                 }
-                if model.settings.speechProvider == .whisper || !model.settings.speechProvider.isLocal ||
-                    (model.settings.speechProvider == .nemotron && model.settings.nemotronModel.multilingual) {
+                if model.settings.offersLanguageChoice {
                     Picker(L("Language"), selection: $model.settings.sourceLanguage) {
                         ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
                     }
@@ -305,13 +304,17 @@ struct SettingsView: View {
         }
         if model.settings.usesCloudLive {
             Section {
+                // Two short segments behave the same for every provider; the models are named underneath.
                 Picker(L("Live Mode"), selection: Binding(get: { model.settings.cloudDirectTranslation ?? true },
                                                           set: { model.settings.cloudDirectTranslation = $0 })) {
-                    Text(L("Transcribe") + " · " + AppSettings.liveSpeechModel(provider: provider, direct: false)).tag(false)
-                    Text(L("Translate directly, keeping the source text") + " · " + AppSettings.liveSpeechModel(provider: provider, direct: true)).tag(true)
+                    Text(L("Transcribe")).tag(false)
+                    Text(L("Translate Directly")).tag(true)
                 }
-                .pickerStyle(.radioGroup)
-                LabeledContent(L("In Effect"), value: model.settings.liveSpeechModel)
+                .pickerStyle(.segmented)
+                LabeledContent(L("In Effect")) {
+                    Label(model.settings.liveSpeechModel, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.tint)
+                }
                 if (model.settings.cloudDirectTranslation ?? true) && !model.settings.translate {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Label(L("Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio."), systemImage: "info.circle")
@@ -321,7 +324,8 @@ struct SettingsView: View {
                     }
                 }
             } header: { Text(L("Live Speech")) }
-              footer: { Text(L("Direct translation returns both the original and translated text and needs only the speech key. Generated audio is never played, but the service still bills it.")) }
+              footer: { Text(L("Transcription uses %@. Direct translation uses %@, returns both the original and translated text, and needs only the speech key. Generated audio is never played, but the service still bills it.",
+                               AppSettings.liveSpeechModel(provider: provider, direct: false), AppSettings.liveSpeechModel(provider: provider, direct: true))) }
         }
         Section(L("File Transcription")) {
             if provider == .compatible {
@@ -540,11 +544,12 @@ private struct ModelRow<Accessory: View>: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // The tile stays the same; the Selected mark alone says which model is in use.
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(inUse ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
+                .foregroundStyle(.tint)
                 .frame(width: 32, height: 32)
-                .background(inUse ? AnyShapeStyle(.tint) : AnyShapeStyle(.tint.opacity(0.12)), in: .rect(cornerRadius: 8))
+                .background(.tint.opacity(0.12), in: .rect(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 HStack(spacing: 8) {

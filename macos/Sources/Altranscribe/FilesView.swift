@@ -22,9 +22,9 @@ struct FilesView: View {
                 .animation(Motion.content, value: model.queue.map(\.id))
                 .overlay {
                     if targeted {
-                        RoundedRectangle(cornerRadius: 18)
+                        RoundedRectangle(cornerRadius: Radius.region)
                             .strokeBorder(.tint, lineWidth: 2)
-                            .background(.tint.opacity(0.05), in: .rect(cornerRadius: 18))
+                            .background(.tint.opacity(0.05), in: .rect(cornerRadius: Radius.region))
                             .padding(8)
                             .allowsHitTesting(false)
                             .transition(.opacity)
@@ -82,6 +82,7 @@ private struct DropZone: View {
             }
             Button(L("Choose Files…"), action: choose)
                 .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
                 .controlSize(.large)
             Text("WAV · M4A · MP3 · AAC · AIFF · MP4 · MOV")
                 .font(.footnote.weight(.medium))
@@ -91,7 +92,7 @@ private struct DropZone: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: Radius.region)
                 .fill(targeted ? AnyShapeStyle(.tint.opacity(0.05)) : AnyShapeStyle(.clear))
                 .strokeBorder(targeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator),
                               style: StrokeStyle(lineWidth: targeted ? 2 : 1.5, dash: [8, 6]))
@@ -225,7 +226,8 @@ private struct QueueBar: View {
             }
         }
         .controlSize(.large)
-        .buttonStyle(.bordered)
+        // The bar floats over content in the control layer, so its controls are Liquid Glass.
+        .buttonStyle(.glass)
     }
 
     @ViewBuilder private func progress(waiting: Int) -> some View {

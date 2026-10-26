@@ -158,16 +158,16 @@ private struct CaptionView: View {
         }
     }
 
+    /// Standard circular buttons on the glass panel, so the system draws their fill, press state and focus.
     private func control(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
-                .frame(width: 26, height: 26)
-                .background(.fill.secondary, in: .circle)
-                .contentShape(.circle)
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 14, height: 14)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
         .help(help)
+        .accessibilityLabel(help)
     }
 }

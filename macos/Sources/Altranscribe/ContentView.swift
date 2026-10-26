@@ -256,8 +256,8 @@ struct SessionInspector: View {
                             .lineLimit(1).truncationMode(.middle)
                     }
                 }
-                if !model.modelReady {
-                    Label(model.settings.speechProvider == .appleSpeech ? model.appleSpeechStatus.title : L("The selected model is not downloaded yet."), systemImage: "exclamationmark.triangle.fill")
+                if let issue = model.modelIssue {
+                    Label(issue.text, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundStyle(.orange)
                         .transition(.rise)

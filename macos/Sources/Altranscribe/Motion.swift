@@ -19,6 +19,15 @@ enum Motion {
     static let acknowledgement: TimeInterval = 1.8
 }
 
+extension AnyTransition {
+    /// One set of controls replacing another in the same place, such as a settings page: the old set leaves
+    /// quickly and the new one settles in after it, so the two never read as one overlapping layout.
+    static var swap: AnyTransition {
+        .asymmetric(insertion: .opacity.animation(Motion.quick.delay(0.08)),
+                    removal: .opacity.animation(.easeOut(duration: 0.1)))
+    }
+}
+
 extension Transition where Self == MotionTransition {
     static var rise: MotionTransition { MotionTransition(style: .rise) }
     static var pop: MotionTransition { MotionTransition(style: .pop) }

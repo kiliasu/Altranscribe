@@ -318,10 +318,6 @@
 
 "Direct from audio" = "Direct from audio";
 
-"Direct translation returns both the original and translated text and needs only the speech key. Generated audio is never played, but the service still bills it." = "Direct translation returns both the original and translated text and needs only the speech key. Generated audio is never played, but the service still bills it.";
-
-"Direct translation with source text" = "Direct translation with source text";
-
 "Duration" = "Duration";
 
 "Enter a new key to replace the saved one" = "Enter a new key to replace the saved one";
@@ -349,12 +345,6 @@
 "No model selected" = "No model selected";
 
 "Not configured" = "Not configured";
-
-"Not used" = "Not used";
-
-"Off" = "Off";
-
-"On" = "On";
 
 "OpenAI / Compatible" = "OpenAI / Compatible";
 
@@ -390,8 +380,6 @@
 
 "Transcribe" = "Transcribe";
 
-"Translate directly, keeping the source text" = "Translate directly, keeping the source text";
-
 "Translate or Summarize Again" = "Translate or Summarize Again";
 
 "Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio." = "Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio.";
@@ -400,3 +388,29 @@
 
 "Turn On Translate" = "Turn On Translate";
 
+/* Home session setup and live mode (2026-10-26). */
+"Choose a Text Model" = "Choose a Text Model";
+
+"Choose a Text Model…" = "Choose a Text Model…";
+
+"Creates a summary with the text model when the session ends." = "Creates a summary with the text model when the session ends.";
+
+"Directly from audio" = "Directly from audio";
+
+"Live Translation" = "Live Translation";
+
+"No Translation" = "No Translation";
+
+"Spoken Language" = "Spoken Language";
+
+"Transcribe, then use the text model" = "Transcribe, then use the text model";
+
+"Transcription uses %@. Direct translation uses %@, returns both the original and translated text, and needs only the speech key. Generated audio is never played, but the service still bills it." = "Transcription uses %@. Direct translation uses %@, returns both the original and translated text, and needs only the speech key. Generated audio is never played, but the service still bills it.";
+
+"Translate Directly" = "Translate Directly";
+
+"Translate to %@" = "Translate to %@";
+"No Whisper model is selected." = "No Whisper model is selected.";
+
+"The selected Whisper model file is missing." = "The selected Whisper model file is missing.";
+"Text" = "Text";

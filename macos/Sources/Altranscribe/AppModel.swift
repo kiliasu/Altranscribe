@@ -106,7 +106,8 @@ struct QueuedFile: Identifiable {
         guard !modelReady else { return nil }
         switch settings.speechProvider {
         case .whisper:
-            return LocalizedText(settings.effectiveModelPath.isEmpty ? "No Whisper model is selected." : "The selected Whisper model file is missing.")
+            return settings.effectiveModelPath.isEmpty ? LocalizedText("No Whisper model is selected.")
+                                                       : LocalizedText("The selected Whisper model file is missing.")
         case .appleSpeech: return LocalizedText(verbatim: appleSpeechStatus.title)
         default: return LocalizedText("The selected model is not downloaded yet.")
         }

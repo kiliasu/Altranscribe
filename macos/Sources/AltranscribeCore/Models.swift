@@ -190,6 +190,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         if host == "api.openai.com" { return "OpenAI" }
         return (isLoopback(textBaseURL) ? L("Local Service") : L("Compatible Service")) + (host.isEmpty ? "" : " · " + host)
     }
+    /// Engines whose spoken language the user picks; the others fix it through the chosen model or locale.
+    public var offersLanguageChoice: Bool {
+        speechProvider == .whisper || !speechProvider.isLocal || (speechProvider == .nemotron && nemotronModel.multilingual)
+    }
     /// Translation of files and summaries always need the text service; live direct translation does not.
     public func needsTextModel(live: Bool) -> Bool { (translate && !(live && usesDirectSpeechTranslation)) || summarize }
     public func textModelMissing(live: Bool) -> Bool { needsTextModel(live: live) && effectiveTextModel.isEmpty }

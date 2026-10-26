@@ -53,7 +53,7 @@ struct LiveView: View {
     }
 }
 
-/// What the live page shows before the first session: the chosen source, how it will be processed, and what is missing.
+/// What the live page shows before the first session: the source, what the session will use, and what is missing.
 private struct LiveWelcome: View {
     @Bindable var model: AppModel
 
@@ -76,89 +76,163 @@ private struct LiveWelcome: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 440)
                 }
-                SessionSummary(model: model)
+                SessionSetup(model: model)
             }
-            .animation(Motion.content, value: model.modelReady)
             .padding(40)
             .frame(maxWidth: .infinity)
-            .containerRelativeFrame(.vertical, alignment: .center) { length, _ in length }
         }
+        // Content shorter than the page sits in the middle; taller content scrolls from the top.
+        .defaultScrollAnchor(.center, for: .alignment)
         .scrollBounceBehavior(.basedOnSize)
         .animation(Motion.content, value: model.source)
         .animation(Motion.content, value: model.phase == .preparing)
     }
-
 }
 
-/// What the next session will use, one row per decision. Each row opens the page that changes it,
-/// and whatever would stop the session from starting is named on its row.
-private struct SessionSummary: View {
+/// The next session at a glance, as standard capsule controls in the content layer. Each one changes its
+/// setting in place and ends its menu with the settings page; whatever keeps the session from starting
+/// is named once, underneath, with the one action that fixes it.
+private struct SessionSetup: View {
     @Bindable var model: AppModel
 
     var body: some View {
         let settings = model.settings
-        VStack(spacing: 0) {
-            SummaryRow(symbol: settings.speechProvider.isLocal ? "cpu" : "cloud", title: L("Speech"),
-                       value: settings.speechServiceTitle + " · " + settings.speechModelTitle(live: true),
-                       warning: model.modelIssue?.text) { open(.speech) }
-            if settings.usesCloudLive {
-                SummaryRow(symbol: "waveform", title: L("Live Mode"),
-                           value: settings.usesDirectSpeechTranslation ? L("Direct translation with source text") : L("Transcribe")) { open(.speech) }
+        VStack(spacing: 16) {
+            FlowLayout(alignment: .center, spacing: 8, lineSpacing: 8) {
+                speech
+                if settings.offersLanguageChoice { language.transition(.pop) }
+                translation
+                Toggle(isOn: $model.settings.summarize) { Label(L("Summary"), systemImage: "sparkles") }
+                    .toggleStyle(.button)
+                    .help(L("Creates a summary with the text model when the session ends."))
+                if settings.needsTextModel(live: true) { textModel.transition(.pop) }
             }
-            SummaryRow(symbol: "character.bubble", title: L("Text Model"),
-                       value: settings.needsTextModel(live: true)
-                           ? (settings.effectiveTextModel.isEmpty ? L("Not configured") : settings.textServiceTitle + " · " + settings.effectiveTextModel)
-                           : L("Not used"),
-                       warning: settings.textModelMissing(live: true) ? L("Translation or summary needs a text model.") : nil) { open(.text) }
-            SummaryRow(symbol: "translate", title: L("Translate"),
-                       value: settings.translate
-                           ? languageName(settings.targetLanguage) + (settings.usesDirectSpeechTranslation ? " · " + L("Direct from audio") : "")
-                           : L("Off")) { open(.text) }
-            SummaryRow(symbol: "sparkles", title: L("Summary"), value: settings.summarize ? L("On") : L("Off"), last: true) { open(.text) }
+            if let notice { notice.transition(.rise) }
         }
-        .frame(maxWidth: 520)
-        .background(.fill.quaternary, in: .rect(cornerRadius: 16))
+        // Regular-size capsules stay secondary to the title and keep the usual setup on one line.
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.regular)
+        .frame(maxWidth: 620)
+        .disabled(model.busy)
         .animation(Motion.content, value: settings)
         .animation(Motion.content, value: model.modelReady)
+    }
+
+    private var speech: some View {
+        let settings = model.settings
+        let title = settings.speechServiceTitle + " · " + settings.speechModelTitle(live: true)
+        return Menu {
+            Picker(L("Speech Engine"), selection: $model.settings.speechProvider) {
+                ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Button(settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…")) { open(.speech) }
+        } label: {
+            Label(title, systemImage: settings.speechProvider.isLocal ? "cpu" : "cloud")
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .help(title)
+    }
+
+    private var language: some View {
+        Menu {
+            Picker(L("Language"), selection: $model.settings.sourceLanguage) {
+                ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label(languageName(model.settings.sourceLanguage), systemImage: "globe")
+        }
+        .help(L("Spoken Language"))
+    }
+
+    private var translation: some View {
+        let settings = model.settings
+        let title = settings.translate
+            ? L("Translate to %@", languageName(settings.targetLanguage)) + (settings.usesDirectSpeechTranslation ? " · " + L("Direct from audio") : "")
+            : L("No Translation")
+        return Menu {
+            Toggle(L("Translate"), isOn: $model.settings.translate)
+            Picker(L("Target Language"), selection: $model.settings.targetLanguage) {
+                ForEach(AppSettings.languages.filter { $0.0 != "auto" }, id: \.0) { Text($0.1).tag($0.0) }
+            }
+            if settings.usesCloudLive {
+                // How a live session translates is a translation choice, so it lives here rather than with the engine.
+                Picker(L("Live Translation"), selection: Binding(get: { settings.cloudDirectTranslation ?? true },
+                                                                 set: { model.settings.cloudDirectTranslation = $0 })) {
+                    Text(L("Directly from audio") + " · " + AppSettings.liveSpeechModel(provider: settings.speechProvider, direct: true)).tag(true)
+                    Text(L("Transcribe, then use the text model")).tag(false)
+                }
+                .pickerStyle(.inline)
+                .disabled(!settings.translate)
+            }
+            Divider()
+            Button(L("Text Model Settings…")) { open(.text) }
+        } label: {
+            Label(title, systemImage: "translate").lineLimit(1)
+        }
+        .help(title)
+    }
+
+    private var textModel: some View {
+        let settings = model.settings
+        let presets = settings.textModelPresets
+        return Menu {
+            if !presets.isEmpty {
+                Picker(L("Model"), selection: Binding(get: { settings.effectiveTextModel }, set: {
+                    model.settings.textModel = $0; model.settings.textModelOverride = nil
+                })) {
+                    if !presets.contains(settings.effectiveTextModel) && !settings.effectiveTextModel.isEmpty {
+                        Text(settings.effectiveTextModel).tag(settings.effectiveTextModel)
+                    }
+                    ForEach(presets, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.inline)
+                Divider()
+            }
+            Button(L("Text Model Settings…")) { open(.text) }
+        } label: {
+            if settings.effectiveTextModel.isEmpty {
+                Label(L("Choose a Text Model"), systemImage: "exclamationmark.triangle.fill")
+            } else {
+                // Named like the speech control, so a bare model name is never mistaken for the engine.
+                Label(L("Text") + " · " + settings.effectiveTextModel, systemImage: "character.bubble")
+                    .lineLimit(1).truncationMode(.middle)
+            }
+        }
+        .tint(settings.effectiveTextModel.isEmpty ? .orange : nil)
+        .help(settings.textServiceTitle + (settings.effectiveTextModel.isEmpty ? "" : " · " + settings.effectiveTextModel))
+    }
+
+    /// One line for the first thing that keeps the session from starting.
+    private var notice: SetupNotice? {
+        if let issue = model.modelIssue {
+            return SetupNotice(text: issue.text, action: model.settings.speechProvider == .appleSpeech ? L("Speech Settings…") : L("Manage Models…")) { open(.speech) }
+        }
+        if model.settings.textModelMissing(live: true) {
+            return SetupNotice(text: L("Translation or summary needs a text model."), action: L("Choose a Text Model…")) { open(.text) }
+        }
+        return nil
     }
 
     private func open(_ page: SettingsPage) { model.settingsPage = page; model.destination = .settings }
 }
 
-private struct SummaryRow: View {
-    let symbol: String
-    let title: String
-    let value: String
-    var warning: String? = nil
-    var last = false
-    let action: () -> Void
-    @State private var hovering = false
+private struct SetupNotice: View {
+    let text: String
+    let action: String
+    let perform: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).frame(width: 20).foregroundStyle(.secondary)
-                Text(title).foregroundStyle(.secondary)
-                Spacer(minLength: 12)
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(value).lineLimit(1).truncationMode(.middle)
-                    if let warning {
-                        Label(warning, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(.orange)
-                            .transition(.rise)
-                    }
-                }
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .contentShape(.rect)
-            .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear))
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Text(text).foregroundStyle(.secondary)
+            Button(action, action: perform).buttonStyle(.link)
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .overlay(alignment: .bottom) { if !last { Divider().padding(.leading, 48) } }
-        .animation(Motion.quick, value: hovering)
+        .font(.callout)
+        .multilineTextAlignment(.center)
     }
 }
 
@@ -198,7 +272,8 @@ struct TransportBar: View {
             }
         }
         .controlSize(.large)
-        .buttonStyle(.bordered)
+        // The bar floats over content in the control layer, so its controls are Liquid Glass.
+        .buttonStyle(.glass)
         .onChange(of: model.meter) { _, level in
             levels.removeFirst()
             levels.append(model.phase == .recording ? level : 0)
