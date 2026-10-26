@@ -169,6 +169,25 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertEqual(try app.store.load().records.first?.segments, [line])
     }
 
+    func testInterimTextIsWrittenLazilyAndFinalTextImmediately() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = app(at: root)
+        let record = TranscriptRecord(title: "Live", source: .microphone, language: "en", speechModel: "gpt-live-transcribe")
+        app.records = [record]; app.activeRecordID = record.id; try app.store.save(record)
+        let settings = AppSettings()
+        var line = TranscriptSegment(start: 0, end: 1, text: "Hel", estimated: true)
+        try await app.saveSegments([], partial: line, recordID: record.id, configuration: settings, textKey: "")
+        XCTAssertEqual(app.records[0].segments.map(\.text), ["Hel"])
+        XCTAssertEqual(try app.store.load().records.first?.segments.count, 0, "Interim text is coalesced instead of rewriting the record on every delta")
+        line.text = "Hello."
+        try await app.saveSegments([line], recordID: record.id, configuration: settings, textKey: "")
+        XCTAssertEqual(try app.store.load().records.first?.segments, [line], "Final text is written immediately")
+        try await app.saveSegments([], partial: TranscriptSegment(start: 2, end: 3, text: "Nex", estimated: true), recordID: record.id, configuration: settings, textKey: "")
+        try await waitUntil { (try? app.store.load().records.first?.segments.count) == 2 }
+        XCTAssertEqual(try app.store.load().records.first?.segments.last?.text, "Nex", "A lone interim update still reaches the disk within about a second")
+    }
+
     func testBrokenSettingsDoNotHideSavedTranscripts() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

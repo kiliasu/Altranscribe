@@ -62,6 +62,7 @@ struct QueuedFile: Identifiable {
     private var translationQueue: [TranscriptSegment] = []
     private var translatingID: UUID?
     private var discard = false
+    private var deferredSave: Task<Void, Never>?
     private var activity: NSObjectProtocol?
     var captions: CaptionWindow?
 
@@ -295,7 +296,7 @@ struct QueuedFile: Identifiable {
         }
         if changed {
             records[index].segments.sort { $0.start < $1.start }
-            try store.save(records[index])
+            if segments.isEmpty, partial != nil { scheduleSave(recordID) } else { try persistNow(index) }
         }
         if configuration.translate && !(records[index].source != .file && configuration.usesDirectSpeechTranslation) {
             for segment in segments {
@@ -378,7 +379,7 @@ struct QueuedFile: Identifiable {
             catch { records[index].error = LocalizedText(error: error, context: "Summary failed: ") }
         }
         records[index].status = .completed
-        try store.save(records[index])
+        try persistNow(index)
     }
     private func finishInterrupted(_ id: UUID) {
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
@@ -391,7 +392,22 @@ struct QueuedFile: Identifiable {
         persist(index)
     }
     private func persist(_ index: Int) {
-        do { try store.save(records[index]) } catch { self.error = LocalizedText(error: error) }
+        do { try persistNow(index) } catch { self.error = LocalizedText(error: error) }
+    }
+    private func persistNow(_ index: Int) throws {
+        deferredSave?.cancel(); deferredSave = nil
+        try store.save(records[index])
+    }
+    /// Interim text changes several times a second and is rewritten in place, so it is written at most
+    /// once a second. Final text, translations and status changes are written immediately.
+    private func scheduleSave(_ recordID: UUID) {
+        guard deferredSave == nil else { return }
+        deferredSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !Task.isCancelled else { return }
+            self.deferredSave = nil
+            if let index = self.records.firstIndex(where: { $0.id == recordID }) { self.persist(index) }
+        }
     }
 
     func chooseFiles() {
@@ -480,6 +496,7 @@ struct QueuedFile: Identifiable {
     }
     func deleteRecord(_ id: UUID) {
         do {
+            deferredSave?.cancel(); deferredSave = nil
             try store.delete(id)
             if destination == .transcript(id) {
                 // Like Notes and Mail, move the selection to the neighbouring transcript.
