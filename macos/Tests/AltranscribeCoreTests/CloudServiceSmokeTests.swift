@@ -28,7 +28,7 @@ final class CloudServiceSmokeTests: XCTestCase, @unchecked Sendable {
             XCTAssertTrue(transcript.lowercased().contains("do for your country"), "Final words must survive file transcription")
             log("CLOUD RESULT: \(provider.rawValue) file transcript: \(transcript)")
         }
-        for provider in TextProvider.allCases {
+        for provider in TextProvider.allCases where provider != .apple {
             if !selected("\(provider.rawValue):text") { continue }
             var settings = AppSettings(); settings.textProvider = provider
             settings.textBaseURL = "https://api.openai.com/v1"

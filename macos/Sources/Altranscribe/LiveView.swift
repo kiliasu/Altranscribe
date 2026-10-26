@@ -220,8 +220,8 @@ private struct SessionSetup: View {
         if let issue = model.modelIssue {
             return SetupNotice(text: issue.text, action: model.settings.speechProvider == .appleSpeech ? L("Speech Settings…") : L("Manage Models…")) { open(.speech) }
         }
-        if model.settings.textModelMissing(live: true) {
-            return SetupNotice(text: L("Translation or summary needs a text model."), action: L("Choose a Text Model…")) { open(.text) }
+        if let issue = model.textIssue(live: true) {
+            return SetupNotice(text: issue.text, action: L("Text Model Settings…")) { open(.text) }
         }
         return nil
     }

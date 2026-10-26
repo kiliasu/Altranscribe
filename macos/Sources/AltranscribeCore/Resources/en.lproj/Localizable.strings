@@ -433,3 +433,20 @@
 
 "Live translation uses %@." = "Live translation uses %@.";
 "These use the text model above and replace this transcript's existing translation or summary." = "These use the text model above and replace this transcript's existing translation or summary.";
+
+// Apple on-device text model
+"Apple Intelligence · On Device" = "Apple Intelligence · On Device";
+"This Mac does not support Apple Intelligence." = "This Mac does not support Apple Intelligence.";
+"Enable Apple Intelligence in System Settings to use the on-device text model." = "Enable Apple Intelligence in System Settings to use the on-device text model.";
+"Apple's on-device model is not ready. Check Apple Intelligence in System Settings and use the same language for Mac and Siri." = "Apple's on-device model is not ready. Check Apple Intelligence in System Settings and use the same language for Mac and Siri.";
+"Apple's on-device text model is unavailable." = "Apple's on-device text model is unavailable.";
+"Apple's on-device model does not support the language: %@." = "Apple's on-device model does not support the language: %@.";
+"Apple's on-device model could not condense this transcript. Choose another text service for its summary." = "Apple's on-device model could not condense this transcript. Choose another text service for its summary.";
+"Apple's on-device model does not support a language in this request." = "Apple's on-device model does not support a language in this request.";
+"Apple's on-device model could not finish this request. Try again or choose another text service." = "Apple's on-device model could not finish this request. Try again or choose another text service.";
+"Apple's on-device model declined this content. Choose another text service to process it." = "Apple's on-device model declined this content. Choose another text service to process it.";
+"Apple's content checks can reject ordinary quotations or sensitive topics. Translation and summaries may be refused; if this happens often, choose another text service." = "Apple's content checks can reject ordinary quotations or sensitive topics. Translation and summaries may be refused; if this happens often, choose another text service.";
+"The request exceeds Apple's on-device context limit. Shorten vocabulary hints or choose another text service." = "The request exceeds Apple's on-device context limit. Shorten vocabulary hints or choose another text service.";
+"The model did not return a complete text result." = "The model did not return a complete text result.";
+"Ready on this Mac" = "Ready on this Mac";
+"Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready." = "Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready.";

@@ -384,24 +384,33 @@ struct SettingsView: View {
                         }
                     }
                 }
-                ModelChoice(presets: model.settings.textModelPresets, fetched: models,
-                            selection: $model.settings.textModel, custom: $model.settings.textModelOverride)
-                LabeledContent(L("Model List")) {
-                    HStack(spacing: 8) {
-                        if let connectionStatus {
-                            Text(connectionStatus.text).font(.caption).foregroundStyle(.secondary).transition(.opacity)
-                        }
-                        if loadingModels { ProgressView().controlSize(.small).transition(.opacity) }
-                        Button(L("Fetch Models")) { fetchModels() }.disabled(loadingModels)
+                if model.settings.textProvider == .apple {
+                    LabeledContent(L("Model"), value: NativeAppleText.modelName)
+                    if let issue = NativeAppleText.availabilityIssue {
+                        Label(issue.text, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    } else {
+                        Label(L("Ready on this Mac"), systemImage: "checkmark.circle").foregroundStyle(.secondary)
                     }
-                    .animation(Motion.quick, value: loadingModels)
+                } else {
+                    ModelChoice(presets: model.settings.textModelPresets, fetched: models,
+                            selection: $model.settings.textModel, custom: $model.settings.textModelOverride)
+                    LabeledContent(L("Model List")) {
+                        HStack(spacing: 8) {
+                            if let connectionStatus {
+                                Text(connectionStatus.text).font(.caption).foregroundStyle(.secondary).transition(.opacity)
+                            }
+                            if loadingModels { ProgressView().controlSize(.small).transition(.opacity) }
+                            Button(L("Fetch Models")) { fetchModels() }.disabled(loadingModels)
+                        }
+                        .animation(Motion.quick, value: loadingModels)
+                    }
+                    if model.settings.textProvider == .anthropic {
+                        SettingsTextField(L("Workspace ID (optional)"),
+                                          text: Binding(get: { model.settings.anthropicWorkspaceID ?? "" }, set: { model.settings.anthropicWorkspaceID = $0 }),
+                                          prompt: "wrkspc_…")
+                    }
+                    CredentialEditor(endpoint: model.settings.textEndpoint).id(model.settings.textEndpoint)
                 }
-                if model.settings.textProvider == .anthropic {
-                    SettingsTextField(L("Workspace ID (optional)"),
-                                      text: Binding(get: { model.settings.anthropicWorkspaceID ?? "" }, set: { model.settings.anthropicWorkspaceID = $0 }),
-                                      prompt: "wrkspc_…")
-                }
-                CredentialEditor(endpoint: model.settings.textEndpoint).id(model.settings.textEndpoint)
             } header: { Text(L("Service")) } footer: { Text(serviceNote) }
         }
         .disabled(model.busy)
@@ -416,6 +425,9 @@ struct SettingsView: View {
             L("File translation and summaries use this text model; live direct speech translation uses the speech service. Ollama must be running with a text model installed; a local model list loads automatically. Online services use HTTPS, and keys are saved separately for each API base URL.")
         case .gemini, .anthropic:
             L("File translation and summaries use this text model; live direct speech translation uses the speech service. Keys are saved separately for each API base URL. Fetching the model list does not run inference.")
+        case .apple:
+            L("Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready.") + "\n\n" +
+            L("Apple's content checks can reject ordinary quotations or sensitive topics. Translation and summaries may be refused; if this happens often, choose another text service.")
         }
     }
     private func switchService(provider: TextProvider? = nil, baseURL: String? = nil) {

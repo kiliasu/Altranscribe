@@ -6,7 +6,7 @@
 
 ## 本地构建
 
-需要 Xcode 26 或更新版本、CMake（`brew install cmake`）。所有命令在仓库根目录运行：
+需要 Xcode 27 或更新版本、CMake（`brew install cmake`）。所有命令在仓库根目录运行：
 
 ```sh
 bash macos/scripts/bootstrap-whisper.sh
@@ -33,7 +33,7 @@ Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large 
 | 实时转写 | Nemotron 持续流式更新，保留上下文，停顿后定稿；其他引擎约 8 秒分段；暂停、继续、停止并保存、丢弃 |
 | 文件队列 | 原生文件选择与拖放，依次处理，20 秒分块增量解码，停止时保留部分记录；处理中显示当前文件的阶段、进度、速度、预计剩余、所用模型、已翻译句数，以及实时生成的原文与译文 |
 | 语音 API | OpenAI / Gemini 文件转录、实时转录、直接语音翻译；OpenAI 文件模型 / 地址 override |
-| 翻译和摘要 | 本机 Ollama 的 OpenAI 兼容接口、在线兼容服务、OpenAI、Gemini、Anthropic |
+| 翻译和摘要 | Apple Intelligence 本机模型、本机 Ollama 的 OpenAI 兼容接口、在线兼容服务、OpenAI、Gemini、Anthropic |
 | 双语悬浮字幕 | 可移动、可调整大小的原生 NSPanel，字号和只显示翻译选项；只跟随进行中的实时会话，空闲或文件转写时显示空状态 |
 | 记录 | 侧栏按日期分组，搜索原文/翻译/摘要；复制、导出、原位重命名、删除、在访达中显示源文件 |
 | 导出 | TXT、Markdown、独立 HTML；HTML 内容转义，不执行转写文本 |
@@ -56,6 +56,10 @@ Nemotron 英语版固定识别英语；多语言版使用右侧的语言选择�
 FluidAudio 默认提供 Parakeet v2 英语版，使用 Core ML 的 CPU / Neural Engine；可选 v3 自动识别 25 种欧洲语言，不支持中文。本应用不启用 FluidAudio 的额外词汇模型，首次请在语音设置里显式下载模型，之后识别只从本地加载。
 
 Apple SpeechTranscriber 默认英语（美国），在语音设置里从系统实际支持的语言中选择，按需安装并刷新状态。模型由 macOS 管理，不放在应用的 `Models/` 目录中；可用性与资产下载取决于设备及系统。没有使用旧的 SFSpeechRecognizer，也不需要语音 API 密钥。FluidAudio 与 Apple 均复用实时采集、文件队列、翻译、摘要和导出；实时每约 8 秒转写一次，停止时处理不足 8 秒的尾段，并非 Nemotron 的逐步更新模式。
+
+「翻译与摘要 → 文本服务 → Apple Intelligence · 本机」使用 Apple 官方 Foundation Models 的设备端文本模型，支持转录后的翻译和摘要，无需密钥、额外服务器或打包模型权重。需要兼容 Apple Intelligence 的 Mac，系统模型已启用并完成准备；Mac 与 Siri 语言须一致。应用读取实际可用状态和语言支持，未就绪时解释原因。它独立于 Apple SpeechTranscriber，不替代语音识别引擎；不会回退到云端。切换前的文本服务和模型会保留。
+
+Apple 本地模型的上下文和能力随系统模型版本变化。请求按系统报告的容量预检，长文分段翻译或逐层汇总，保留末段；旧系统使用保守预算。翻译采用 Apple 官方文本转换模式，结构化摘要保留默认内容检查。模型仍可能拒绝部分内容，或遗漏摘要细节，需要核对重要结果。接口依据 [Foundation Models](https://developer.apple.com/documentation/foundationmodels)、[多语言指南](https://developer.apple.com/documentation/foundationmodels/supporting-languages-and-locales-with-foundation-models)及[文本转换模式](https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel/guardrails/permissivecontenttransformations)。
 
 实时翻译单独排队，不阻塞语音识别；积压超过 8 个待处理片段时，保留原文并标明可稍后补译。「停止并保存」会等待已排队翻译，取消处理则保留已保存结果。悬浮字幕保留最近完成的译文，落后于当前原文时显示对应时间。重新翻译记录时按记录的源语言处理，全部成功后一次替换译文；失败或取消保留原记录，并提供进度及取消按钮。
 

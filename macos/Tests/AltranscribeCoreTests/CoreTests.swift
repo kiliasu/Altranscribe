@@ -3,6 +3,25 @@ import XCTest
 @testable import AltranscribeCore
 
 final class CoreTests: XCTestCase {
+    func testAppleTextConfigurationAndLosslessChunking() throws {
+        var settings = AppSettings()
+        settings.textBaseURL = "https://api.openai.com/v1"; settings.textModel = "chosen-cloud-model"
+        settings.switchTextService(provider: .apple)
+        settings.translate = true
+        XCTAssertEqual(settings.effectiveTextModel, NativeAppleText.modelName)
+        XCTAssertFalse(settings.textModelMissing(live: false))
+        XCTAssertTrue(settings.textEndpoint.isEmpty); XCTAssertTrue(settings.textModelPresets.isEmpty)
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)), settings)
+        settings.switchTextService(provider: .compatible)
+        XCTAssertEqual(settings.textModel, "chosen-cloud-model")
+        let text = String(repeating: "A full sentence. 保留全部内容，包括末句。🌍\n", count: 300) + "Final tail."
+        let chunks = NativeAppleText.chunks(text, maximumBytes: 96)
+        XCTAssertGreaterThan(chunks.count, 1)
+        XCTAssertEqual(chunks.joined(), text)
+        XCTAssertTrue(chunks.allSatisfy { !$0.isEmpty && $0.utf8.count <= 96 })
+        XCTAssertEqual(NativeAppleText.chunks("", maximumBytes: 96), [])
+    }
+
     func testKeychainPresenceAndAsyncAccessStayScoped() async throws {
         let previous = KeychainStore.service
         KeychainStore.service = "app.altranscribe.mac.api.tests.\(UUID().uuidString)"
@@ -174,6 +193,60 @@ private final class StubProtocol: URLProtocol, @unchecked Sendable {
 }
 
 final class APITests: XCTestCase, @unchecked Sendable {
+    func testAppleTextNeverFallsBackToHTTP() async throws {
+        StubProtocol.handler = { _ in XCTFail("The Apple provider must not use HTTP"); return (500, Data()) }
+        let api = client()
+        var settings = AppSettings(); settings.textProvider = .apple
+        let models = try await api.models(endpoint: "", provider: .apple, key: "")
+        XCTAssertEqual(models, [NativeAppleText.modelName])
+        if let issue = NativeAppleText.availabilityIssue {
+            do {
+                _ = try await api.translate("Hello", sourceLanguage: "en", context: "", settings: settings, key: "")
+                XCTFail("Unavailable Apple Intelligence must not run a request")
+            } catch let error as AppError { XCTAssertEqual(error.message, issue) }
+        }
+        let configuration = settings
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await api.summarize("A meeting about the release.", language: "en", settings: configuration, key: "")
+        }
+        do { _ = try await cancelled.value; XCTFail("Cancellation must propagate") }
+        catch is CancellationError { }
+
+        guard ProcessInfo.processInfo.environment["ALTRANSCRIBE_APPLE_TEXT_SMOKE"] == "1" else { return }
+        try NativeAppleText.checkAvailability()
+        settings.targetLanguage = "zh"
+        let translation = try await api.translate("The microphone test is on Monday at 9 AM. Alex will prepare the recording.",
+                                                  sourceLanguage: "en", context: "", settings: settings, key: "")
+        XCTAssertTrue(translation.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) })
+        XCTAssertTrue(translation.contains("9"))
+        let transcript = (1...28).map {
+            "Meeting note \($0): The team reviewed microphone recordings and verified the exported transcripts. Alex checked the English text. Mei checked the Chinese translation. No new issues were found."
+        }.joined(separator: "\n") + "\nFinal decision: The release is approved for Thursday. The essential recovery code is 4719. This code must appear in the handover summary."
+        let summary = try await api.summarize(transcript, language: "zh", settings: settings, key: "")
+        XCTAssertFalse(summary.title?.isEmpty ?? true)
+        XCTAssertTrue(summary.summary.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) })
+        XCTAssertTrue(summary.summary.contains("4719"), "The summary must retain the final section's essential decision")
+        print("APPLE LOCAL TRANSLATION: \(translation)")
+        print("APPLE LOCAL SUMMARY: \(summary.title ?? "") — \(summary.summary)")
+        let passages = ["And so, my fellow Americans", "ask not what your country can do for you.", "Ask what you can do for your country"]
+        var previous = ""
+        for passage in passages {
+            let translated = try await api.translate(passage, sourceLanguage: "en", context: previous, settings: settings, key: "")
+            XCTAssertTrue(translated.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) })
+            if passage == passages.last {
+                XCTAssertFalse(translated.contains("同胞"), "Previous passages must not replace the current translation")
+                XCTAssertTrue(translated.contains("为国家") || translated.contains("为你的国家") || translated.contains("为祖国"))
+            }
+            print("APPLE LOCAL QUOTE: \(translated)")
+            previous += passage + " "
+        }
+        let short = try await api.summarize(passages.joined(separator: " "), language: "zh", settings: settings, key: "")
+        XCTAssertTrue(short.summary.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) })
+        XCTAssertTrue(short.title?.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) } ?? false)
+        print("APPLE LOCAL SHORT SUMMARY: \(short.title ?? "") — \(short.summary)")
+    }
+
     private func requestBody(_ request: URLRequest) throws -> Data {
         if let body = request.httpBody { return body }
         let stream = try XCTUnwrap(request.httpBodyStream)
@@ -291,7 +364,7 @@ final class APITests: XCTestCase, @unchecked Sendable {
         }
     }
     func testTextModelOverridesRouteToSelectedProviderAndPersist() async throws {
-        for provider in TextProvider.allCases {
+        for provider in TextProvider.allCases where provider != .apple {
             var settings = AppSettings(); settings.textProvider = provider
             settings.textBaseURL = "https://api.openai.com/v1"
             settings.textModel = try XCTUnwrap(settings.textModelPresets.first)
@@ -302,6 +375,7 @@ final class APITests: XCTestCase, @unchecked Sendable {
             StubProtocol.handler = { request in
                 let body = try XCTUnwrap(JSONSerialization.jsonObject(with: self.requestBody(request)) as? [String: Any])
                 switch provider {
+                case .apple: XCTFail("The on-device provider must not send an API request"); return (500, Data())
                 case .compatible:
                     XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/responses")
                     XCTAssertEqual(body["model"] as? String, selected)

@@ -130,7 +130,12 @@ struct QueuedFile: Identifiable {
     }
     /// A session can begin only with a usable speech model and, where translation or a summary
     /// needs it, a text model. The home page explains whichever is missing.
-    func canStart(live: Bool) -> Bool { modelReady && !settings.textModelMissing(live: live) }
+    func canStart(live: Bool) -> Bool { modelReady && textIssue(live: live) == nil }
+    func textIssue(live: Bool) -> LocalizedText? {
+        guard settings.needsTextModel(live: live) else { return nil }
+        if settings.textModelMissing(live: live) { return LocalizedText("Translation or summary needs a text model.") }
+        return settings.textProvider == .apple ? NativeAppleText.availabilityIssue : nil
+    }
     /// What the current engine can switch to in place: installed local models, the cloud file models,
     /// or the languages Apple's transcriber supports. Downloading stays in Settings.
     var speechModelChoices: [SpeechModelChoice] {
@@ -205,9 +210,13 @@ struct QueuedFile: Identifiable {
             guard !configuration.effectiveTextModel.isEmpty else {
                 throw AppError("Translation or summary is enabled. Configure a text model in Settings first.")
             }
-            let endpoint = try APIEndpoint(configuration.textEndpoint)
-            textKey = try await KeychainStore.read(endpoint: configuration.textEndpoint)
-            if textKey.isEmpty && !endpoint.isLoopback { throw AppError("Save an API key for the text service.") }
+            if configuration.textProvider == .apple {
+                try NativeAppleText.checkAvailability()
+            } else {
+                let endpoint = try APIEndpoint(configuration.textEndpoint)
+                textKey = try await KeychainStore.read(endpoint: configuration.textEndpoint)
+                if textKey.isEmpty && !endpoint.isLoopback { throw AppError("Save an API key for the text service.") }
+            }
         }
         if configuration.speechProvider == .whisper {
             try await whisper.load(model: configuration.effectiveModelPath, useGPU: configuration.useGPU)
@@ -712,7 +721,7 @@ struct QueuedFile: Identifiable {
         work = Task {
             defer { isPostProcessing = false; postProcessingID = nil; work = nil; status = LocalizedText("Ready") }
             do {
-                let key = try await KeychainStore.read(endpoint: configuration.textEndpoint)
+                let key = configuration.textProvider == .apple ? "" : try await KeychainStore.read(endpoint: configuration.textEndpoint)
                 if summary {
                     let result = try await api.summarize(record.fullText, language: summaryLanguage, settings: configuration, key: key)
                     try Task.checkCancellation()

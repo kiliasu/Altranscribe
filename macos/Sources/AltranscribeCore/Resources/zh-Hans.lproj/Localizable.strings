@@ -433,3 +433,20 @@
 
 "Live translation uses %@." = "实时翻译使用 %@。";
 "These use the text model above and replace this transcript's existing translation or summary." = "使用上方的文本模型，替换这份文稿已有的译文或摘要。";
+
+// Apple on-device text model
+"Apple Intelligence · On Device" = "Apple Intelligence · 本机";
+"This Mac does not support Apple Intelligence." = "这台 Mac 不支持 Apple Intelligence。";
+"Enable Apple Intelligence in System Settings to use the on-device text model." = "请在系统设置中开启 Apple Intelligence，以使用本机文本模型。";
+"Apple's on-device model is not ready. Check Apple Intelligence in System Settings and use the same language for Mac and Siri." = "Apple 本机模型尚未就绪。请检查系统设置中的 Apple Intelligence，并确保 Mac 与 Siri 使用相同语言。";
+"Apple's on-device text model is unavailable." = "Apple 本机文本模型暂不可用。";
+"Apple's on-device model does not support the language: %@." = "Apple 本机模型不支持此语言：%@。";
+"Apple's on-device model could not condense this transcript. Choose another text service for its summary." = "Apple 本机模型未能压缩此文稿。请选用其他文本服务生成摘要。";
+"Apple's on-device model does not support a language in this request." = "此请求中包含 Apple 本机模型不支持的语言。";
+"Apple's on-device model could not finish this request. Try again or choose another text service." = "Apple 本机模型未能完成此请求。请重试或选用其他文本服务。";
+"Apple's on-device model declined this content. Choose another text service to process it." = "Apple 本机模型拒绝处理此内容。请选用其他文本服务。";
+"Apple's content checks can reject ordinary quotations or sensitive topics. Translation and summaries may be refused; if this happens often, choose another text service." = "Apple 的内容审查可能拒绝普通引文或敏感话题，导致翻译、摘要失败。若频繁遇到拒绝，请选用其他文本服务。";
+"The request exceeds Apple's on-device context limit. Shorten vocabulary hints or choose another text service." = "请求超出 Apple 本机模型的上下文容量。请缩短词汇提示或选用其他文本服务。";
+"The model did not return a complete text result." = "模型未返回完整的文本结果。";
+"Ready on this Mac" = "本机已就绪";
+"Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready." = "使用 Apple 系统模型在本机翻译和生成摘要，无需 API 密钥或内置模型文件。长文稿会分段汇总。需要 Apple Intelligence 已开启且模型就绪。";

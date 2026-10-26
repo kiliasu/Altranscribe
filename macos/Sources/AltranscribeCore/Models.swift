@@ -38,13 +38,14 @@ public enum SpeechProvider: String, Codable, CaseIterable, Identifiable, Sendabl
 }
 
 public enum TextProvider: String, Codable, CaseIterable, Identifiable, Sendable {
-    case compatible, gemini, anthropic
+    case compatible, gemini, anthropic, apple
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .compatible: L("OpenAI / Ollama / Compatible")
         case .gemini: "Google Gemini"
         case .anthropic: "Anthropic"
+        case .apple: L("Apple Intelligence · On Device")
         }
     }
 }
@@ -140,10 +141,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case .compatible: textBaseURL
         case .gemini: "https://generativelanguage.googleapis.com/v1beta"
         case .anthropic: "https://api.anthropic.com/v1"
+        case .apple: ""
         }
     }
     public var effectiveTextModel: String {
-        (textModelOverride ?? textModel).trimmingCharacters(in: .whitespacesAndNewlines)
+        textProvider == .apple ? NativeAppleText.modelName : (textModelOverride ?? textModel).trimmingCharacters(in: .whitespacesAndNewlines)
     }
     public var textModelPresets: [String] {
         switch textProvider {
@@ -151,6 +153,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             URL(string: textBaseURL)?.host?.lowercased() == "api.openai.com" ? TextModelPresets.openAI : []
         case .gemini: TextModelPresets.gemini
         case .anthropic: TextModelPresets.anthropic
+        case .apple: []
         }
     }
     // MARK: Presentation shared by the home page, the inspectors and the settings pages.

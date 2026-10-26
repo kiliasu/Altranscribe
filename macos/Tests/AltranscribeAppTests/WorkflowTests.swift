@@ -301,6 +301,12 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertEqual(app.modelIssue?.rendered(language: .english), "No Whisper model is selected.")
         app.settings.modelPath = root.appendingPathComponent("missing.bin").path
         XCTAssertEqual(app.modelIssue?.rendered(language: .english), "The selected Whisper model file is missing.")
+        app.settings.speechProvider = .compatible; app.settings.textProvider = .apple
+        app.settings.cloudDirectTranslation = false
+        XCTAssertEqual(app.canStart(live: true), NativeAppleText.availabilityIssue == nil)
+        XCTAssertEqual(app.textIssue(live: false), NativeAppleText.availabilityIssue)
+        app.settings.translate = false
+        XCTAssertTrue(app.canStart(live: true), "Unavailable text intelligence must not block transcription by itself")
     }
 
     func testBrokenSettingsDoNotHideSavedTranscripts() throws {

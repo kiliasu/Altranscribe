@@ -386,8 +386,8 @@ private struct QueueBar: View {
         if let issue = model.modelIssue {
             return (issue.text, model.settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…"), .speech)
         }
-        if model.settings.textModelMissing(live: false) {
-            return (L("Translation or summary needs a text model."), L("Choose a Text Model…"), .text)
+        if let issue = model.textIssue(live: false) {
+            return (issue.text, L("Text Model Settings…"), .text)
         }
         return nil
     }
