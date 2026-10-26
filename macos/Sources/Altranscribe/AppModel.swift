@@ -206,7 +206,7 @@ struct QueuedFile: Identifiable {
                 throw AppError("Translation or summary is enabled. Configure a text model in Settings first.")
             }
             let endpoint = try APIEndpoint(configuration.textEndpoint)
-            textKey = try KeychainStore.read(endpoint: configuration.textEndpoint)
+            textKey = try await KeychainStore.read(endpoint: configuration.textEndpoint)
             if textKey.isEmpty && !endpoint.isLoopback { throw AppError("Save an API key for the text service.") }
         }
         if configuration.speechProvider == .whisper {
@@ -220,7 +220,7 @@ struct QueuedFile: Identifiable {
             try await appleSpeech.load(locale: configuration.appleSpeechLocale)
         } else {
             let endpoint = try APIEndpoint(configuration.speechEndpoint)
-            speechKey = try KeychainStore.read(endpoint: configuration.speechEndpoint)
+            speechKey = try await KeychainStore.read(endpoint: configuration.speechEndpoint)
             if speechKey.isEmpty && !endpoint.isLoopback { throw AppError("Save an API key for the speech service.") }
         }
         try Task.checkCancellation()
@@ -712,7 +712,7 @@ struct QueuedFile: Identifiable {
         work = Task {
             defer { isPostProcessing = false; postProcessingID = nil; work = nil; status = LocalizedText("Ready") }
             do {
-                let key = try KeychainStore.read(endpoint: configuration.textEndpoint)
+                let key = try await KeychainStore.read(endpoint: configuration.textEndpoint)
                 if summary {
                     let result = try await api.summarize(record.fullText, language: summaryLanguage, settings: configuration, key: key)
                     try Task.checkCancellation()

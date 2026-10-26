@@ -457,7 +457,7 @@ struct SettingsView: View {
         Task {
             defer { loadingModels = false }
             do {
-                let key = try KeychainStore.read(endpoint: endpoint)
+                let key = try await KeychainStore.read(endpoint: endpoint)
                 let fetched = try await APIClient().models(endpoint: endpoint, provider: provider, key: key, workspace: workspace)
                 guard endpoint == model.settings.textEndpoint, provider == model.settings.textProvider else { return }
                 models = fetched
@@ -585,6 +585,7 @@ struct CredentialEditor: View {
     let endpoint: String
     @State private var key = ""
     @State private var configured = false
+    @State private var saving = false
     @State private var message: LocalizedText?
 
     var body: some View {
@@ -601,6 +602,7 @@ struct CredentialEditor: View {
                 }
             }
         }
+        .disabled(saving)
         HStack(spacing: 6) {
             Image(systemName: configured ? "checkmark.seal.fill" : "key")
                 .foregroundStyle(configured ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
@@ -609,7 +611,8 @@ struct CredentialEditor: View {
         .font(.caption).foregroundStyle(.secondary)
         .animation(Motion.quick, value: configured)
         .task(id: endpoint) {
-            do { configured = try !KeychainStore.read(endpoint: endpoint).isEmpty }
+            do { configured = try await KeychainStore.contains(endpoint: endpoint) }
+            catch is CancellationError { }
             catch { message = LocalizedText(error: error) }
         }
     }
@@ -617,16 +620,20 @@ struct CredentialEditor: View {
     private func save() {
         let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
-        do {
-            try KeychainStore.save(value, endpoint: endpoint)
-            key = ""; configured = true; message = LocalizedText("Saved to Keychain")
-        } catch { message = LocalizedText(error: error) }
+        updateKey(value)
     }
-    private func remove() {
-        do {
-            try KeychainStore.save("", endpoint: endpoint)
-            key = ""; configured = false; message = LocalizedText("The saved key was removed.")
-        } catch { message = LocalizedText(error: error) }
+    private func remove() { updateKey("") }
+    private func updateKey(_ value: String) {
+        guard !saving else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                try await KeychainStore.save(value, endpoint: endpoint)
+                key = ""; configured = !value.isEmpty
+                message = LocalizedText(value.isEmpty ? "The saved key was removed." : "Saved to Keychain")
+            } catch { message = LocalizedText(error: error) }
+        }
     }
 }
 

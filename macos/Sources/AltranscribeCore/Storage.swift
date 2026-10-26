@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Security
+import LocalAuthentication
 
 public struct AppPaths: Sendable {
     public let root: URL
@@ -72,7 +73,34 @@ public enum KeychainStore {
         return [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                 kSecAttrAccount as String: account]
     }
-    public static func read(endpoint: String) throws -> String {
+    /// SecItem calls may wait for system authorization. Never run them on the UI actor.
+    private static func perform<Value: Sendable>(_ operation: @escaping @Sendable () throws -> Value) async throws -> Value {
+        try Task.checkCancellation()
+        let value = try await Task.detached(priority: .userInitiated, operation: operation).value
+        try Task.checkCancellation()
+        return value
+    }
+
+    /// A settings status check needs only unencrypted attributes, never the saved secret.
+    public static func contains(endpoint: String) async throws -> Bool {
+        try await perform {
+            var query = try query(endpoint)
+            query[kSecReturnAttributes as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            let context = LAContext()
+            context.interactionNotAllowed = true
+            query[kSecUseAuthenticationContext as String] = context
+            let status = SecItemCopyMatching(query as CFDictionary, nil)
+            if status == errSecItemNotFound { return false }
+            guard status == errSecSuccess else { throw AppError("Could not read the API key from Keychain.") }
+            return true
+        }
+    }
+
+    public static func read(endpoint: String) async throws -> String {
+        try await perform { try readValue(endpoint: endpoint) }
+    }
+    private static func readValue(endpoint: String) throws -> String {
         var query = try query(endpoint)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -84,7 +112,10 @@ public enum KeychainStore {
         }
         return String(decoding: data, as: UTF8.self)
     }
-    public static func save(_ key: String, endpoint: String) throws {
+    public static func save(_ key: String, endpoint: String) async throws {
+        try await perform { try saveValue(key, endpoint: endpoint) }
+    }
+    private static func saveValue(_ key: String, endpoint: String) throws {
         let query = try query(endpoint)
         if key.isEmpty {
             let status = SecItemDelete(query as CFDictionary)

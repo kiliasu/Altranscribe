@@ -3,6 +3,29 @@ import XCTest
 @testable import AltranscribeCore
 
 final class CoreTests: XCTestCase {
+    func testKeychainPresenceAndAsyncAccessStayScoped() async throws {
+        let previous = KeychainStore.service
+        KeychainStore.service = "app.altranscribe.mac.api.tests.\(UUID().uuidString)"
+        defer { KeychainStore.service = previous }
+        let endpoint = "https://keychain-test.invalid/v1"
+        do {
+            let missing = try await KeychainStore.contains(endpoint: endpoint)
+            XCTAssertFalse(missing)
+            try await KeychainStore.save("review-test-value", endpoint: endpoint)
+            let present = try await KeychainStore.contains(endpoint: endpoint)
+            let other = try await KeychainStore.contains(endpoint: "https://keychain-test.invalid/other")
+            let value = try await KeychainStore.read(endpoint: endpoint)
+            XCTAssertTrue(present); XCTAssertFalse(other)
+            XCTAssertEqual(value, "review-test-value")
+            try await KeychainStore.save("", endpoint: endpoint)
+            let removed = try await KeychainStore.contains(endpoint: endpoint)
+            XCTAssertFalse(removed)
+        } catch {
+            try? await KeychainStore.save("", endpoint: endpoint)
+            throw error
+        }
+    }
+
     func testEndpointRejectsCredentialLeaksAndNonLocalHTTP() throws {
         for invalid in ["http://example.com/v1", "https://user:password@example.com/v1", "https://example.com/v1?key=secret", "https://example.com/#secret", "file:///tmp/model", "http://localhost.example.com/v1"] {
             XCTAssertThrowsError(try APIEndpoint(invalid), invalid)
