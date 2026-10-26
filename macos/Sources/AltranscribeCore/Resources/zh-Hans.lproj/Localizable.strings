@@ -283,6 +283,7 @@
 
 "Workspace ID (optional)" = "工作区 ID（可选）";
 
+"A renewed cloud connection ended before its final text was confirmed. Review the text around that point." = "续接后的云端连接在确认最后文本前已结束，请核对该处附近的文本。";
 "Cloud speech ended before all audio was confirmed. The received text was retained." = "云端语音服务未确认全部音频便结束了会话。已收到的文本已保留。";
 
 "Cloud transcription could not keep up. The received text was retained." = "云端转录未能跟上音频。已收到的文本已保留。";

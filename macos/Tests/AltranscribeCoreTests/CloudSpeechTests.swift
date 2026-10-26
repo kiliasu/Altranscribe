@@ -33,9 +33,9 @@ final class CloudSpeechTests: XCTestCase {
         let final = try XCTUnwrap(state.receive(["serverContent": ["inputTranscription": ["text": "hello world"]]]).first)
         // A silent activity can close while the preceding turn's completion is still in flight.
         state.accept(AudioChunk(samples: Array(repeating: 0, count: 1600), start: 600.1)); state.endActivity()
-        XCTAssertEqual(state.pending, 1)
+        XCTAssertTrue(state.awaitingOutput)
         _ = state.receive(["serverContent": ["generationComplete": true]])
-        XCTAssertEqual(state.pending, 0)
+        XCTAssertEqual(state.pending, 0, "Gemini activities are not counted; the service answers only the ones with speech")
         XCTAssertEqual(first.segment.id, next.segment.id); XCTAssertEqual(first.segment.id, final.segment.id)
         XCTAssertEqual(next.segment.text, "hello"); XCTAssertEqual(final.segment.text, "hello world")
         XCTAssertTrue(final.finalized); XCTAssertFalse(state.awaitingOutput); XCTAssertFalse(state.mayOweText)

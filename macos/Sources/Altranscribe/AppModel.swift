@@ -200,7 +200,8 @@ struct QueuedFile: Identifiable {
                 }
                 phase = .finishing
                 if let cloudSpeech, try await !cloudSpeech.finish(), let index = records.firstIndex(where: { $0.id == id }) {
-                    records[index].error = LocalizedText("The preview translation service did not confirm the final output. Review the last sentence.")
+                    records[index].error = await cloudSpeech.warning?.message
+                        ?? LocalizedText("The preview translation service did not confirm the final output. Review the last sentence.")
                 }
                 try await finishRecord(id, configuration: configuration, textKey: keys.textKey, summaryLanguage: summaryLanguage)
                 saved = true

@@ -283,6 +283,7 @@
 
 "Workspace ID (optional)" = "Workspace ID (optional)";
 
+"A renewed cloud connection ended before its final text was confirmed. Review the text around that point." = "A renewed cloud connection ended before its final text was confirmed. Review the text around that point.";
 "Cloud speech ended before all audio was confirmed. The received text was retained." = "Cloud speech ended before all audio was confirmed. The received text was retained.";
 
 "Cloud transcription could not keep up. The received text was retained." = "Cloud transcription could not keep up. The received text was retained.";

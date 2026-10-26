@@ -10,11 +10,11 @@ extension AppSettings {
         speechProvider == .gemini || (speechProvider == .compatible && URL(string: speechEndpoint)?.host?.lowercased() == "api.openai.com")
     }
     public var usesDirectSpeechTranslation: Bool { usesCloudLive && translate && (cloudDirectTranslation ?? true) }
-    public var liveSpeechModel: String {
-        if speechProvider == .gemini {
-            return usesDirectSpeechTranslation ? "gemini-3.5-live-translate-preview" : "gemini-3.5-transcribe-live"
-        }
-        return usesDirectSpeechTranslation ? "gpt-realtime-translate" : "gpt-live-transcribe"
+    public var liveSpeechModel: String { Self.liveSpeechModel(provider: speechProvider, direct: usesDirectSpeechTranslation) }
+    /// The fixed Realtime / Live API models. File transcription models are chosen separately.
+    public static func liveSpeechModel(provider: SpeechProvider, direct: Bool) -> String {
+        if provider == .gemini { return direct ? "gemini-3.5-live-translate-preview" : "gemini-3.5-transcribe-live" }
+        return direct ? "gpt-realtime-translate" : "gpt-live-transcribe"
     }
 
     func cloudSetup() throws -> [String: Any] {
@@ -57,22 +57,34 @@ extension AppSettings {
 /// Protocol state is separate from socket lifetime so final, interim and duplicate events
 /// are reconciled exactly as in Flutter. All times are capture estimates, not word timings.
 struct CloudSpeechState {
+    /// Local quiet time that ends an OpenAI window or a Gemini activity.
+    static let quietBoundarySeconds = 0.6
+    /// OpenAI windows commit at least this often, so text keeps arriving while speech continues.
+    static let maxWindowSeconds = 20.0
+    /// Gemini finalizes an activity only when it ends; continuous sound must not keep one open for minutes.
+    static let maxActivitySeconds = 30.0
+
     let provider: SpeechProvider
     let direct: Bool
+    var directSegmentGap: Duration = .seconds(2)
     var ready = false, closed = false, finishing = false, generationComplete = false
     var failure: AppError?
     var expiringIn: Double?
     var first: Double?, end = 0.0, windowStart = 0.0, windowDuration = 0.0, quiet = 0.0
     var hasVoice = false, windowHasVoice = false, awaitingOutput = false, turnHasText = false
     var unansweredRuns = 0, lastVoice = 0.0, pending = 0, sequence = 0
-    var lastText = ContinuousClock.now, lastAudio = ContinuousClock.now
+    var lastText = ContinuousClock.now, lastAudio = ContinuousClock.now, lastEvent = ContinuousClock.now
     var commits: [(Double, Double)] = []
     var ranges: [String: (Double, Double)] = [:]
     var lines: [String: TranscriptSegment] = [:]
     var completed: Set<String> = [], eventIDs: Set<String> = []
 
-    var quietBoundary: Bool { quiet >= 0.6 || !hasVoice || lastAudio.duration(to: .now) >= .milliseconds(600) }
+    var quietBoundary: Bool { quiet >= Self.quietBoundarySeconds || !hasVoice || lastAudio.duration(to: .now) >= .milliseconds(600) }
     var mayOweText: Bool { provider == .gemini && !direct && unansweredRuns > 0 && end - lastVoice < 10 }
+    var windowShouldCommit: Bool { windowDuration >= Self.maxWindowSeconds || (windowHasVoice && quiet >= Self.quietBoundarySeconds) }
+    var activityShouldEnd: Bool { windowHasVoice && (quiet >= Self.quietBoundarySeconds || windowDuration >= Self.maxActivitySeconds) }
+    /// Direct translation has no turn events, so lines are cut where both streams paused after a sentence.
+    var directKey: String { "stream:\(sequence)" }
 
     mutating func accept(_ chunk: AudioChunk) {
         if first == nil { first = chunk.start; windowStart = chunk.start }
@@ -92,8 +104,9 @@ struct CloudSpeechState {
         if pending > 8 { failure = AppError("Cloud transcription could not keep up. The received text was retained.") }
     }
 
+    /// Gemini answers an activity only when it heard speech in it; a noise-only activity gets no event
+    /// at all, so activities are not counted. awaitingOutput and turnHasText carry what a stop needs.
     mutating func endActivity() {
-        if windowHasVoice { pending += 1 }
         windowHasVoice = false; windowDuration = 0
     }
 
@@ -113,6 +126,7 @@ struct CloudSpeechState {
             guard eventIDs.insert(id).inserted else { return [] }
             if eventIDs.count > 4096 { eventIDs = [id] }
         }
+        lastEvent = .now
         if event["type"] as? String == "error" || (event["error"] != nil && !(event["error"] is NSNull)) {
             let code = (event["error"] as? [String: Any])?["code"]
             let rateLimited = ["rate_limit_exceeded", "insufficient_quota", "429"].contains(String(describing: code ?? ""))
@@ -146,7 +160,7 @@ struct CloudSpeechState {
                     key = "window:\(bucket)"
                     let start = (first ?? 0) + Double(bucket * 5)
                     range = (start, max(start, min(end, start + 5)))
-                } else { key = "stream"; range = (first ?? 0, end) }
+                } else { key = rolledDirectKey(); range = (windowStart, end) }
                 lastText = .now
                 return [emit(key, text: input ? (lines[key]?.text ?? "") + delta : nil,
                              translation: input ? nil : (lines[key]?.translation ?? "") + delta, range: range)]
@@ -168,9 +182,10 @@ struct CloudSpeechState {
         var updates: [CloudSpeechUpdate] = []
         if direct {
             if input != nil || output != nil {
+                let key = rolledDirectKey()
                 lastText = .now
-                updates.append(emit("stream", text: (lines["stream"]?.text ?? "") + (input ?? ""),
-                                    translation: (lines["stream"]?.translation ?? "") + (output ?? ""), range: (first ?? 0, end)))
+                updates.append(emit(key, text: (lines[key]?.text ?? "") + (input ?? ""),
+                                    translation: (lines[key]?.translation ?? "") + (output ?? ""), range: (windowStart, end)))
             }
         } else {
             if interim != nil || input != nil { turnHasText = true; lastText = .now }
@@ -185,15 +200,27 @@ struct CloudSpeechState {
         }
         if content["generationComplete"] as? Bool == true || content["turnComplete"] as? Bool == true {
             awaitingOutput = false; generationComplete = true
-            if turnHasText {
-                unansweredRuns = max(0, unansweredRuns - 1)
-                if !direct { pending = max(0, pending - 1) }
-            }
+            // A turn's text answers one voice run; a second signal for the same turn does not.
+            if turnHasText { unansweredRuns = max(0, unansweredRuns - 1) }
             turnHasText = false
         }
         if content["interrupted"] as? Bool == true { failure = AppError("Cloud speech ended before all audio was confirmed. The received text was retained.") }
         // modelTurn audio is deliberately ignored. This application never plays cloud output.
         return updates
+    }
+
+    /// Start a new direct translation line once both streams stayed quiet after a finished sentence,
+    /// so captions and the record read sentence by sentence instead of as one growing paragraph.
+    private mutating func rolledDirectKey() -> String {
+        let key = directKey
+        guard let line = lines[key], !(line.translation ?? "").isEmpty, Self.endsSentence(line.text),
+              lastText.duration(to: .now) >= directSegmentGap else { return key }
+        sequence += 1; windowStart = end
+        return directKey
+    }
+    static func endsSentence(_ text: String) -> Bool {
+        guard let last = text.trimmingCharacters(in: .whitespacesAndNewlines).last else { return false }
+        return ".。!！?？…".contains(last)
     }
 
     private mutating func invalid() -> [CloudSpeechUpdate] {

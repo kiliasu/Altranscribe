@@ -34,6 +34,7 @@ final class CloudServiceSmokeTests: XCTestCase, @unchecked Sendable {
             settings.textBaseURL = "https://api.openai.com/v1"
             settings.textModel = settings.textModelPresets[0]; settings.targetLanguage = "zh"
             settings.textModelOverride = ProcessInfo.processInfo.environment["ALTRANSCRIBE_CLOUD_TEXT_MODEL"]
+            settings.anthropicWorkspaceID = ProcessInfo.processInfo.environment["ALTRANSCRIBE_CLOUD_ANTHROPIC_WORKSPACE"]
             let key = keys[provider == .compatible ? "openai" : provider.rawValue]!
             let translation = try await api.translate("The meeting is on Monday. We will test the microphone.", sourceLanguage: "en", context: "", settings: settings, key: key)
             XCTAssertTrue(translation.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) })
@@ -119,7 +120,42 @@ final class CloudServiceSmokeTests: XCTestCase, @unchecked Sendable {
             XCTAssertGreaterThan(lines.last?.end ?? 0, 610)
             XCTAssertGreaterThanOrEqual(text.components(separatedBy: "country").count - 1, 4)
             log("LONG CLOUD VERIFIED: final speech after 610 s retained; session renewed once")
-        } catch { await speech.cancel(); throw error }
+        } catch {
+            let partial = await result.lines.values.sorted { $0.start < $1.start }.map { "\(Int($0.start))s \($0.text)" }
+            log("LONG CLOUD PARTIAL: renewals=\(await speech.renewalCount), warning=\(String(describing: await speech.warning?.message.key)), lines=\(partial)")
+            await speech.cancel(); throw error
+        }
+    }
+
+    func testRealGeminiNoiseOnlyTurnsStillConfirmTheStop() async throws {
+        let (keys, audio) = try await inputs()
+        guard selected("gemini:noise") else { throw XCTSkip("Not selected") }
+        var settings = AppSettings(); settings.speechProvider = .gemini; settings.sourceLanguage = "en"
+        let result = LiveResult()
+        let speech = CloudSpeechSession(settings: settings, key: keys["gemini"]!, onUpdate: { await result.accept($0) })
+        do {
+            try await speech.start()
+            // Low-level noise passes the local voice gate without containing speech, like a cough or a
+            // keyboard. The service sends no event at all for such an activity; the stop must still confirm.
+            var generator = SystemRandomNumberGenerator()
+            let noise = AudioChunk(samples: (0..<32_000).map { _ in Float.random(in: -0.01...0.01, using: &generator) }, start: 0)
+            try await feed(noise, into: speech)
+            try await feed(AudioChunk(samples: Array(repeating: 0, count: 16_000), start: 2), into: speech)
+            try await feed(AudioChunk(samples: audio.samples, start: 3), into: speech)
+            // Noise again after the speech: the final activity gets no answer either.
+            try await feed(AudioChunk(samples: noise.samples, start: 3 + audio.duration), into: speech)
+            try await feed(AudioChunk(samples: Array(repeating: 0, count: 16_000), start: 5 + audio.duration), into: speech)
+            let began = ContinuousClock.now
+            let confirmed = try await speech.finish()
+            XCTAssertTrue(confirmed)
+            XCTAssertLessThan(began.duration(to: .now), .seconds(15), "The stop must not run into the drain timeout")
+            let text = await result.lines.values.sorted { $0.start < $1.start }.map(\.text).joined(separator: " ").lowercased()
+            XCTAssertTrue(text.contains("do for your country"), text)
+            log("CLOUD RESULT: gemini noise-only turn, confirmed=\(confirmed), text=\(text)")
+        } catch {
+            log("CLOUD PARTIAL: gemini noise-only turn, \(await result.lines.values.map(\.text).joined(separator: " "))")
+            await speech.cancel(); throw error
+        }
     }
 
     private actor LiveResult {
