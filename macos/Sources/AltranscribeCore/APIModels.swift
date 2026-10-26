@@ -17,7 +17,7 @@ public enum OpenAITranscriptionModel: String, CaseIterable, Identifiable, Sendab
 
 /// General text models from the providers' official catalogs, checked on 2026-10-25.
 public enum TextModelPresets {
-    public static let openAI = ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"]
-    public static let gemini = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-4-argon"]
-    public static let anthropic = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
+    public static let openAI = ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]
+    public static let gemini = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-4-argon"]
+    public static let anthropic = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"]
 }

@@ -270,3 +270,45 @@
 "Settings" = "设置";
 "System Language Model" = "系统语言模型";
 "This language is not supported by Apple SpeechTranscriber." = "Apple SpeechTranscriber 不支持此语言。";
+
+"Split cloud audio into chunks of ten minutes or less." = "请将云端音频分成不超过十分钟的片段。";
+
+"Gemini accepts up to 1,000 vocabulary terms." = "Gemini 最多支持 1,000 个词汇提示。";
+
+"The uploaded audio did not finish processing." = "上传的音频未能完成处理。";
+
+"The transcript was retained, but the temporary Gemini upload could not be deleted." = "转录文本已保留，但未能删除 Gemini 上的临时音频。";
+
+"File Transcription Model" = "文件转录模型";
+
+"Workspace ID (optional)" = "工作区 ID（可选）";
+
+"Cloud speech ended before all audio was confirmed. The received text was retained." = "云端语音服务未确认全部音频便结束了会话。已收到的文本已保留。";
+
+"Cloud transcription could not keep up. The received text was retained." = "云端转录未能跟上音频。已收到的文本已保留。";
+
+"Direct Translation" = "直接翻译";
+
+"File translation and summaries use this text model. Live direct speech translation uses the speech service. For local services, fetch installed models or use an override." = "文件翻译与摘要使用此文本模型。实时直接语音翻译使用语音服务。本机服务可获取已安装模型或手动指定名称。";
+
+"Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically." = "文件按不超过十分钟分段处理。实时云端会话在到期前续接。时间戳为估算值，付费请求不会自动重发。";
+
+"Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence." = "Gemini 实时翻译为预览版。如果服务未确认收尾，保存的记录会提醒你核对最后一句。";
+
+"Live Speech" = "实时语音";
+
+"The cloud speech connection did not become ready." = "云端语音连接未能就绪。";
+
+"The cloud speech connection was lost. The received text was retained." = "云端语音连接已断开。已收到的文本已保留。";
+
+"The cloud speech service rejected the request. Check the model, language and credentials." = "云端语音服务拒绝了请求。请检查模型、语言和凭据。";
+
+"The cloud speech session could not be renewed before expiry. The received text was retained." = "未能在到期前续接云端语音会话。已收到的文本已保留。";
+
+"The preview translation service did not confirm the final output. Review the last sentence." = "预览版翻译服务未确认最终输出，请核对最后一句。";
+
+"Translate directly from audio" = "直接从音频翻译";
+
+"Vocabulary hints apply to transcription, not direct speech translation." = "词汇提示用于转录，不适用于直接语音翻译。";
+
+"When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played." = "开启翻译后，直接语音翻译会同时返回原文与译文，只需语音服务密钥。不会播放生成的音频。";

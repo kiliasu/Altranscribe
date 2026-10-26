@@ -270,3 +270,45 @@
 "Settings" = "Settings";
 "System Language Model" = "System Language Model";
 "This language is not supported by Apple SpeechTranscriber." = "This language is not supported by Apple SpeechTranscriber.";
+
+"Split cloud audio into chunks of ten minutes or less." = "Split cloud audio into chunks of ten minutes or less.";
+
+"Gemini accepts up to 1,000 vocabulary terms." = "Gemini accepts up to 1,000 vocabulary terms.";
+
+"The uploaded audio did not finish processing." = "The uploaded audio did not finish processing.";
+
+"The transcript was retained, but the temporary Gemini upload could not be deleted." = "The transcript was retained, but the temporary Gemini upload could not be deleted.";
+
+"File Transcription Model" = "File Transcription Model";
+
+"Workspace ID (optional)" = "Workspace ID (optional)";
+
+"Cloud speech ended before all audio was confirmed. The received text was retained." = "Cloud speech ended before all audio was confirmed. The received text was retained.";
+
+"Cloud transcription could not keep up. The received text was retained." = "Cloud transcription could not keep up. The received text was retained.";
+
+"Direct Translation" = "Direct Translation";
+
+"File translation and summaries use this text model. Live direct speech translation uses the speech service. For local services, fetch installed models or use an override." = "File translation and summaries use this text model. Live direct speech translation uses the speech service. For local services, fetch installed models or use an override.";
+
+"Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically." = "Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically.";
+
+"Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence." = "Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence.";
+
+"Live Speech" = "Live Speech";
+
+"The cloud speech connection did not become ready." = "The cloud speech connection did not become ready.";
+
+"The cloud speech connection was lost. The received text was retained." = "The cloud speech connection was lost. The received text was retained.";
+
+"The cloud speech service rejected the request. Check the model, language and credentials." = "The cloud speech service rejected the request. Check the model, language and credentials.";
+
+"The cloud speech session could not be renewed before expiry. The received text was retained." = "The cloud speech session could not be renewed before expiry. The received text was retained.";
+
+"The preview translation service did not confirm the final output. Review the last sentence." = "The preview translation service did not confirm the final output. Review the last sentence.";
+
+"Translate directly from audio" = "Translate directly from audio";
+
+"Vocabulary hints apply to transcription, not direct speech translation." = "Vocabulary hints apply to transcription, not direct speech translation.";
+
+"When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played." = "When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played.";

@@ -82,12 +82,13 @@ final class CoreTests: XCTestCase {
 
 private final class StubProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handler: ((URLRequest) throws -> (Int, Data))?
+    nonisolated(unsafe) static var headers: [String: String] = [:]
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         do {
             let (status, data) = try Self.handler!(request)
-            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: Self.headers)!, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
         } catch { client?.urlProtocol(self, didFailWithError: error) }
@@ -166,14 +167,51 @@ final class APITests: XCTestCase, @unchecked Sendable {
     }
     func testGeminiRejectsTruncatedResultsAndExcludesThoughts() async throws {
         var settings = AppSettings(); settings.textProvider = .gemini; settings.textModel = "gemini-2.5-flash"
-        StubProtocol.handler = { _ in (200, Data(#"{"candidates":[{"finishReason":"STOP","content":{"parts":[{"thought":true,"text":"private reasoning"},{"text":"translation"}]}}]}"#.utf8)) }
+        StubProtocol.handler = { _ in (200, Data(#"{"status":"completed","steps":[{"type":"thought","content":[{"type":"text","text":"private reasoning"}]},{"type":"model_output","content":[{"type":"text","text":"translation"}]}]}"#.utf8)) }
         let result = try await client().complete(system: "translate", user: "text", settings: settings, key: "test-key")
         XCTAssertEqual(result, "translation")
-        StubProtocol.handler = { _ in (200, Data(#"{"candidates":[{"finishReason":"MAX_TOKENS","content":{"parts":[{"text":"partial"}]}}]}"#.utf8)) }
+        StubProtocol.handler = { _ in (200, Data(#"{"status":"incomplete","steps":[{"type":"model_output","content":[{"type":"text","text":"partial"}]}]}"#.utf8)) }
         do {
             _ = try await client().complete(system: "translate", user: "text", settings: settings, key: "test-key")
             XCTFail("Truncated output must not be marked complete")
         } catch { XCTAssertTrue(error is AppError) }
+    }
+    func testGeminiUploadUsesInteractionsAndDeletesAfterFailure() async throws {
+        defer { StubProtocol.headers = [:] }
+        for completed in [true, false] {
+            var deleted = false
+            StubProtocol.headers = ["x-goog-upload-url": "https://generativelanguage.googleapis.com/upload/fixture?upload_id=test"]
+            StubProtocol.handler = { request in
+                XCTAssertEqual(request.value(forHTTPHeaderField: "x-goog-api-key"), "test-key")
+                switch request.url!.path {
+                case "/upload/v1beta/files":
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "X-Goog-Upload-Protocol"), "resumable")
+                    return (200, Data("{}".utf8))
+                case "/upload/fixture":
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "X-Goog-Upload-Command"), "upload, finalize")
+                    return (200, Data(#"{"file":{"name":"files/fixture","uri":"https://generativelanguage.googleapis.com/v1beta/files/fixture","state":"ACTIVE"}}"#.utf8))
+                case "/v1beta/interactions":
+                    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: self.requestBody(request)) as? [String: Any])
+                    XCTAssertEqual(body["model"] as? String, "gemini-3.5-transcribe")
+                    let config = (body["generation_config"] as? [String: Any])?["transcription_config"] as? [String: Any]
+                    XCTAssertEqual(config?["language_codes"] as? [String], ["cmn-Hans-CN"])
+                    XCTAssertEqual(config?["custom_vocabulary"] as? [String], ["Altranscribe"])
+                    let status = completed ? "completed" : "incomplete"
+                    return (200, try JSONSerialization.data(withJSONObject: ["status": status, "steps": [["type": "model_output", "content": [["type": "text", "text": "Hello"]]]]]))
+                case "/v1beta/files/fixture":
+                    XCTAssertEqual(request.httpMethod, "DELETE"); deleted = true
+                    return (200, Data("{}".utf8))
+                default: XCTFail("Unexpected API route"); return (500, Data())
+                }
+            }
+            var settings = AppSettings(); settings.speechProvider = .gemini; settings.sourceLanguage = "zh"
+            settings.geminiSpeechModel = "gemini-2.5-flash"; settings.vocabulary = "Altranscribe"
+            do {
+                let lines = try await client().transcribe(AudioChunk(samples: [0], start: 0), settings: settings, key: "test-key")
+                XCTAssertTrue(completed); XCTAssertEqual(lines.first?.text, "Hello")
+            } catch { XCTAssertFalse(completed) }
+            XCTAssertTrue(deleted, "Both success and failure must delete uploaded audio")
+        }
     }
     func testTextModelOverridesRouteToSelectedProviderAndPersist() async throws {
         for provider in TextProvider.allCases {
@@ -188,18 +226,22 @@ final class APITests: XCTestCase, @unchecked Sendable {
                 let body = try XCTUnwrap(JSONSerialization.jsonObject(with: self.requestBody(request)) as? [String: Any])
                 switch provider {
                 case .compatible:
-                    XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/chat/completions")
+                    XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/responses")
                     XCTAssertEqual(body["model"] as? String, selected)
                     XCTAssertNil(body["temperature"])
-                    return (200, Data(#"{"choices":[{"finish_reason":"stop","message":{"content":"translation"}}]}"#.utf8))
+                    XCTAssertEqual(body["store"] as? Bool, false)
+                    return (200, Data(#"{"status":"completed","error":null,"output":[{"type":"message","content":[{"type":"output_text","text":"translation"}]}]}"#.utf8))
                 case .gemini:
-                    XCTAssertEqual(request.url?.path, "/v1beta/models/\(selected):generateContent")
+                    XCTAssertEqual(request.url?.path, "/v1beta/interactions")
+                    XCTAssertEqual(body["model"] as? String, selected)
                     XCTAssertEqual(request.value(forHTTPHeaderField: "x-goog-api-key"), "test-key")
-                    return (200, Data(#"{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"translation"}]}}]}"#.utf8))
+                    return (200, Data(#"{"status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"translation"}]}]}"#.utf8))
                 case .anthropic:
                     XCTAssertEqual(request.url?.absoluteString, "https://api.anthropic.com/v1/messages")
                     XCTAssertEqual(body["model"] as? String, selected)
-                    XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "test-key")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2026-10-21")
+                    XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
                     return (200, Data(#"{"stop_reason":"end_turn","content":[{"type":"text","text":"translation"}]}"#.utf8))
                 }
             }

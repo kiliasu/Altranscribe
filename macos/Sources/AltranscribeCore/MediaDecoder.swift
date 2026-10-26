@@ -9,8 +9,8 @@ public actor MediaDecoder {
     private var delivered = 0
     private var expectedSamples = 0
     private var deferredBuffer: (samples: [Float], start: Int)?
-    private let chunkSize = 20 * 16_000
-    public init() {}
+    private let chunkSize: Int
+    public init(chunkSeconds: Int = 20) { chunkSize = max(1, min(600, chunkSeconds)) * 16_000 }
 
     public func open(_ url: URL) async throws -> Double {
         let asset = AVURLAsset(url: url)

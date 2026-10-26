@@ -21,7 +21,7 @@ public struct APIEndpoint: Sendable {
     public func url(_ path: String) -> URL { base.appendingPathComponent(path) }
 }
 
-private final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
         completionHandler(nil)
@@ -39,7 +39,8 @@ public final class APIClient: Sendable {
     deinit { session.invalidateAndCancel() }
 
     public func request(endpoint: String, path: String, key: String, auth: String = "bearer",
-                        body: Data? = nil, contentType: String = "application/json", method: String = "POST") throws -> URLRequest {
+                        body: Data? = nil, contentType: String = "application/json", method: String = "POST",
+                        workspace: String? = nil) throws -> URLRequest {
         let endpoint = try APIEndpoint(endpoint)
         if key.isEmpty && !endpoint.isLoopback {
             throw AppError("Save an API key for this service in Settings first.")
@@ -52,15 +53,18 @@ public final class APIClient: Sendable {
             switch auth {
             case "google": request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
             case "anthropic":
-                request.setValue(key, forHTTPHeaderField: "x-api-key")
-                request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                request.setValue("2026-10-21", forHTTPHeaderField: "anthropic-version")
+                if let workspace, !workspace.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    request.setValue(workspace.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "anthropic-workspace-id")
+                }
             default: request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             }
         }
         return request
     }
 
-    private func send(_ request: URLRequest) async throws -> [String: Any] {
+    func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation()
         let data: Data
         let response: URLResponse
@@ -80,29 +84,30 @@ public final class APIClient: Sendable {
             }
             throw AppError(hint, String(code))
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["error"] == nil else {
+        return (data, http)
+    }
+
+    func send(_ request: URLRequest) async throws -> [String: Any] {
+        let (data, _) = try await response(request)
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["error"] == nil || object["error"] is NSNull else {
             throw AppError("The API returned an invalid response.")
         }
         return object
     }
 
-    public func transcribe(_ chunk: AudioChunk, settings: AppSettings, key: String) async throws -> [TranscriptSegment] {
+    public func transcribe(_ chunk: AudioChunk, settings: AppSettings, key: String,
+                           onWarning: @escaping @Sendable (AppError) -> Void = { _ in }) async throws -> [TranscriptSegment] {
+        // Ten minutes of PCM16 is 19.2 MB, below OpenAI's 25 MB and Gemini's duration limits.
+        guard chunk.samples.count <= 600 * 16_000 else { throw AppError("Split cloud audio into chunks of ten minutes or less.") }
         let wave = WaveEncoder.encode(chunk.samples)
         let text: String
         if settings.speechProvider == .gemini {
-            let model = try modelComponent(settings.geminiSpeechModel)
-            let prompt = "Transcribe only the spoken words in this audio, with punctuation. Do not describe sounds. " +
-                "If there is no speech, return an empty string. Language: \(settings.sourceLanguage). Vocabulary: \(settings.vocabulary)"
-            let body: [String: Any] = ["contents": [["parts": [["text": prompt],
-                ["inline_data": ["mime_type": "audio/wav", "data": wave.base64EncodedString()]]]]],
-                "generationConfig": ["temperature": 0]]
-            let result = try await send(request(endpoint: settings.speechEndpoint, path: "models/\(model):generateContent", key: key,
-                                                auth: "google", body: JSONSerialization.data(withJSONObject: body)))
-            text = try Self.geminiText(result)
+            text = try await transcribeGeminiFile(wave, settings: settings, key: key, onWarning: onWarning)
         } else {
             let model = settings.effectiveSpeechModel
             guard !model.isEmpty else { throw AppError("Invalid model name.") }
-            guard !["gpt-live-transcribe", "gpt-realtime-whisper"].contains(model) else {
+            guard !["gpt-live-transcribe", "gpt-realtime-whisper", "gpt-realtime-translate"].contains(model) else {
                 throw AppError("This model requires Realtime transcription. Choose a file transcription model instead.")
             }
             let boundary = "Altranscribe-\(UUID())"
@@ -147,30 +152,50 @@ public final class APIClient: Sendable {
         var body: [String: Any]
         let path: String
         let auth: String
+        let openAI = settings.textProvider == .compatible && URL(string: settings.textEndpoint)?.host?.lowercased() == "api.openai.com"
         switch settings.textProvider {
         case .compatible:
-            auth = "bearer"; path = "chat/completions"
-            body = ["model": model, "messages": [["role": "system", "content": system], ["role": "user", "content": user]], "stream": false]
+            auth = "bearer"; path = openAI ? "responses" : "chat/completions"
+            if openAI {
+                body = ["model": model, "instructions": system, "input": user, "store": false, "max_output_tokens": 8192]
+                if TextModelPresets.openAI.contains(model) { body["reasoning"] = ["effort": "low"] }
+            } else {
+                body = ["model": model, "messages": [["role": "system", "content": system], ["role": "user", "content": user]], "stream": false]
+            }
         case .gemini:
-            auth = "google"; path = "models/\(try modelComponent(model)):generateContent"
-            body = ["system_instruction": ["parts": [["text": system]]], "contents": [["parts": [["text": user]]]]]
+            auth = "google"; path = "interactions"
+            var generation: [String: Any] = ["max_output_tokens": 8192]
+            if TextModelPresets.gemini.contains(model) { generation["thinking_level"] = "low" }
+            body = ["model": model, "system_instruction": system, "input": user, "store": false, "generation_config": generation]
         case .anthropic:
             auth = "anthropic"; path = "messages"
-            body = ["model": model, "max_tokens": 4096, "system": system, "messages": [["role": "user", "content": user]]]
+            body = ["model": model, "max_tokens": 8192, "system": system, "messages": [["role": "user", "content": user]]]
+            if TextModelPresets.anthropic.contains(model) {
+                body["output_config"] = ["effort": "low"]
+                if model == "claude-sonnet-5-5" { body["thinking"] = ["type": "between_tools"] }
+                if model == "claude-haiku-5-5" { body["thinking"] = ["type": "disabled"] }
+            }
         }
         let result = try await send(request(endpoint: settings.textEndpoint, path: path, key: key, auth: auth,
-                                            body: JSONSerialization.data(withJSONObject: body)))
+                                            body: JSONSerialization.data(withJSONObject: body), workspace: settings.anthropicWorkspaceID))
         let text: String?
         switch settings.textProvider {
         case .compatible:
-            let choice = (result["choices"] as? [[String: Any]])?.first
-            if choice?["finish_reason"] as? String == "length" {
-                throw AppError("The model output was truncated. Use a larger output limit or shorter input.")
+            if openAI {
+                guard result["status"] as? String == "completed", let output = result["output"] as? [[String: Any]] else { throw invalidResponse() }
+                let parts = output.filter { $0["type"] as? String == "message" }.flatMap { $0["content"] as? [[String: Any]] ?? [] }
+                guard !parts.contains(where: { $0["type"] as? String == "refusal" }) else { throw invalidResponse() }
+                text = parts.filter { $0["type"] as? String == "output_text" }.compactMap { $0["text"] as? String }.joined()
+            } else {
+                let choice = (result["choices"] as? [[String: Any]])?.first
+                if choice?["finish_reason"] as? String == "length" {
+                    throw AppError("The model output was truncated. Use a larger output limit or shorter input.")
+                }
+                text = (choice?["message"] as? [String: Any])?["content"] as? String
             }
-            text = (choice?["message"] as? [String: Any])?["content"] as? String
-        case .gemini: text = try Self.geminiText(result)
+        case .gemini: text = try Self.interactionText(result)
         case .anthropic:
-            if result["stop_reason"] as? String == "max_tokens" { throw invalidResponse() }
+            guard result["stop_reason"] as? String == "end_turn" else { throw invalidResponse() }
             text = (result["content"] as? [[String: Any]])?.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined()
         }
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw invalidResponse() }
@@ -203,27 +228,36 @@ public final class APIClient: Sendable {
         return (nil, output)
     }
 
-    public func models(endpoint: String, provider: TextProvider, key: String) async throws -> [String] {
+    public func models(endpoint: String, provider: TextProvider, key: String, workspace: String? = nil) async throws -> [String] {
         let auth = provider == .gemini ? "google" : provider == .anthropic ? "anthropic" : "bearer"
-        let result = try await send(request(endpoint: endpoint, path: "models", key: key, auth: auth, method: "GET"))
-        let list = result[provider == .gemini ? "models" : "data"] as? [[String: Any]] ?? []
-        return list.compactMap { ($0["id"] ?? $0["name"]) as? String }.map { $0.replacingOccurrences(of: "models/", with: "") }.sorted()
+        var names: Set<String> = [], cursors: Set<String> = []
+        var cursor: String?
+        repeat {
+            var request = try request(endpoint: endpoint, path: "models", key: key, auth: auth, method: "GET", workspace: workspace)
+            var url = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            if provider != .compatible {
+                url.queryItems = [URLQueryItem(name: provider == .gemini ? "pageSize" : "limit", value: "1000")]
+                if let cursor { url.queryItems?.append(URLQueryItem(name: provider == .gemini ? "pageToken" : "after_id", value: cursor)) }
+            }
+            request.url = url.url
+            let result = try await send(request)
+            guard let list = result[provider == .gemini ? "models" : "data"] as? [[String: Any]] else { throw invalidResponse() }
+            names.formUnion(list.compactMap { ($0["id"] ?? $0["name"]) as? String }.map { $0.hasPrefix("models/") ? String($0.dropFirst(7)) : $0 })
+            cursor = provider == .gemini ? result["nextPageToken"] as? String :
+                (result["has_more"] as? Bool == true ? result["last_id"] as? String : nil)
+            if let cursor, !cursors.insert(cursor).inserted { throw invalidResponse() }
+        } while cursor != nil
+        return names.sorted()
     }
 
-    private func modelComponent(_ model: String) throws -> String {
-        guard !model.isEmpty, model.range(of: "^[a-zA-Z0-9._-]+$", options: .regularExpression) != nil else {
-            throw AppError("Invalid model name.")
-        }
-        return model
-    }
     private func invalidResponse() -> AppError { AppError("The API did not return a complete text result.") }
-    private static func geminiText(_ result: [String: Any]) throws -> String {
-        guard let candidate = (result["candidates"] as? [[String: Any]])?.first,
-              candidate["finishReason"] as? String == "STOP",
-              let parts = (candidate["content"] as? [String: Any])?["parts"] as? [[String: Any]] else {
+    static func interactionText(_ result: [String: Any]) throws -> String {
+        guard result["status"] as? String == "completed", let steps = result["steps"] as? [[String: Any]] else {
             throw AppError("Gemini did not return a complete text result.")
         }
-        return parts.filter { $0["thought"] as? Bool != true }.compactMap { $0["text"] as? String }.joined()
+        return steps.filter { $0["type"] as? String == "model_output" }
+            .flatMap { $0["content"] as? [[String: Any]] ?? [] }
+            .filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined()
     }
 }
 

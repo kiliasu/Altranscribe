@@ -61,11 +61,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var speechBaseURL = "https://api.openai.com/v1"
     public var speechModel = "gpt-transcribe"
     public var speechModelOverride: String?
-    public var geminiSpeechModel = "gemini-2.5-flash"
+    public var geminiSpeechModel = "gemini-3.5-transcribe"
+    public var cloudDirectTranslation: Bool?
     public var textProvider: TextProvider = .compatible
     public var textBaseURL = "http://127.0.0.1:11434/v1"
     public var textModel = ""
     public var textModelOverride: String?
+    public var anthropicWorkspaceID: String?
     public var sourceLanguage = "auto"
     public var targetLanguage = "zh"
     public var translate = false
@@ -92,6 +94,32 @@ public struct AppSettings: Codable, Equatable, Sendable {
         (speechModelOverride ?? speechModel).trimmingCharacters(in: .whitespacesAndNewlines)
     }
     public var openAITranscriptionModel: OpenAITranscriptionModel? { OpenAITranscriptionModel(rawValue: effectiveSpeechModel) }
+    public var effectiveGeminiSpeechModel: String {
+        // Earlier versions used a general-purpose model with a transcription prompt.
+        ["gemini-2.5-flash", "gemini-2.5-pro"].contains(geminiSpeechModel) ? "gemini-3.5-transcribe" :
+            geminiSpeechModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    public var vocabularyTerms: [String] {
+        vocabulary.components(separatedBy: CharacterSet(charactersIn: ",，\r\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+    public var geminiLanguage: String {
+        switch sourceLanguage {
+        case "zh": "cmn-Hans-CN"
+        case "en": "en-US"
+        case "ja": "ja-JP"
+        case "ko": "ko-KR"
+        case "es": "es-US"
+        case "fr": "fr-FR"
+        case "de": "de-DE"
+        case "pt": "pt-BR"
+        case "it": "it-IT"
+        case "ru": "ru-RU"
+        case "ar": "ar-EG"
+        case "hi": "hi-IN"
+        default: sourceLanguage
+        }
+    }
     public var supportsVocabulary: Bool {
         switch speechProvider {
         case .nemotron, .fluidAudio: false
