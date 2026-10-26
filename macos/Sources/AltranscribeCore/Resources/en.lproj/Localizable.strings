@@ -87,7 +87,6 @@
 "Import Audio or Video…" = "Import Audio or Video…";
 "Import audio or video ⌘O" = "Import audio or video ⌘O";
 "In Progress" = "In Progress";
-"Included" = "Included";
 "Input Level" = "Input Level";
 "Interrupted" = "Interrupted";
 "Invalid API URL." = "Invalid API URL.";
@@ -209,7 +208,7 @@
 "This deletes the transcript from this recording." = "This deletes the transcript from this recording.";
 "This file has no readable audio track." = "This file has no readable audio track.";
 "This timestamp is estimated" = "This timestamp is estimated";
-"Tiny is useful for testing; Small balances speed and accuracy. Downloads are verified with SHA-256." = "Tiny is useful for testing; Small balances speed and accuracy. Downloads are verified with SHA-256.";
+"Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster." = "Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster.";
 "Title" = "Title";
 "Titles and summaries use the app language at task start, independently of the translation language." = "Titles and summaries use the app language at task start, independently of the translation language.";
 "Today" = "Today";

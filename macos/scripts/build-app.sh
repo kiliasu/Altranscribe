@@ -22,13 +22,8 @@ cp -fR "$ROOT/macos/.build/checkouts/FluidAudio/ThirdPartyLicenses/." "$APP/Cont
 for LANGUAGE in en zh-Hans; do
     cp -R "$ROOT/macos/Resources/$LANGUAGE.lproj" "$APP/Contents/Resources/"
 done
-if [ -n "${ALTRANSCRIBE_BUNDLE_TINY:-}" ]; then
-    EXPECTED=be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21
-    ACTUAL="$(shasum -a 256 "$ALTRANSCRIBE_BUNDLE_TINY" | cut -d ' ' -f 1)"
-    [ "$EXPECTED" = "$ACTUAL" ] || { echo 'Bundled Tiny model checksum mismatch' >&2; exit 1; }
-    mkdir -p "$APP/Contents/Resources/Models"
-    cp "$ALTRANSCRIBE_BUNDLE_TINY" "$APP/Contents/Resources/Models/ggml-tiny.bin"
-fi
+# Models are installed separately. Remove weights left by older builds, too.
+rm -rf "$APP/Contents/Resources/Models"
 if [ -f "$ROOT/macos/Resources/AppIcon.icns" ]; then
     cp "$ROOT/macos/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 fi

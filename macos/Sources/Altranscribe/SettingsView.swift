@@ -150,18 +150,13 @@ struct SettingsView: View {
                                 }
                                 Button(role: .destructive) { removeModel = model.paths.models.appendingPathComponent(item.filename) } label: { Image(systemName: "trash") }
                                     .buttonStyle(.borderless).help(L("Delete Model"))
-                            } else if item.id == "tiny", Bundle.main.url(forResource: "ggml-tiny", withExtension: "bin", subdirectory: "Models") != nil {
-                                Label(L("Included"), systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
-                                if !model.settings.modelPath.isEmpty {
-                                    Button(L("Use")) { model.settings.modelPath = "" }
-                                }
                             } else {
                                 Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }.disabled(model.downloadID != nil)
                             }
                         }
                     }
                 } header: { Text(L("Multilingual Whisper Models")) }
-                  footer: { Text(L("Tiny is useful for testing; Small balances speed and accuracy. Downloads are verified with SHA-256.")) }
+                  footer: { Text(L("Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster.")) }
             } else if model.settings.speechProvider == .nemotron {
                 Section(L("On-device Streaming")) {
                     LabeledContent(L("Current Model")) {

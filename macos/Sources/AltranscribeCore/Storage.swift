@@ -119,7 +119,9 @@ public struct WhisperModel: Identifiable, Sendable {
         WhisperModel(id: "tiny", title: "Tiny", bytes: 77691713, sha256: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"),
         WhisperModel(id: "base", title: "Base", bytes: 147951465, sha256: "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"),
         WhisperModel(id: "small", title: "Small", bytes: 487601967, sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"),
-        WhisperModel(id: "large-v3-turbo", title: "Large v3 Turbo", bytes: 1624555275, sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69")
+        WhisperModel(id: "medium", title: "Medium", bytes: 1533763059, sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"),
+        WhisperModel(id: "large-v3-turbo", title: "Large v3 Turbo", bytes: 1624555275, sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"),
+        WhisperModel(id: "large-v3", title: "Large v3", bytes: 3095033483, sha256: "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2")
     ]
     public func download(to directory: URL) async throws -> URL {
         let (temporary, response) = try await URLSession.shared.download(from: url)

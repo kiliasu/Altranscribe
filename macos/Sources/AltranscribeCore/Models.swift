@@ -88,10 +88,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var appleSpeechLocale: String { appleSpeechLocaleID ?? "en-US" }
     public var supportsVocabulary: Bool { speechProvider != .nemotron && speechProvider != .fluidAudio }
 
-    public var effectiveModelPath: String {
-        if !modelPath.isEmpty { return modelPath }
-        return Bundle.main.url(forResource: "ggml-tiny", withExtension: "bin", subdirectory: "Models")?.path ?? ""
-    }
+    public var effectiveModelPath: String { modelPath }
 
     public var speechEndpoint: String {
         speechProvider == .gemini ? "https://generativelanguage.googleapis.com/v1beta" : speechBaseURL

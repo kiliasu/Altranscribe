@@ -87,7 +87,6 @@
 "Import Audio or Video…" = "导入音频或视频…";
 "Import audio or video ⌘O" = "导入音频或视频 ⌘O";
 "In Progress" = "处理中";
-"Included" = "已内置";
 "Input Level" = "输入音量";
 "Interrupted" = "已中断";
 "Invalid API URL." = "API 地址无效。";
@@ -209,7 +208,7 @@
 "This deletes the transcript from this recording." = "此操作会删除本次转写文本。";
 "This file has no readable audio track." = "文件中没有可读取的音轨。";
 "This timestamp is estimated" = "此时间为片段估计时间";
-"Tiny is useful for testing; Small balances speed and accuracy. Downloads are verified with SHA-256." = "Tiny 适合测试，Small 在准确率与速度间更均衡。下载完成后会校验 SHA-256。";
+"Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster." = "模型单独下载并通过 SHA-256 校验。Large v3 为完整版，Turbo 体积更小、速度更快。";
 "Title" = "标题";
 "Titles and summaries use the app language at task start, independently of the translation language." = "标题和摘要使用任务开始时的界面语言，与翻译目标语言独立。";
 "Today" = "今天";

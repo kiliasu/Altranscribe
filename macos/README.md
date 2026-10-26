@@ -18,13 +18,9 @@ open build/macos/Altranscribe.app
 
 可以用 Xcode 打开 `macos/Package.swift` 阅读、编辑和调试。测试可通过 Swift Package 运行；麦克风和系统声音的实际使用请启动打包后的 `.app`，保证权限说明和应用身份完整。
 
-默认包只含引擎，在设置中下载模型即可使用。也可以为本地交付内置 Tiny 多语言模型，构建时会校验其 SHA-256：
+分发包只含引擎，不携带任何模型权重；构建时也会清除旧包中残留的 Tiny。所有模型在设置中按需下载或选择已有文件，本机下载目录不受打包影响。
 
-```sh
-ALTRANSCRIBE_BUNDLE_TINY=/absolute/path/ggml-tiny.bin bash macos/scripts/build-app.sh
-```
-
-内置模型随 `.app` 移动，无需设置绝对路径。Tiny 用于快速体验，准确度要求较高时建议在设置中下载 Small 或 Large v3 Turbo。
+Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large v3。完整版约 3.10 GB，Turbo 约 1.62 GB；两者是独立选项，下载使用与 Flutter 相同的固定版本和 SHA-256 校验。
 
 ## 保留的功能
 

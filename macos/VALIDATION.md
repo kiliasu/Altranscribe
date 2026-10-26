@@ -4,6 +4,13 @@
 
 环境：macOS 27.0.1、Xcode 27.0、Swift 6.4、Apple M3 Pro。部署目标 macOS 26.0，交付包为 arm64。
 
+## 模型按需下载（2026-10-25）
+
+- 移除 Tiny 内置打包入口及旧包资源残留，运行时不再自动回退到包内模型。本机原有 Tiny 经 SHA-256 校验后保留到应用支持目录的 `Models/ggml-tiny.bin`。
+- 补回 Medium 与完整版 Large v3；6 个 Whisper 下载选项的文件大小、固定版本和 SHA-256 与 Flutter 目录逐项一致。没有下载 3.10 GB 的 Large v3 来代替目录检查。
+- 复用真实 Tiny / Metal 文件识别与本地化两项测试，均通过；实际点击新应用确认 Tiny 可选用，Medium、Large v3 Turbo 和 Large v3 分别显示下载按钮。没有播放音频或产生新文稿。
+- Release 构建、严格签名及 ZIP 完整性通过，应用和 ZIP 均不再包含 `Models/` 权重目录。日志位于 `.build/model-presets-2026-10-25/local-model-tests.log` 与 `local-model-package.log`。
+
 ## 悬浮字幕开关（2026-10-25）
 
 - 首页工具栏改用原生 Toggle，同一个按钮可打开或关闭字幕；选中状态与「显示 / 隐藏字幕窗口」提示同步。「转写」菜单及 ⇧⌘C 共用相同状态。字幕窗口自行关闭也会清除选中状态，快速重复操作保留最后一次开关意图。
