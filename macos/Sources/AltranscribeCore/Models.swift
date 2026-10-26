@@ -30,7 +30,7 @@ public enum SpeechProvider: String, Codable, CaseIterable, Identifiable, Sendabl
         case .nemotron: L("Nemotron · On Device")
         case .fluidAudio: L("FluidAudio · On Device")
         case .appleSpeech: "Apple SpeechTranscriber"
-        case .compatible: L("OpenAI / Compatible")
+        case .compatible: "OpenAI"
         case .gemini: "Google Gemini"
         }
     }

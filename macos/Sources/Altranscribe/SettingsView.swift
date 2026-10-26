@@ -19,6 +19,7 @@ struct SettingsView: View {
         Form { pane }
         .formStyle(.grouped)
         .frame(width: embedded ? nil : 600, height: embedded ? nil : 620)
+        .background { if !embedded { UnifiedToolbarWindow() } }
         .animation(Motion.content, value: model.settingsPage)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -626,5 +627,20 @@ struct CredentialEditor: View {
             try KeychainStore.save("", endpoint: endpoint)
             key = ""; configured = false; message = LocalizedText("The saved key was removed.")
         } catch { message = LocalizedText(error: error) }
+    }
+}
+
+/// Gives the Settings window the main window's unified toolbar, so its page picker is the same large toolbar control
+/// on a glass platter beside the window buttons. SwiftUI's Settings scene keeps the preference toolbar style whatever
+/// the scene asks for, and that style puts a smaller picker in a row of its own below the window buttons.
+private struct UnifiedToolbarWindow: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { WindowStyler() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class WindowStyler: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window, window.toolbarStyle != .unified { window.toolbarStyle = .unified }
+        }
     }
 }

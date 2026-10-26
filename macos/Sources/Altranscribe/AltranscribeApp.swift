@@ -94,5 +94,8 @@ import AltranscribeCore
                 .environment(\.locale, InterfaceLanguage.current.locale)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         }
+        // Only the page picker sits in the title bar, as in the main window's Settings page. (SwiftUI applies the
+        // hidden title here but keeps the preference toolbar style; SettingsView switches the window to unified.)
+        .windowToolbarStyle(.unified(showsTitle: false))
     }
 }
