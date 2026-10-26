@@ -187,21 +187,8 @@ private struct SessionSetup: View {
 
     private var textModel: some View {
         let settings = model.settings
-        let presets = settings.textModelPresets
         return Menu {
-            if !presets.isEmpty {
-                Picker(L("Model"), selection: Binding(get: { settings.effectiveTextModel }, set: {
-                    model.settings.textModel = $0; model.settings.textModelOverride = nil
-                })) {
-                    if !presets.contains(settings.effectiveTextModel) && !settings.effectiveTextModel.isEmpty {
-                        Text(settings.effectiveTextModel).tag(settings.effectiveTextModel)
-                    }
-                    ForEach(presets, id: \.self) { Text($0).tag($0) }
-                }
-                .pickerStyle(.inline)
-                Divider()
-            }
-            Button(L("Text Model Settings…")) { open(.text) }
+            TextModelMenuContent(model: model)
         } label: {
             if settings.effectiveTextModel.isEmpty {
                 Label(L("Choose a Text Model"), systemImage: "exclamationmark.triangle.fill")

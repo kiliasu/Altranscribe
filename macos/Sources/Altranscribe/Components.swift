@@ -144,33 +144,58 @@ struct OpenSettingsButton: View {
     }
 }
 
-/// The text service's model, switchable among the service's presets in place. A local service lists
-/// its models only in Settings, so here it is named; a missing model is named in orange.
-struct TextModelPicker: View {
+/// Shared quick choices in the home page and transcription inspector.
+struct TextModelMenuContent: View {
     @Bindable var model: AppModel
 
     var body: some View {
         let settings = model.settings
-        let presets = settings.textModelPresets
-        if presets.isEmpty {
-            LabeledContent(L("Text Model")) {
-                Text(settings.effectiveTextModel.isEmpty ? L("Not configured") : settings.effectiveTextModel)
-                    .foregroundStyle(settings.effectiveTextModel.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+        Section(L("Text Service")) {
+            Picker(L("Text Service"), selection: Binding(get: { settings.textProvider }, set: {
+                model.settings.switchTextService(provider: $0)
+            })) {
+                ForEach(TextProvider.allCases) { provider in
+                    Text(serviceTitle(provider)).tag(provider)
+                }
+            }
+            .pickerStyle(.inline).labelsHidden()
+        }
+        if !settings.textModelPresets.isEmpty {
+            Section(L("Model")) {
+                Picker(L("Model"), selection: Binding(get: { settings.effectiveTextModel }, set: {
+                    model.settings.textModel = $0; model.settings.textModelOverride = nil
+                })) {
+                    if !settings.textModelPresets.contains(settings.effectiveTextModel) {
+                        Text(settings.effectiveTextModel.isEmpty ? L("Select Model") : settings.effectiveTextModel)
+                            .tag(settings.effectiveTextModel)
+                    }
+                    ForEach(settings.textModelPresets, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.inline).labelsHidden()
+            }
+        }
+        Divider()
+        OpenSettingsButton(title: L("Text Model Settings…"), page: .text, model: model)
+    }
+
+    private func serviceTitle(_ provider: TextProvider) -> String {
+        var settings = model.settings
+        settings.textProvider = provider
+        return settings.textServiceTitle
+    }
+}
+
+struct TextModelPicker: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        LabeledContent(L("Text Model")) {
+            Menu { TextModelMenuContent(model: model) } label: {
+                Text(model.settings.effectiveTextModel.isEmpty ? L("Not configured") : model.settings.effectiveTextModel)
                     .lineLimit(1).truncationMode(.middle)
             }
-            .help(settings.textServiceTitle)
-        } else {
-            Picker(L("Text Model"), selection: Binding(get: { settings.effectiveTextModel }, set: {
-                model.settings.textModel = $0; model.settings.textModelOverride = nil
-            })) {
-                if settings.effectiveTextModel.isEmpty {
-                    Text(L("Select Model")).tag("")
-                } else if !presets.contains(settings.effectiveTextModel) {
-                    Text(settings.effectiveTextModel).tag(settings.effectiveTextModel)
-                }
-                ForEach(presets, id: \.self) { Text($0).tag($0) }
-            }
-            .help(settings.textServiceTitle)
+            .tint(model.settings.effectiveTextModel.isEmpty ? .orange : nil)
+            .help(model.settings.textServiceTitle)
         }
     }
 }
