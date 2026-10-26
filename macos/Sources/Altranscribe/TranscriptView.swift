@@ -45,7 +45,7 @@ struct TranscriptScroll<Header: View>: View {
                             .padding(.bottom, 20)
                             .transition(.rise)
                     }
-                    ForEach(record.segments) { SegmentRow(segment: $0, textSize: textSize).transition(.rise) }
+                    ForEach(record.segments) { SegmentRow(segment: $0, textSize: textSize, streaming: live != nil).transition(.rise) }
                     if record.segments.isEmpty && live == nil {
                         Text(L("No speech was transcribed."))
                             .font(.system(size: textSize))
@@ -82,6 +82,7 @@ struct TranscriptScroll<Header: View>: View {
             // A new line glides into view; a line that grows keeps pace with a shorter glide.
             .onChange(of: record.segments.count) { _, _ in followLatest(proxy, Motion.content) }
             .onChange(of: record.segments.last?.text) { _, _ in followLatest(proxy, Motion.quick) }
+            .onChange(of: record.segments.last?.translation) { _, _ in followLatest(proxy, Motion.quick) }
             .onChange(of: settledTranslations) { _, _ in followLatest(proxy, Motion.content) }
             .onChange(of: textSize) { _, _ in followLatest(proxy, nil) }
             .onAppear { if live != nil { proxy.scrollTo(bottom, anchor: .bottom) } }
@@ -115,6 +116,7 @@ struct TranscriptScroll<Header: View>: View {
 struct SegmentRow: View {
     let segment: TranscriptSegment
     let textSize: Double
+    var streaming = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 18) {
@@ -124,14 +126,14 @@ struct SegmentRow: View {
                 .frame(width: 58, alignment: .trailing)
                 .help(segment.estimated ? L("This timestamp is estimated") : L("Audio timestamp"))
             VStack(alignment: .leading, spacing: textSize * 0.4) {
-                Text(segment.text)
+                StreamingText(segment.text, active: streaming)
                     .font(.system(size: textSize))
                     .lineSpacing(textSize * 0.3)
                 if let translation = segment.translation {
                     if segment.translationIsProvisional == true {
                         Text(L("Provisional translation")).font(.caption).foregroundStyle(.tertiary)
                     }
-                    Text(translation)
+                    StreamingText(translation, active: streaming)
                         .font(.system(size: textSize))
                         .lineSpacing(textSize * 0.3)
                         .foregroundStyle(.secondary)
