@@ -56,6 +56,7 @@ struct QueuedFile: Identifiable {
     private let appleSpeech = NativeAppleSpeech()
     private let api: APIClient
     private let capture = AudioCapture()
+    private var cloudSpeech: CloudSpeechSession?
     private var work: Task<Void, Never>?
     private var translationWork: Task<Void, Never>?
     private var translationQueue: [TranscriptSegment] = []
@@ -98,10 +99,10 @@ struct QueuedFile: Identifiable {
         do { try store.saveSettings(settings) } catch { self.error = LocalizedText(error: error) }
     }
 
-    private func prepare(_ configuration: AppSettings) async throws -> (speechKey: String, textKey: String) {
+    private func prepare(_ configuration: AppSettings, live: Bool = false) async throws -> (speechKey: String, textKey: String) {
         var speechKey = ""
         var textKey = ""
-        if configuration.translate || configuration.summarize {
+        if (configuration.translate && !(live && configuration.usesDirectSpeechTranslation)) || configuration.summarize {
             guard !configuration.effectiveTextModel.isEmpty else {
                 throw AppError("Translation or summary is enabled. Configure a text model in Settings first.")
             }
@@ -136,14 +137,15 @@ struct QueuedFile: Identifiable {
     private func createRecord(source: AudioSource, file: URL?, configuration: AppSettings) throws -> UUID {
         let title = file?.deletingPathExtension().lastPathComponent ?? "\(source.title) · \(Localization.date(.now))"
         let speechModel: String
-        switch configuration.speechProvider {
+        if source != .file && configuration.usesCloudLive { speechModel = configuration.liveSpeechModel }
+        else { switch configuration.speechProvider {
         case .whisper: speechModel = URL(fileURLWithPath: configuration.effectiveModelPath).deletingPathExtension().lastPathComponent
         case .nemotron: speechModel = configuration.nemotronModel.id
         case .fluidAudio: speechModel = configuration.fluidAudioModel.id
         case .appleSpeech: speechModel = "Apple SpeechTranscriber · " + configuration.appleSpeechLocale
-        case .gemini: speechModel = configuration.geminiSpeechModel
+        case .gemini: speechModel = configuration.effectiveGeminiSpeechModel
         case .compatible: speechModel = configuration.effectiveSpeechModel
-        }
+        } }
         var record = TranscriptRecord(title: title, source: source, language: configuration.recognitionLanguage, speechModel: speechModel)
         record.sourcePath = file?.path
         record.targetLanguage = configuration.translate ? configuration.targetLanguage : nil
@@ -166,22 +168,40 @@ struct QueuedFile: Identifiable {
             var recordID: UUID?
             var saved = false
             do {
-                let keys = try await prepare(configuration)
-                let chunks = try await capture.start(source: source, chunkSeconds: configuration.speechProvider == .nemotron ? 0.32 : 8) { [weak self] level, duration in
+                let keys = try await prepare(configuration, live: true)
+                let id = try createRecord(source: source, file: nil, configuration: configuration)
+                recordID = id
+                if configuration.usesCloudLive {
+                    let speech = CloudSpeechSession(settings: configuration, key: keys.speechKey, onUpdate: { [weak self] update in
+                        try await self?.saveSegments(update.finalized ? [update.segment] : [], partial: update.finalized ? nil : update.segment,
+                                                     recordID: id, configuration: configuration, textKey: keys.textKey)
+                    }, onFailure: { [weak self] _ in
+                        Task { @MainActor in
+                            guard let self, self.activeRecordID == id else { return }
+                            await self.capture.stop()
+                        }
+                    })
+                    cloudSpeech = speech
+                    try await speech.start()
+                }
+                let chunkSeconds = configuration.usesCloudLive ? 0.1 : configuration.speechProvider == .nemotron ? 0.32 : 8
+                let chunks = try await capture.start(source: source, chunkSeconds: chunkSeconds) { [weak self] level, duration in
                     Task { @MainActor in
                         guard let self, self.phase == .recording else { return }
                         self.meter = level; self.elapsed = duration
                     }
                 }
                 try Task.checkCancellation()
-                let id = try createRecord(source: source, file: nil, configuration: configuration)
-                recordID = id
                 phase = .recording; status = LocalizedText("Listening")
                 for try await chunk in chunks {
                     try Task.checkCancellation()
-                    try await process(chunk, recordID: id, configuration: configuration, keys: keys)
+                    if let cloudSpeech { try await cloudSpeech.accept(chunk) }
+                    else { try await process(chunk, recordID: id, configuration: configuration, keys: keys) }
                 }
                 phase = .finishing
+                if let cloudSpeech, try await !cloudSpeech.finish(), let index = records.firstIndex(where: { $0.id == id }) {
+                    records[index].error = LocalizedText("The preview translation service did not confirm the final output. Review the last sentence.")
+                }
                 try await finishRecord(id, configuration: configuration, textKey: keys.textKey, summaryLanguage: summaryLanguage)
                 saved = true
             } catch is CancellationError {
@@ -191,6 +211,7 @@ struct QueuedFile: Identifiable {
                 self.error = LocalizedText(error: error)
             }
             await capture.stop()
+            await cloudSpeech?.cancel(); cloudSpeech = nil
             translationWork?.cancel()
             await translationWork?.value
             await whisper.unload()
@@ -221,7 +242,7 @@ struct QueuedFile: Identifiable {
         work?.cancel()
         translationWork?.cancel()
         status = LocalizedText("Stopping…")
-        Task { await capture.stop() }
+        Task { await cloudSpeech?.cancel(); await capture.stop() }
     }
 
     private func process(_ chunk: AudioChunk, recordID: UUID, configuration: AppSettings, keys: (speechKey: String, textKey: String)) async throws {
@@ -236,7 +257,11 @@ struct QueuedFile: Identifiable {
             segments = try await fluidAudio.transcribe(chunk)
         } else if configuration.speechProvider == .appleSpeech {
             segments = try await appleSpeech.transcribe(chunk, vocabulary: configuration.vocabulary)
-        } else { segments = try await api.transcribe(chunk, settings: configuration, key: keys.speechKey) }
+        } else {
+            segments = try await api.transcribe(chunk, settings: configuration, key: keys.speechKey) { [weak self] warning in
+                Task { @MainActor in self?.error = warning.message }
+            }
+        }
         try await saveSegments(segments, partial: partial, recordID: recordID, configuration: configuration, textKey: keys.textKey)
     }
 
@@ -246,16 +271,32 @@ struct QueuedFile: Identifiable {
         guard let index = records.firstIndex(where: { $0.id == recordID }) else { return }
         var changed = false
         for segment in segments + (partial.map { [$0] } ?? []) {
+            if segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                (segment.translation ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) {
+                    records[index].segments.remove(at: line); changed = true
+                }
+                continue
+            }
             if let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) {
                 if records[index].segments[line].text != segment.text || records[index].segments[line].end != segment.end {
                     records[index].segments[line].text = segment.text
                     records[index].segments[line].end = segment.end
                     changed = true
                 }
+                if records[index].segments[line].start != segment.start {
+                    records[index].segments[line].start = segment.start; changed = true
+                }
+                if let translation = segment.translation, records[index].segments[line].translation != translation {
+                    records[index].segments[line].translation = translation; changed = true
+                }
             } else { records[index].segments.append(segment); changed = true }
         }
-        if changed { try store.save(records[index]) }
-        if configuration.translate {
+        if changed {
+            records[index].segments.sort { $0.start < $1.start }
+            try store.save(records[index])
+        }
+        if configuration.translate && !(records[index].source != .file && configuration.usesDirectSpeechTranslation) {
             for segment in segments {
                 try Task.checkCancellation()
                 guard let line = records[index].segments.first(where: { $0.id == segment.id }),
@@ -396,7 +437,7 @@ struct QueuedFile: Identifiable {
                 phase = .files
                 while let index = queue.firstIndex(where: { $0.status == .waiting }), !Task.isCancelled {
                     queue[index].status = .processing
-                    let decoder = MediaDecoder()
+                    let decoder = MediaDecoder(chunkSeconds: configuration.speechProvider.isLocal ? 20 : 600)
                     var recordID: UUID?
                     do {
                         status = LocalizedText(verbatim: queue[index].url.lastPathComponent)

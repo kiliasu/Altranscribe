@@ -71,6 +71,9 @@ public final class APIClient: Sendable {
         do { (data, response) = try await session.data(for: request) }
         catch {
             if Task.isCancelled { throw CancellationError() }
+            if (error as? URLError)?.code == .timedOut {
+                throw AppError("The service timed out. The request was not retried; try again later or choose another model.")
+            }
             throw AppError("Could not connect. Check the API URL, network and local server.")
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -80,6 +83,7 @@ public final class APIClient: Sendable {
             case 401, 403: hint = "HTTP %@. Check the API key and model access."
             case 404: hint = "HTTP %@. Check the endpoint and model name."
             case 429: hint = "HTTP %@. Rate limit or quota exceeded."
+            case 503: hint = "HTTP %@. The service is temporarily unavailable. Try again later or choose another model."
             default: hint = "HTTP %@. The request did not complete. It was not retried."
             }
             throw AppError(hint, String(code))

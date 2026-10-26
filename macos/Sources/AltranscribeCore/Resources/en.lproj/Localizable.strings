@@ -312,3 +312,9 @@
 "Vocabulary hints apply to transcription, not direct speech translation." = "Vocabulary hints apply to transcription, not direct speech translation.";
 
 "When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played." = "When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played.";
+
+"The service timed out. The request was not retried; try again later or choose another model." = "The service timed out. The request was not retried; try again later or choose another model.";
+
+"HTTP %@. The service is temporarily unavailable. Try again later or choose another model." = "HTTP %@. The service is temporarily unavailable. Try again later or choose another model.";
+
+"Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files." = "Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files.";

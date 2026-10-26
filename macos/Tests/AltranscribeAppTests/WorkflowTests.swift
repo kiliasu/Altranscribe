@@ -148,6 +148,27 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertEqual(try app.store.load().records.first?.segments, translated.segments)
     }
 
+    func testDirectSpeechUpdatesPersistWithoutCallingTextService() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root); WorkflowProtocol.handler = nil }
+        let app = app(at: root)
+        let record = TranscriptRecord(title: "Cloud", source: .system, language: "en", speechModel: "gpt-realtime-translate")
+        app.records = [record]; app.activeRecordID = record.id
+        var settings = AppSettings(); settings.speechProvider = .compatible; settings.translate = true
+        WorkflowProtocol.handler = { _ in XCTFail("Direct translation must not require or call the text service") }
+        var line = TranscriptSegment(start: 5, end: 6, text: "Hello", estimated: true)
+        try await app.saveSegments([], partial: line, recordID: record.id, configuration: settings, textKey: "")
+        line.translation = "你好"; line.text = "Hello."; line.start = 0; line.end = 7
+        try await app.saveSegments([line], recordID: record.id, configuration: settings, textKey: "")
+        XCTAssertEqual(app.records[0].segments, [line])
+        let silent = TranscriptSegment(start: 8, end: 9, text: "")
+        try await app.saveSegments([silent], recordID: record.id, configuration: settings, textKey: "")
+        try await app.finishRecord(record.id, configuration: settings, textKey: "")
+        XCTAssertEqual(app.records[0].segments, [line])
+        XCTAssertEqual(app.pendingTranslations, 0)
+        XCTAssertEqual(try app.store.load().records.first?.segments, [line])
+    }
+
     func testBrokenSettingsDoNotHideSavedTranscripts() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
