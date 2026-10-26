@@ -287,6 +287,7 @@ struct QueuedFile: Identifiable {
             var recordID: UUID?
             var saved = false
             do {
+                if source == .microphone { _ = try MicrophoneDevice.resolve(configuration.microphoneDeviceUID) }
                 let keys = try await prepare(configuration, live: true)
                 let id = try createRecord(source: source, file: nil, configuration: configuration)
                 recordID = id
@@ -312,7 +313,8 @@ struct QueuedFile: Identifiable {
                 status = LocalizedText("Starting audio capture…")
                 let chunks = try await capture.start(source: source, chunkSeconds: configuration.liveChunkSeconds,
                     automaticChunks: configuration.usesBatchLiveAudio && (configuration.liveChunkMode ?? .automatic) == .automatic,
-                    adaptiveGain: configuration.adaptiveInputGain ?? true, voiceProcessing: configuration.microphoneVoiceProcessing ?? false) { [weak self] level, duration in
+                    adaptiveGain: configuration.adaptiveInputGain ?? true, voiceProcessing: configuration.microphoneVoiceProcessing ?? false,
+                    microphoneUID: configuration.microphoneDeviceUID) { [weak self] level, duration in
                     Task { @MainActor in
                         guard let self, self.phase == .recording else { return }
                         self.meter = level; self.elapsed = duration

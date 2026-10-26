@@ -81,6 +81,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var liveChunkMode: LiveChunkMode?
     public var adaptiveInputGain: Bool?
     public var microphoneVoiceProcessing: Bool?
+    public var microphoneDeviceUID: String?
     public var captionSentenceCount: Int?
 
     public var usesBatchLiveAudio: Bool {

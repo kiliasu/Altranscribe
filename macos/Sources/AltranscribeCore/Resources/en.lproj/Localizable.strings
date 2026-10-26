@@ -473,3 +473,10 @@
 "Provisional translation" = "Provisional translation";
 
 "Starting audio capture…" = "Starting audio capture…";
+"System Default" = "System Default";
+"System Default · %@" = "System Default · %@";
+"Unavailable Microphone" = "Unavailable Microphone";
+"Microphone: %@" = "Microphone: %@";
+"The selected microphone is unavailable. Connect it or choose another microphone." = "The selected microphone is unavailable. Connect it or choose another microphone.";
+"The microphone changed or disconnected. Select a microphone and start a new recording." = "The microphone changed or disconnected. Select a microphone and start a new recording.";
+"Could not use the selected microphone. Choose another microphone or turn off Apple voice processing." = "Could not use the selected microphone. Choose another microphone or turn off Apple voice processing.";

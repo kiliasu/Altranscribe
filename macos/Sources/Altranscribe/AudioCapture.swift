@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 @preconcurrency import ScreenCaptureKit
+import AudioToolbox
 import AltranscribeCore
 
 /// Audio callbacks and the chunk buffer are confined to this serial queue.
@@ -94,6 +95,9 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
         }
     }
     private func fail(_ error: Error) { finished = true; continuation.finish(throwing: error) }
+    func microphoneChanged() {
+        queue.async { self.fail(AppError("The microphone changed or disconnected. Select a microphone and start a new recording.")) }
+    }
     func setPaused(_ value: Bool) {
         queue.async {
             if value {
@@ -140,8 +144,9 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
     private var engine: AVAudioEngine?
     private var screenStream: SCStream?
     private var sink: CaptureSink?
+    private var microphoneObserver: NSObjectProtocol?
 
-    func start(source: AudioSource, chunkSeconds: Double = 8, automaticChunks: Bool = false, adaptiveGain: Bool = false, voiceProcessing: Bool = false, meter: @escaping @Sendable (Float, Double) -> Void) async throws -> AsyncThrowingStream<AudioChunk, Error> {
+    func start(source: AudioSource, chunkSeconds: Double = 8, automaticChunks: Bool = false, adaptiveGain: Bool = false, voiceProcessing: Bool = false, microphoneUID: String? = nil, meter: @escaping @Sendable (Float, Double) -> Void) async throws -> AsyncThrowingStream<AudioChunk, Error> {
         let sink = CaptureSink(chunkSeconds: chunkSeconds, automaticChunks: automaticChunks, adaptiveGain: adaptiveGain && !(source == .microphone && voiceProcessing), meter: meter)
         self.sink = sink
         do {
@@ -150,6 +155,7 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
                     throw AppError("Allow Altranscribe in System Settings → Privacy & Security → Microphone.")
                 }
                 try Task.checkCancellation()
+                let device = try MicrophoneDevice.resolve(microphoneUID)
                 let engine = AVAudioEngine()
                 let input = engine.inputNode
                 if voiceProcessing {
@@ -161,6 +167,7 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
                         throw AppError("Apple voice processing is unavailable for this input. Turn it off or select another microphone.")
                     }
                 }
+                if microphoneUID != nil { try Self.select(device, on: input) }
                 let format = input.outputFormat(forBus: 0)
                 guard format.sampleRate > 0, format.channelCount > 0 else {
                     throw AppError("No microphone is available.")
@@ -170,6 +177,13 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
                 self.engine = engine
                 engine.prepare()
                 try engine.start()
+                microphoneObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
+                    object: engine, queue: nil) { [weak self, weak engine] _ in
+                        Task { @MainActor [weak self, weak engine] in
+                            guard let self, let engine, self.engine === engine else { return }
+                            self.resumeMicrophone(engine, device: device, format: format, sink: sink)
+                        }
+                    }
             } else {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
                 try Task.checkCancellation()
@@ -198,7 +212,30 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
         }
     }
     func pause(_ value: Bool) { sink?.setPaused(value) }
+    /// Select this engine's input, without changing the system default used by other apps.
+    static func select(_ device: MicrophoneDevice, on input: AVAudioInputNode) throws {
+        var id = device.audioID
+        guard let unit = input.audioUnit,
+              AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                   &id, UInt32(MemoryLayout.size(ofValue: id))) == noErr else {
+            throw AppError("Could not use the selected microphone. Choose another microphone or turn off Apple voice processing.")
+        }
+    }
+    private func resumeMicrophone(_ engine: AVAudioEngine, device: MicrophoneDevice, format: AVAudioFormat, sink: CaptureSink) {
+        // Selecting an input can deliver a configuration notification after start(). Only resume
+        // the same device and tap format; a real route change must never capture another input.
+        var actual = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard MicrophoneDevice.available().contains(where: { $0.id == device.id && $0.audioID == device.audioID }),
+              let unit = engine.inputNode.audioUnit,
+              AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &actual, &size) == noErr,
+              actual == device.audioID, engine.inputNode.outputFormat(forBus: 0) == format else {
+            sink.microphoneChanged(); return
+        }
+        do { if !engine.isRunning { try engine.start() } }
+        catch { sink.microphoneChanged() }
+    }
     func stop() async {
+        if let microphoneObserver { NotificationCenter.default.removeObserver(microphoneObserver); self.microphoneObserver = nil }
         if let engine { engine.inputNode.removeTap(onBus: 0); engine.stop(); self.engine = nil }
         let screen = screenStream
         let currentSink = sink

@@ -323,11 +323,17 @@ struct TransportBar: View {
     @ViewBuilder private var actions: some View {
         switch stage {
         case .idle:
-            Button(L("Start Transcription"), systemImage: "record.circle.fill") { model.startLive() }
-                .buttonStyle(.glassProminent)
-                .tint(.red)
-                .disabled(model.busy || !model.canStart(live: true))
-                .help(L("Start Transcription") + " ⇧⌘R")
+            HStack(spacing: 12) {
+                if model.source == .microphone {
+                    MicrophonePicker(selection: $model.settings.microphoneDeviceUID)
+                        .disabled(model.busy)
+                }
+                Button(L("Start Transcription"), systemImage: "record.circle.fill") { model.startLive() }
+                    .buttonStyle(.glassProminent)
+                    .tint(.red)
+                    .disabled(model.busy || !model.canStart(live: true))
+                    .help(L("Start Transcription") + " ⇧⌘R")
+            }
         case .preparing, .finishing:
             Button(L("Cancel")) { model.cancel() }
         case .capturing:
