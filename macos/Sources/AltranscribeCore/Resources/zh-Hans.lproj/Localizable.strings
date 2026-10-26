@@ -312,7 +312,7 @@
 
 "Vocabulary hints apply to transcription, not direct speech translation." = "词汇提示用于转录，不适用于直接语音翻译。";
 
-"When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played." = "开启翻译后，直接语音翻译会同时返回原文与译文，只需语音服务密钥。不会播放生成的音频。";
+"When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played, but the service still bills it." = "开启翻译后，直接语音翻译会同时返回原文与译文，只需语音服务密钥。生成的音频不会播放，但服务仍按音频输出计费。";
 
 "The service timed out. The request was not retried; try again later or choose another model." = "服务响应超时。请求未自动重试，请稍后再试或选择其他模型。";
 

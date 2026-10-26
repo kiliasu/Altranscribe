@@ -312,7 +312,7 @@
 
 "Vocabulary hints apply to transcription, not direct speech translation." = "Vocabulary hints apply to transcription, not direct speech translation.";
 
-"When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played." = "When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played.";
+"When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played, but the service still bills it." = "When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played, but the service still bills it.";
 
 "The service timed out. The request was not retried; try again later or choose another model." = "The service timed out. The request was not retried; try again later or choose another model.";
 

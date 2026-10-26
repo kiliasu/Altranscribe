@@ -257,9 +257,9 @@ struct SettingsView: View {
                     Section(L("Live Speech")) {
                         Toggle(L("Translate directly from audio"), isOn: Binding(get: { model.settings.cloudDirectTranslation ?? true },
                                                                               set: { model.settings.cloudDirectTranslation = $0 }))
-                        LabeledContent(L("Transcription"), value: model.settings.speechProvider == .gemini ? "gemini-3.5-transcribe-live" : "gpt-live-transcribe")
-                        LabeledContent(L("Direct Translation"), value: model.settings.speechProvider == .gemini ? "gemini-3.5-live-translate-preview" : "gpt-realtime-translate")
-                        Text(L("When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played."))
+                        LabeledContent(L("Transcription"), value: AppSettings.liveSpeechModel(provider: model.settings.speechProvider, direct: false))
+                        LabeledContent(L("Direct Translation"), value: AppSettings.liveSpeechModel(provider: model.settings.speechProvider, direct: true))
+                        Text(L("When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played, but the service still bills it."))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
