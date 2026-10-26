@@ -14,6 +14,7 @@ private final class FakeSpeechServer: @unchecked Sendable {
         var noiseTurns: Set<Int> = []
         var allNoise = false
         var responseDelay: Duration = .zero
+        var firstAudioSendDelay: Duration = .zero
         /// Connections that receive a GoAway with this timeLeft once their first audio frame arrives.
         var goAwayAfterAudio: [Int: String] = [:]
     }
@@ -24,6 +25,7 @@ private final class FakeSpeechServer: @unchecked Sendable {
 
     var factory: CloudSpeechSocketFactory { { [self] _ in self.open() as any CloudSpeechSocket } }
     var connectionCount: Int { lock.withLock { sockets.count } }
+    var firstAudioSendDelay: Duration { options.firstAudioSendDelay }
     func socket(_ index: Int) -> FakeSocket { lock.withLock { sockets[index - 1] } }
 
     private func open() -> FakeSocket {
@@ -56,7 +58,7 @@ private final class FakeSpeechServer: @unchecked Sendable {
             if options.responseDelay == .zero { respond() }
             else {
                 let delay = options.responseDelay
-                Task { try await Task.sleep(for: delay); respond() }
+                Task { try? await Task.sleep(for: delay); respond() }
             }
         }
     }
@@ -69,7 +71,7 @@ private final class FakeSocket: CloudSpeechSocket, @unchecked Sendable {
     private var queue: [Data] = []
     private var waiter: CheckedContinuation<Data?, Error>?
     private var closed: Error?
-    private var turns = 0, goAwaySent = false
+    private var turns = 0, goAwaySent = false, audioStarted = false
     private var sent: [[String: Any]] = []
     var httpStatus: Int? { nil }
 
@@ -78,6 +80,14 @@ private final class FakeSocket: CloudSpeechSocket, @unchecked Sendable {
     func send(_ text: String) async throws {
         if let closed = lock.withLock({ self.closed }) { throw closed }
         let event = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] ?? [:]
+        if index == 1, (event["realtimeInput"] as? [String: Any])?["audio"] != nil {
+            let first = lock.withLock { () -> Bool in
+                if audioStarted { return false }
+                audioStarted = true; return true
+            }
+            if first { try await Task.sleep(for: server?.firstAudioSendDelay ?? .zero) }
+        }
+        if let closed = lock.withLock({ self.closed }) { throw closed }
         lock.withLock { sent.append(event) }
         server?.handle(event, from: self)
     }
@@ -270,6 +280,28 @@ final class CloudSessionTests: XCTestCase {
         XCTAssertTrue(confirmed)
         XCTAssertEqual(capture.failureCount, 0)
         XCTAssertTrue(capture.text.contains("on 3"), capture.text)
+    }
+
+    func testRenewalDrainsOnlyAfterTheInFlightAudioSend() async throws {
+        for budget: Duration in [.seconds(2), .milliseconds(200)] {
+            let server = FakeSpeechServer(.init(firstAudioSendDelay: .milliseconds(700))), capture = Capture()
+            let speech = session(server, capture: capture, drainTimeout: budget)
+            try await speech.start()
+            let sending = Task { try await speech.accept(AudioChunk(samples: Array(repeating: 0.1, count: 1600), start: 0)) }
+            try await wait(for: { server.socket(1).count("activityStart") == 1 })
+            server.socket(1).push(["goAway": ["timeLeft": "0s"]])
+            try await wait(for: { await speech.renewalCount == 1 })
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertEqual(server.socket(1).count("activityEnd"), 0, "The old stream must not end before its last audio send completes")
+            try await sending.value
+            try await feed(speech, seconds: 0.5, voice: true, from: 0.1)
+            let confirmed = try await speech.finish()
+            XCTAssertEqual(confirmed, budget == .seconds(2))
+            if !confirmed { let warning = await speech.warning; XCTAssertNotNil(warning) }
+            XCTAssertEqual(capture.failureCount, 0, "Even a timed-out retired send must not fail the new connection")
+            XCTAssertTrue(capture.text.contains("on 2"), capture.text)
+            if confirmed { XCTAssertTrue(capture.text.contains("on 1"), capture.text) }
+        }
     }
 
     func testARetiringConnectionThatDiesLeavesANoteInsteadOfStopping() async throws {

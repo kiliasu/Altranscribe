@@ -203,9 +203,9 @@ public actor CloudSpeechSession {
             } else if settings.speechProvider == .gemini && !settings.usesDirectSpeechTranslation && connection.state.activityShouldEnd {
                 try await endActivity(id)
             }
-        } catch is AppError where retiring[id] != nil {
+        } catch is AppError where id != active {
             // The frame belonged to a connection that was retired while it was being sent; later
-            // frames go to the new connection and the retiring drain reports this one's outcome.
+            // frames go to the new connection. Its drain may already have finished reporting a failure.
         }
         try check()
     }
@@ -389,6 +389,13 @@ public actor CloudSpeechSession {
         guard let connection = connections[id] else { throw CancellationError() }
         connection.state.finishing = true; connection.state.generationComplete = false
         defer { close(id) }
+        let sendDeadline = ContinuousClock.now.advanced(by: drainTimeout)
+        while connection.sending {
+            try check()
+            if let lost = connection.lost { throw lost }
+            guard ContinuousClock.now < sendDeadline else { throw Self.connectionLost }
+            try await Task.sleep(for: .milliseconds(20))
+        }
         if settings.speechProvider == .gemini && connection.state.first != nil {
             // Both Gemini speech pipelines need paced trailing silence to release buffered final words.
             for _ in 0..<tuning.trailingSilenceFrames {
