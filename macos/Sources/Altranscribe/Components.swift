@@ -2,7 +2,8 @@ import SwiftUI
 import AltranscribeCore
 
 /// Lays its children out like words in a paragraph, wrapping onto new lines when the row is full.
-/// Each child is offered the full row, so one that is too long truncates instead of overflowing.
+/// Children keep their ideal size; only one wider than a whole row is offered the row's width, so it
+/// truncates or wraps on a row of its own instead of overflowing.
 struct FlowLayout: Layout {
     var alignment: HorizontalAlignment = .leading
     var spacing: CGFloat = 8
@@ -13,6 +14,10 @@ struct FlowLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let rows = arrange(subviews, in: proposal.width ?? .infinity)
         let height = rows.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(0, rows.count - 1))
+        // With a definite width, take all of it and align the rows inside, so placement uses the width
+        // that was measured. The minimum-size probe (width zero) answers zero too, so a long child never
+        // raises the minimum width of the column around the layout.
+        if let width = proposal.width, width.isFinite { return CGSize(width: max(width, 0), height: height) }
         return CGSize(width: rows.map(\.width).max() ?? 0, height: height)
     }
 
@@ -29,11 +34,16 @@ struct FlowLayout: Layout {
     }
 
     private func arrange(_ subviews: Subviews, in width: CGFloat) -> [Row] {
-        let offer = ProposedViewSize(width: width.isFinite ? width : nil, height: nil)
         var rows = [Row()]
         for index in subviews.indices {
-            var size = subviews[index].sizeThatFits(offer)
-            if width.isFinite { size.width = min(size.width, width) }
+            var size = subviews[index].sizeThatFits(.unspecified)
+            // A zero width is SwiftUI asking for the minimum size. Answering with text wrapped one word per
+            // line demanded a towering minimum height; outside a scroll view that reached the window's
+            // constraints and AppKit looped through layout passes. Keep each child whole on its own row.
+            if width > 0, width.isFinite, size.width > width {
+                size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+                size.width = min(size.width, width)
+            }
             if !rows[rows.count - 1].items.isEmpty && rows[rows.count - 1].width + spacing + size.width > width {
                 rows.append(Row())
             }

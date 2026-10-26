@@ -121,7 +121,7 @@ private struct SessionSetup: View {
 
     private var speech: some View {
         let settings = model.settings
-        let title = settings.speechServiceTitle + " · " + settings.speechModelTitle(live: true)
+        let title = settings.speechSummary(live: true)
         return Menu {
             Picker(L("Speech Engine"), selection: $model.settings.speechProvider) {
                 ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }

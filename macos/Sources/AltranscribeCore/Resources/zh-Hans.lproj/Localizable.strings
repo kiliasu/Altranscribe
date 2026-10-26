@@ -414,3 +414,21 @@
 
 "The selected Whisper model file is missing." = "所选 Whisper 模型文件不存在。";
 "Text" = "文本";
+
+/* File progress (2026-10-26). */
+"Translating" = "翻译中";
+
+"File %@ of %@" = "第 %@ / %@ 个文件";
+
+"Processed %@ of %@" = "已处理 %@ / %@";
+
+"Processed %@" = "已处理 %@";
+
+"Elapsed %@" = "用时 %@";
+
+"%@× real time" = "%@× 实时";
+
+"About %@ left" = "约剩 %@";
+
+"Translated %@ of %@" = "已翻译 %@ / %@ 句";
+

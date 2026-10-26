@@ -9,7 +9,10 @@ private final class WorkflowProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() { Self.handler?(self) }
     override func stopLoading() {}
     func reply(_ text: String, status: Int = 200) {
-        let data = try! JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": text], "finish_reason": "stop"]]])
+        replyJSON(["choices": [["message": ["content": text], "finish_reason": "stop"]]], status: status)
+    }
+    func replyJSON(_ object: [String: Any], status: Int = 200) {
+        let data = try! JSONSerialization.data(withJSONObject: object)
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
@@ -22,6 +25,7 @@ private final class ResponseGate: @unchecked Sendable {
     func receive(_ request: WorkflowProtocol) { lock.withLock { requests.append(request) } }
     var count: Int { lock.withLock { requests.count } }
     func reply(_ text: String) { lock.withLock { requests.first }?.reply(text) }
+    var last: WorkflowProtocol? { lock.withLock { requests.last } }
 }
 
 @MainActor final class WorkflowTests: XCTestCase {
@@ -65,7 +69,9 @@ private final class ResponseGate: @unchecked Sendable {
         gate.reply("你好")
         try await feed.value
         try await waitUntil { app.records.first?.segments.first?.translation == "你好" }
+        app.phase = .recording // Captions follow a live session only while it is captured.
         XCTAssertEqual(app.currentCaptionTranslation?.id, line.id, "Keep the latest completed translation visible while the next sentence is partial")
+        app.phase = .idle
 
         line.text += "."
         WorkflowProtocol.handler = { $0.reply("failed", status: 503) }
@@ -172,6 +178,64 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertEqual(app.records[0].segments, [line])
         XCTAssertEqual(app.pendingTranslations, 0)
         XCTAssertEqual(try app.store.load().records.first?.segments, [line])
+    }
+
+    func testCaptionsAreEmptyWhenIdleAndNeverShowFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = app(at: root)
+        var live = TranscriptRecord(title: "Live", source: .microphone, language: "en", speechModel: "nemotron-en-0.6b")
+        live.segments = [TranscriptSegment(start: 0, end: 1, text: "Last words of the session")]
+        app.records = [live]; app.activeRecordID = live.id
+        for phase: SessionPhase in [.recording, .paused, .finishing] {
+            app.phase = phase
+            XCTAssertEqual(app.currentCaption?.text, "Last words of the session", "\(phase)")
+        }
+        app.phase = .idle
+        XCTAssertNil(app.currentCaption, "An ended session must not linger in idle captions")
+        var file = TranscriptRecord(title: "Lecture", source: .file, language: "en", speechModel: "whisper")
+        file.segments = [TranscriptSegment(start: 0, end: 1, text: "File text")]
+        app.records.append(file); app.activeRecordID = file.id
+        for phase: SessionPhase in [.files, .finishing, .idle] {
+            app.phase = phase
+            XCTAssertNil(app.currentCaption, "File transcription never drives the captions (\(phase))")
+        }
+    }
+
+    func testFileQueueReportsProgressStagesThenClears() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root); WorkflowProtocol.handler = nil }
+        let audio = root.appendingPathComponent("lecture.wav")
+        try WaveEncoder.encode([Float](repeating: 0.05, count: 32_000)).write(to: audio)
+        let app = app(at: root)
+        // A loopback speech and text service needs no key; the protocol stub answers both.
+        app.settings.speechProvider = .compatible; app.settings.speechBaseURL = "http://127.0.0.1:9/v1"
+        app.settings.textBaseURL = "http://127.0.0.1:9/v1"; app.settings.textModel = "test-model"
+        app.settings.translate = true; app.settings.targetLanguage = "zh"
+        let gate = ResponseGate()
+        WorkflowProtocol.handler = { gate.receive($0) }
+        app.addFiles([audio])
+        app.startQueue()
+
+        try await waitUntil { gate.count == 1 }
+        let run = try XCTUnwrap(app.fileRun)
+        XCTAssertEqual(run.stage, .transcribing); XCTAssertEqual(run.fileName, "lecture.wav")
+        XCTAssertEqual(run.duration, 2, accuracy: 0.05); XCTAssertEqual(run.processed, 0)
+        XCTAssertEqual(app.queue.first?.recordID, run.recordID)
+        XCTAssertNil(app.currentCaption, "A file being transcribed never drives the captions")
+        XCTAssertTrue(gate.last?.request.url?.path.hasSuffix("audio/transcriptions") == true)
+        gate.last?.replyJSON(["text": "A sentence from the file."])
+
+        try await waitUntil { gate.count == 2 }
+        XCTAssertEqual(app.fileRun?.stage, .translating, "Translating a finished chunk is its own stage")
+        XCTAssertEqual(app.records.first?.segments.first?.text, "A sentence from the file.")
+        gate.last?.reply("文件里的一句话。")
+
+        try await waitUntil { !app.busy }
+        XCTAssertNil(app.fileRun, "The progress clears when the queue stops")
+        XCTAssertEqual(app.queue.first?.status, .completed)
+        XCTAssertEqual(app.records.first?.segments.first?.translation, "文件里的一句话。")
     }
 
     func testInterimTextIsWrittenLazilyAndFinalTextImmediately() async throws {

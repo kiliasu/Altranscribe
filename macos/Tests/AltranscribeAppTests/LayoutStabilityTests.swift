@@ -45,5 +45,40 @@ import AltranscribeCore
         }
     }
 
+    func testFileProgressPageSettlesAtEachSize() throws {
+        let previous = UserDefaults.standard.object(forKey: "showInspector")
+        UserDefaults.standard.set(true, forKey: "showInspector")
+        defer { UserDefaults.standard.set(previous, forKey: "showInspector") }
+        for size in [NSSize(width: 860, height: 600), NSSize(width: 1316, height: 855)] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let model = AppModel(paths: AppPaths(root: root))
+            model.settings.translate = true; model.settings.summarize = true; model.settings.textModel = "test-model"
+            var record = TranscriptRecord(title: "Lecture", source: .file, language: "en", speechModel: "nemotron-en-0.6b")
+            record.segments = (0..<12).map { TranscriptSegment(start: Double($0) * 5, end: Double($0) * 5 + 5, text: "Line \($0) of a long lecture recording") }
+            model.records = [record]
+            var item = QueuedFile(url: root.appendingPathComponent("A very long lecture file name for the queue.m4a"))
+            item.status = .processing; item.recordID = record.id
+            model.queue = [item, QueuedFile(url: root.appendingPathComponent("next.wav"))]
+            model.queueRunning = true; model.phase = .files
+            var run = FileRun(recordID: record.id, fileName: item.url.lastPathComponent, duration: 1_800, configuration: model.settings)
+            run.processed = 60
+            model.fileRun = run
+            model.destination = .files
+            let window = NSWindow(contentViewController: NSHostingController(rootView: ContentView(model: model)))
+            window.styleMask.insert(.fullSizeContentView)
+            window.setContentSize(size)
+            window.makeKeyAndOrderFront(nil)
+            defer { window.close() }
+            settle(0.6)
+            for stage: FileRun.Stage in [.translating, .summarizing, .transcribing] {
+                model.fileRun?.stage = stage
+                model.fileRun?.processed += 120
+                settle(0.4)
+            }
+            XCTAssertTrue(window.isVisible, "files at \(size)")
+        }
+    }
+
     private func settle(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
 }

@@ -414,3 +414,21 @@
 
 "The selected Whisper model file is missing." = "The selected Whisper model file is missing.";
 "Text" = "Text";
+
+/* File progress (2026-10-26). */
+"Translating" = "Translating";
+
+"File %@ of %@" = "File %@ of %@";
+
+"Processed %@ of %@" = "Processed %@ of %@";
+
+"Processed %@" = "Processed %@";
+
+"Elapsed %@" = "Elapsed %@";
+
+"%@× real time" = "%@× real time";
+
+"About %@ left" = "About %@ left";
+
+"Translated %@ of %@" = "Translated %@ of %@";
+

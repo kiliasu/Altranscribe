@@ -96,6 +96,12 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(settings.speechServiceTitle, L("Local Service") + " · 127.0.0.1")
         settings.speechBaseURL = "https://api.openai.com/v1"
         XCTAssertEqual(settings.speechServiceTitle, "OpenAI")
+        settings.speechProvider = .nemotron
+        XCTAssertEqual(settings.speechSummary(live: true), L("Nemotron · English"), "The engine is not repeated before its own model name")
+        settings.speechProvider = .whisper
+        XCTAssertEqual(settings.speechSummary(live: true), "Whisper · Tiny")
+        settings.speechProvider = .gemini
+        XCTAssertEqual(settings.speechSummary(live: false), "Google Gemini · gemini-3.5-transcribe")
         XCTAssertEqual(AppSettings.speechModelDisplayName("nemotron-en-0.6b"), L("Nemotron · English"))
         XCTAssertEqual(AppSettings.speechModelDisplayName("parakeet-tdt-0.6b-v3-coreml"), L("Parakeet v3 · Multilingual"))
         XCTAssertEqual(AppSettings.speechModelDisplayName("gpt-transcribe"), "gpt-transcribe")

@@ -11,6 +11,20 @@ enum Destination: Hashable {
 enum SessionPhase { case idle, preparing, recording, paused, finishing, files }
 enum SettingsPage { case general, speech, text }
 enum QueueStatus { case waiting, processing, completed, failed, cancelled }
+/// The file the queue is working on, for the progress shown on the files page.
+struct FileRun: Equatable {
+    enum Stage: Equatable { case transcribing, translating, summarizing }
+    let recordID: UUID
+    let fileName: String
+    let duration: Double
+    let configuration: AppSettings
+    var processed = 0.0 { didSet { updated = .now } }
+    var stage = Stage.transcribing
+    let started = Date()
+    /// When `processed` last moved, so speed and time left stay steady between chunks.
+    private(set) var updated = Date()
+}
+
 struct QueuedFile: Identifiable {
     let id = UUID()
     let url: URL
@@ -47,6 +61,8 @@ struct QueuedFile: Identifiable {
     /// When the last live session ended through Stop and Save, set in the same update that returns to idle.
     var sessionSavedAt: Date?
     private(set) var pendingTranslations = 0
+    /// Set while the queue processes a file; cleared when the queue stops.
+    var fileRun: FileRun?
 
     let paths: AppPaths
     let store: RecordStore
@@ -84,8 +100,15 @@ struct QueuedFile: Identifiable {
     var activeRecord: TranscriptRecord? { records.first { $0.id == activeRecordID } }
     var isCapturing: Bool { phase == .recording || phase == .paused }
     var filteredRecords: [TranscriptRecord] { records.filter { $0.matches(search) } }
-    var currentCaption: TranscriptSegment? { activeRecord?.segments.last }
-    var currentCaptionTranslation: TranscriptSegment? { activeRecord?.segments.last { $0.translation != nil } }
+    /// The record the floating captions follow: only a live session while it is captured or finishing.
+    /// Idle captions are empty; a file being transcribed or a session that has ended is never shown.
+    var captionRecord: TranscriptRecord? {
+        guard phase == .recording || phase == .paused || phase == .finishing,
+              let record = activeRecord, record.source != .file else { return nil }
+        return record
+    }
+    var currentCaption: TranscriptSegment? { captionRecord?.segments.last }
+    var currentCaptionTranslation: TranscriptSegment? { captionRecord?.segments.last { $0.translation != nil } }
     var modelReady: Bool {
         _ = modelRevision
         switch settings.speechProvider {
@@ -317,6 +340,7 @@ struct QueuedFile: Identifiable {
                 guard let line = records[index].segments.first(where: { $0.id == segment.id }),
                       line.translation == nil, line.translationError == nil else { continue }
                 if records[index].source == .file {
+                    if fileRun?.recordID == recordID { fileRun?.stage = .translating }
                     try await translateSegment(line, recordID: recordID, configuration: configuration, textKey: textKey)
                 } else {
                     try enqueueTranslation(line, recordID: recordID, configuration: configuration, textKey: textKey)
@@ -373,6 +397,7 @@ struct QueuedFile: Identifiable {
     }
 
     func finishRecord(_ id: UUID, configuration: AppSettings, textKey: String, summaryLanguage: String = InterfaceLanguage.current.speechCode) async throws {
+        if fileRun?.recordID == id { fileRun?.stage = .transcribing }
         if configuration.speechProvider == .nemotron {
             let tail = try await nemotron.finish()
             try await saveSegments(tail.finalized, recordID: id, configuration: configuration, textKey: textKey)
@@ -382,6 +407,7 @@ struct QueuedFile: Identifiable {
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
         if configuration.summarize, !records[index].segments.isEmpty {
             status = LocalizedText("Creating summary…")
+            if fileRun?.recordID == id { fileRun?.stage = .summarizing }
             do {
                 let result = try await api.summarize(records[index].fullText, language: summaryLanguage, settings: configuration, key: textKey)
                 try Task.checkCancellation()
@@ -475,9 +501,12 @@ struct QueuedFile: Identifiable {
                         if configuration.speechProvider == .nemotron { await nemotron.beginStream() }
                         let id = try createRecord(source: .file, file: queue[index].url, configuration: configuration)
                         recordID = id; queue[index].recordID = id
+                        fileRun = FileRun(recordID: id, fileName: queue[index].url.lastPathComponent, duration: duration, configuration: configuration)
                         while let chunk = try await decoder.next() {
+                            fileRun?.stage = .transcribing
                             try await process(chunk, recordID: id, configuration: configuration, keys: keys)
                             queue[index].progress = duration > 0 ? min(0.99, (chunk.start + chunk.duration) / duration) : 0
+                            fileRun?.processed = duration > 0 ? min(duration, chunk.start + chunk.duration) : chunk.start + chunk.duration
                         }
                         try Task.checkCancellation()
                         try await finishRecord(id, configuration: configuration, textKey: keys.textKey, summaryLanguage: summaryLanguage)
@@ -497,6 +526,7 @@ struct QueuedFile: Identifiable {
             await nemotron.unload()
             await fluidAudio.unload()
             await appleSpeech.unload()
+            fileRun = nil
             phase = .idle; queueRunning = false; work = nil; status = LocalizedText("Ready")
             endActivity()
         }

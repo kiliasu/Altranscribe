@@ -176,6 +176,15 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case .compatible: return live && usesCloudLive ? liveSpeechModel : effectiveSpeechModel
         }
     }
+    /// Engine and model in one short phrase, without repeating the engine when the model's name already says it.
+    public func speechSummary(live: Bool) -> String {
+        switch speechProvider {
+        case .whisper: "Whisper · " + speechModelTitle(live: live)
+        case .nemotron, .fluidAudio: speechModelTitle(live: live)
+        case .appleSpeech: "Apple · " + speechModelTitle(live: live)
+        case .compatible, .gemini: speechServiceTitle + " · " + speechModelTitle(live: live)
+        }
+    }
     /// Records keep model identifiers; show them the way the settings name them.
     public static func speechModelDisplayName(_ stored: String) -> String {
         if let nemotron = NemotronModel.catalog.first(where: { $0.id == stored }) {

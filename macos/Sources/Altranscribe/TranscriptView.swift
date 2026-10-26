@@ -1,7 +1,19 @@
 import SwiftUI
 import AltranscribeCore
 
-enum LiveState { case recording, paused, finishing }
+/// A transcript that is still growing: a live session, or a file the queue is processing.
+enum LiveState: Equatable {
+    case recording, paused, finishing
+    case transcribing, translating, summarizing
+
+    init(_ stage: FileRun.Stage) {
+        switch stage {
+        case .transcribing: self = .transcribing
+        case .translating: self = .translating
+        case .summarizing: self = .summarizing
+        }
+    }
+}
 
 /// A transcript laid out for reading: one measure-limited column of timestamped lines, each followed by its translation.
 struct TranscriptScroll<Header: View>: View {
@@ -41,7 +53,7 @@ struct TranscriptScroll<Header: View>: View {
                             .padding(.top, 8)
                     }
                     if let live, live != .finishing {
-                        ListeningIndicator(paused: live == .paused, textSize: textSize).transition(.rise)
+                        ListeningIndicator(state: live, textSize: textSize).transition(.rise)
                     }
                     Color.clear.frame(height: 1).id(bottom)
                 }
@@ -136,24 +148,44 @@ struct SegmentRow: View {
     }
 }
 
+/// The line under a growing transcript that says what is producing the next line.
 private struct ListeningIndicator: View {
-    let paused: Bool
+    let state: LiveState
     let textSize: Double
+
+    private var symbol: String {
+        switch state {
+        case .paused: "pause.fill"
+        case .translating: "translate"
+        case .summarizing: "sparkles"
+        default: "waveform"
+        }
+    }
+    private var title: String {
+        switch state {
+        case .paused: L("Paused")
+        case .transcribing: L("Transcribing")
+        case .translating: L("Translating")
+        case .summarizing: L("Creating summary…")
+        default: L("Listening")
+        }
+    }
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 18) {
             Color.clear.frame(width: 58, height: 1)
             HStack(spacing: 6) {
-                Image(systemName: paused ? "pause.fill" : "waveform")
-                    .symbolEffect(.variableColor.iterative, isActive: !paused)
+                Image(systemName: symbol)
+                    .symbolEffect(.variableColor.iterative, isActive: state != .paused)
                     .contentTransition(.symbolEffect(.replace))
-                Text(paused ? L("Paused") : L("Listening"))
+                Text(title)
                     .contentTransition(.opacity)
             }
             .font(.system(size: max(11, textSize - 2)))
             .foregroundStyle(.tertiary)
         }
         .padding(.vertical, textSize * 0.55)
-        .animation(Motion.quick, value: paused)
+        .animation(Motion.quick, value: state)
     }
 }
 
@@ -255,6 +287,7 @@ struct TranscriptPage: View {
     @AppStorage("showInspector") private var showInspector = true
 
     private var live: LiveState? {
+        if let run = model.fileRun, run.recordID == record.id { return LiveState(run.stage) }
         guard record.id == model.activeRecordID else { return nil }
         switch model.phase {
         case .recording: return .recording

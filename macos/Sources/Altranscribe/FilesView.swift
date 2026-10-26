@@ -8,10 +8,15 @@ struct FilesView: View {
 
     var body: some View {
         // The drop zone hands over to the queue when the first file arrives, and returns when the last leaves.
+        // While the queue works on a file, the page shows its progress and the text it is producing.
         ZStack {
             if model.queue.isEmpty {
                 DropZone(targeted: targeted) { model.chooseFiles() }
                     .padding(24)
+                    .transition(.page)
+            } else if model.queueRunning, let run = model.fileRun, let record = model.records.first(where: { $0.id == run.recordID }) {
+                FileProgressPage(model: model, run: run, record: record)
+                    .id(run.recordID)
                     .transition(.page)
             } else {
                 List {
@@ -20,17 +25,17 @@ struct FilesView: View {
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
                 .animation(Motion.content, value: model.queue.map(\.id))
-                .overlay {
-                    if targeted {
-                        RoundedRectangle(cornerRadius: Radius.region)
-                            .strokeBorder(.tint, lineWidth: 2)
-                            .background(.tint.opacity(0.05), in: .rect(cornerRadius: Radius.region))
-                            .padding(8)
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
-                    }
-                }
                 .transition(.page)
+            }
+        }
+        .overlay {
+            if targeted && !model.queue.isEmpty {
+                RoundedRectangle(cornerRadius: Radius.region)
+                    .strokeBorder(.tint, lineWidth: 2)
+                    .background(.tint.opacity(0.05), in: .rect(cornerRadius: Radius.region))
+                    .padding(8)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -46,6 +51,7 @@ struct FilesView: View {
             }
         }
         .animation(Motion.content, value: model.queue.isEmpty)
+        .animation(Motion.content, value: model.fileRun?.recordID)
         .animation(Motion.quick, value: targeted)
         .navigationTitle(L("File Transcription"))
         .navigationSubtitle(L("Supports audio and video that macOS can decode"))
@@ -57,6 +63,118 @@ struct FilesView: View {
             ToolbarSpacer(.fixed)
             InspectorToggle(isPresented: $showInspector)
         }
+    }
+}
+
+/// The file the queue is working on: a fixed progress panel over the transcript as it is produced.
+private struct FileProgressPage: View {
+    let model: AppModel
+    let run: FileRun
+    let record: TranscriptRecord
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FileProgressPanel(model: model, run: run, record: record)
+                .frame(maxWidth: 760)
+                .padding(.horizontal, 36)
+                .padding(.top, 20)
+                .frame(maxWidth: .infinity)
+            TranscriptScroll(record: record, live: LiveState(run.stage)) { EmptyView() }
+        }
+    }
+}
+
+/// How far the current file has got, at what speed, with which models, and how much is translated.
+/// Content layer: a standard fill in the grouped radius, system progress, no glass and no outline.
+private struct FileProgressPanel: View {
+    let model: AppModel
+    let run: FileRun
+    let record: TranscriptRecord
+
+    private var fraction: Double { run.duration > 0 ? min(1, run.processed / run.duration) : 0 }
+
+    var body: some View {
+        let settings = run.configuration
+        let locale = InterfaceLanguage.current.locale
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(run.fileName).font(.headline).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 12)
+                if model.queue.count > 1, let index = model.queue.firstIndex(where: { $0.status == .processing }) {
+                    Text(L("File %@ of %@", String(index + 1), String(model.queue.count)))
+                        .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label(stageTitle, systemImage: stageSymbol)
+                        .contentTransition(.symbolEffect(.replace))
+                    Spacer()
+                    if run.duration > 0 {
+                        Text(fraction.formatted(.percent.precision(.fractionLength(0)).locale(locale)))
+                            .monospacedDigit().foregroundStyle(.secondary)
+                            .contentTransition(.numericText())
+                    }
+                }
+                .font(.callout)
+                if run.duration > 0 {
+                    ProgressView(value: fraction).animation(Motion.content, value: fraction)
+                } else {
+                    ProgressView().progressViewStyle(.linear)
+                }
+                TimelineView(.periodic(from: run.started, by: 1)) { context in
+                    Text(timing(at: context.date))
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            FlowLayout(spacing: 16, lineSpacing: 6) {
+                Label(settings.speechSummary(live: false), systemImage: settings.speechProvider.isLocal ? "cpu" : "cloud")
+                if settings.translate {
+                    Label(L("Translate to %@", languageName(settings.targetLanguage)) + " · " + settings.effectiveTextModel, systemImage: "translate")
+                    Label(L("Translated %@ of %@", String(record.segments.count { $0.translation != nil }), String(record.segments.count)),
+                          systemImage: "checkmark.circle")
+                }
+                if settings.summarize {
+                    Label(L("Summary") + " · " + settings.effectiveTextModel, systemImage: "sparkles")
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            .lineLimit(1).truncationMode(.middle)
+        }
+        .padding(16)
+        .background(.fill.quaternary, in: .rect(cornerRadius: Radius.group))
+        .animation(Motion.quick, value: run.stage)
+    }
+
+    private var stageTitle: String {
+        switch run.stage {
+        case .transcribing: L("Transcribing")
+        case .translating: L("Translating")
+        case .summarizing: L("Creating summary…")
+        }
+    }
+    private var stageSymbol: String {
+        switch run.stage {
+        case .transcribing: "waveform"
+        case .translating: "translate"
+        case .summarizing: "sparkles"
+        }
+    }
+
+    /// Audio done against the file's length, time spent, and, once there is enough to go on, speed and time left.
+    private func timing(at now: Date) -> String {
+        let elapsed = max(0, now.timeIntervalSince(run.started))
+        var parts = [run.duration > 0 ? L("Processed %@ of %@", durationText(run.processed), durationText(run.duration))
+                                      : L("Processed %@", durationText(run.processed)),
+                     L("Elapsed %@", durationText(elapsed))]
+        let measured = run.updated.timeIntervalSince(run.started)
+        if run.processed >= 5, measured >= 1 {
+            let speed = run.processed / measured
+            parts.append(L("%@× real time", speed.formatted(.number.precision(.fractionLength(1)).locale(InterfaceLanguage.current.locale))))
+            let left = max(0, run.duration - run.processed) / speed - now.timeIntervalSince(run.updated)
+            if run.duration > 0, run.stage != .summarizing, left >= 1 { parts.append(L("About %@ left", durationText(left))) }
+        }
+        return parts.joined(separator: " · ")
     }
 }
 
