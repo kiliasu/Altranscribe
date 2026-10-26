@@ -20,6 +20,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: embedded ? nil : 600, height: embedded ? nil : 620)
         .background { if !embedded { UnifiedToolbarWindow() } }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .animation(Motion.content, value: model.settingsPage)
         .toolbar {
             ToolbarItem(placement: .principal) {

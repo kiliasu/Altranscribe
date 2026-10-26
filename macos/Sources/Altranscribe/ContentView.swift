@@ -36,6 +36,7 @@ struct ContentView: View {
                     .inspectorColumnWidth(min: 250, ideal: 280, max: 360)
             }
         }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .frame(minWidth: 860, minHeight: 560)
         // With Settings open beside it, only the window in front shows an error.
         .alert(L("Attention"), isPresented: Binding(get: { model.error != nil && appearsActive },
