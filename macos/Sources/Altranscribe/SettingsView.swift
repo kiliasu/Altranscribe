@@ -13,7 +13,9 @@ struct SettingsView: View {
     @State private var removeModel: URL?
 
     var body: some View {
-        pane
+        // Keep the scroll container (and its toolbar edge effect) alive when changing pages.
+        Form { pane }
+        .formStyle(.grouped)
         .frame(width: embedded ? nil : 600, height: embedded ? nil : 620)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -33,6 +35,17 @@ struct SettingsView: View {
         .alert(L("Attention"), isPresented: Binding(get: { !embedded && model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L("OK"), role: .cancel) { model.error = nil }
         } message: { Text(model.error?.text ?? "") }
+        .confirmationDialog(L("Delete the downloaded model?"), isPresented: Binding(get: { removeModel != nil }, set: { if !$0 { removeModel = nil } })) {
+            Button(L("Delete Model"), role: .destructive) {
+                guard let url = removeModel else { return }
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    if model.settings.modelPath == url.path { model.settings.modelPath = "" }
+                    model.modelRevision += 1
+                } catch { model.error = LocalizedText(error: error) }
+                removeModel = nil
+            }
+        }
     }
 
     @ViewBuilder private var pane: some View {
@@ -44,7 +57,7 @@ struct SettingsView: View {
     }
 
     private var general: some View {
-        Form {
+        Group {
             Section(L("Appearance")) {
                 Picker(L("Language"), selection: $language) {
                     Text(L("System")).tag("system")
@@ -100,11 +113,11 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, 4)
             }
-        }.formStyle(.grouped)
+        }
     }
 
     private var speech: some View {
-        Form {
+        Group {
             Section {
                 Picker(L("Speech Engine"), selection: $model.settings.speechProvider) {
                     ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
@@ -256,27 +269,15 @@ struct SettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
         .disabled(model.busy)
         // Switching engines, downloads finishing and models being deleted all rearrange the pane as content.
         .animation(Motion.content, value: model.settings.speechProvider)
         .animation(Motion.quick, value: model.downloadID)
         .animation(Motion.quick, value: model.modelRevision)
-        .confirmationDialog(L("Delete the downloaded model?"), isPresented: Binding(get: { removeModel != nil }, set: { if !$0 { removeModel = nil } })) {
-            Button(L("Delete Model"), role: .destructive) {
-                guard let url = removeModel else { return }
-                do {
-                    try FileManager.default.removeItem(at: url)
-                    if model.settings.modelPath == url.path { model.settings.modelPath = "" }
-                    model.modelRevision += 1
-                } catch { model.error = LocalizedText(error: error) }
-                removeModel = nil
-            }
-        }
     }
 
     private var text: some View {
-        Form {
+        Group {
             Section(L("Text Processing")) {
                 Toggle(L("Translate"), isOn: $model.settings.translate)
                 Picker(L("Target Language"), selection: $model.settings.targetLanguage) {
@@ -321,7 +322,6 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
         .disabled(model.busy)
         .animation(Motion.content, value: models)
         .animation(Motion.content, value: model.settings.textProvider)
