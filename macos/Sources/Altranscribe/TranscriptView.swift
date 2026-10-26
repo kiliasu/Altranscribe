@@ -214,7 +214,7 @@ struct RecordHeader: View {
                 Label(record.source.title, systemImage: record.source.symbol)
                 Label(languageName(record.language) + (record.targetLanguage.map { " → " + languageName($0) } ?? ""),
                       systemImage: record.targetLanguage == nil ? "globe" : "translate")
-                if !compact { Label(record.speechModel, systemImage: "cpu") }
+                if !compact { Label(AppSettings.speechModelDisplayName(record.speechModel), systemImage: "cpu") }
                 if record.status == .interrupted || record.status == .failed {
                     Label(record.status.title, systemImage: record.status == .failed ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(record.status == .failed ? .red : .orange)

@@ -91,16 +91,27 @@ private struct CaptionView: View {
             }
             .frame(height: 26)
             .animation(Motion.quick, value: model.phase)
-            ScrollView {
-                captions
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    // A new sentence rises in as the previous one lifts away; a sentence that grows stays put.
-                    .animation(Motion.content, value: model.currentCaption?.id)
-                    .animation(Motion.content, value: model.currentCaptionTranslation?.id)
+            if let segment = model.currentCaption {
+                ScrollView {
+                    captions(segment)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // A new sentence rises in as the previous one lifts away; a sentence that grows stays put.
+                        .animation(Motion.content, value: model.currentCaption?.id)
+                        .animation(Motion.content, value: model.currentCaptionTranslation?.id)
+                }
+                .defaultScrollAnchor(.bottom)
+                .scrollIndicators(.never)
+                .transition(.opacity)
+            } else {
+                Text(L("Captions appear here when transcription starts."))
+                    .font(.system(size: model.settings.captionSize * 0.8))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
             }
-            .defaultScrollAnchor(.bottom)
-            .scrollIndicators(.never)
         }
+        .animation(Motion.content, value: model.currentCaption == nil)
         .padding(.horizontal, 22)
         .padding(.top, 12)
         .padding(.bottom, 18)
@@ -112,44 +123,37 @@ private struct CaptionView: View {
         .environment(\.locale, InterfaceLanguage.current.locale)
     }
 
-    @ViewBuilder private var captions: some View {
+    @ViewBuilder private func captions(_ segment: TranscriptSegment) -> some View {
         let size = model.settings.captionSize
         let translationOnly = model.settings.captionTranslationOnly
+        let translated = model.currentCaptionTranslation
         VStack(alignment: .leading, spacing: size * 0.35) {
-            if let segment = model.currentCaption {
-                let translated = model.currentCaptionTranslation
-                if !translationOnly || translated == nil {
-                    // Each slot is a ZStack, so the outgoing and incoming sentence share one place while they cross.
-                    ZStack(alignment: .topLeading) {
-                        Text(segment.text)
-                            .font(.system(size: size, weight: .semibold))
-                            .textSelection(.enabled)
-                            .id(segment.id)
-                            .transition(.rise)
-                    }
-                }
-                if let translated, let translation = translated.translation {
-                    ZStack(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            if translated.id != segment.id && !translationOnly {
-                                Text(L("Translation") + " · " + timestamp(translated.start))
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            Text(translation)
-                                .font(.system(size: translationOnly ? size : size * 0.92, weight: translationOnly ? .semibold : .regular))
-                                .foregroundStyle(translationOnly ? .primary : .secondary)
-                                .textSelection(.enabled)
-                        }
-                        .id(translated.id)
+            if !translationOnly || translated == nil {
+                // Each slot is a ZStack, so the outgoing and incoming sentence share one place while they cross.
+                ZStack(alignment: .topLeading) {
+                    Text(segment.text)
+                        .font(.system(size: size, weight: .semibold))
+                        .textSelection(.enabled)
+                        .id(segment.id)
                         .transition(.rise)
-                    }
                 }
-            } else {
-                Text(L("Captions appear here when transcription starts."))
-                    .font(.system(size: size * 0.8))
-                    .foregroundStyle(.secondary)
-                    .transition(.opacity)
+            }
+            if let translated, let translation = translated.translation {
+                ZStack(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if translated.id != segment.id && !translationOnly {
+                            Text(L("Translation") + " · " + timestamp(translated.start))
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Text(translation)
+                            .font(.system(size: translationOnly ? size : size * 0.92, weight: translationOnly ? .semibold : .regular))
+                            .foregroundStyle(translationOnly ? .primary : .secondary)
+                            .textSelection(.enabled)
+                    }
+                    .id(translated.id)
+                    .transition(.rise)
+                }
             }
         }
     }

@@ -99,6 +99,18 @@ struct QueuedFile: Identifiable {
     func saveSettings() {
         do { try store.saveSettings(settings) } catch { self.error = LocalizedText(error: error) }
     }
+    /// A session can begin only with a usable speech model and, where translation or a summary
+    /// needs it, a text model. The home page explains whichever is missing.
+    func canStart(live: Bool) -> Bool { modelReady && !settings.textModelMissing(live: live) }
+    var modelIssue: LocalizedText? {
+        guard !modelReady else { return nil }
+        switch settings.speechProvider {
+        case .whisper:
+            return LocalizedText(settings.effectiveModelPath.isEmpty ? "No Whisper model is selected." : "The selected Whisper model file is missing.")
+        case .appleSpeech: return LocalizedText(verbatim: appleSpeechStatus.title)
+        default: return LocalizedText("The selected model is not downloaded yet.")
+        }
+    }
 
     private func prepare(_ configuration: AppSettings, live: Bool = false) async throws -> (speechKey: String, textKey: String) {
         var speechKey = ""

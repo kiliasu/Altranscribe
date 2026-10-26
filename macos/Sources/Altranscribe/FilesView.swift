@@ -247,7 +247,7 @@ private struct QueueBar: View {
                 }
                 Button(L("Start Queue"), systemImage: "play.fill") { model.startQueue() }
                     .buttonStyle(.glassProminent)
-                    .disabled(model.busy || !model.modelReady || waiting == 0)
+                    .disabled(model.busy || !model.canStart(live: false) || waiting == 0)
             }
         }
     }

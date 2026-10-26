@@ -13,10 +13,12 @@ struct SettingsView: View {
     @State private var removeModel: URL?
 
     var body: some View {
-        // Keep the scroll container (and its toolbar edge effect) alive when changing pages.
+        // Keep the scroll container (and its toolbar edge effect) alive when changing pages;
+        // only the sections inside rise into place.
         Form { pane }
         .formStyle(.grouped)
         .frame(width: embedded ? nil : 600, height: embedded ? nil : 620)
+        .animation(Motion.content, value: model.settingsPage)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker(L("Settings"), selection: $model.settingsPage) {
@@ -31,6 +33,12 @@ struct SettingsView: View {
         .onChange(of: model.settings) { _, _ in if !embedded { model.saveSettings() } }
         .task(id: model.settings.appleSpeechLocale + model.settings.speechProvider.rawValue) {
             if !embedded && model.settings.speechProvider == .appleSpeech { await model.refreshAppleSpeech() }
+        }
+        // A local text service costs nothing to ask, so its model list loads as soon as the page opens.
+        .task(id: "\(model.settingsPage)|\(model.settings.textEndpoint)") {
+            guard model.settingsPage == .text, model.settings.textProvider == .compatible, models.isEmpty,
+                  (try? APIEndpoint(model.settings.textEndpoint).isLoopback) == true else { return }
+            fetchModels(quietly: true)
         }
         .alert(L("Attention"), isPresented: Binding(get: { !embedded && model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L("OK"), role: .cancel) { model.error = nil }
@@ -49,10 +57,17 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var pane: some View {
+        if model.busy && model.settingsPage != .general {
+            Section {
+                Label(L("A session is running. Speech and text settings unlock when it ends."), systemImage: "lock.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .transition(.rise)
+        }
         switch model.settingsPage {
-        case .general: general
-        case .speech: speech
-        case .text: text
+        case .general: general.transition(.rise)
+        case .speech: speech.transition(.rise)
+        case .text: text.transition(.rise)
         }
     }
 
@@ -116,6 +131,8 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Speech
+
     private var speech: some View {
         Group {
             Section {
@@ -129,175 +146,19 @@ struct SettingsView: View {
                     }
                 }
             }
-            if model.settings.speechProvider == .whisper {
-                Section(L("On-device Compute")) {
-                    Toggle(L("Use Metal GPU Acceleration"), isOn: $model.settings.useGPU)
-                    LabeledContent(L("Current Model")) {
-                        Text(model.settings.effectiveModelPath.isEmpty ? L("None selected") : URL(fileURLWithPath: model.settings.effectiveModelPath).lastPathComponent).lineLimit(1).truncationMode(.middle)
-                    }
-                    Button(L("Choose Existing Model…")) { chooseModel() }
-                }
-                Section {
-                    ForEach(WhisperModel.catalog) { item in
-                        ModelRow(title: item.title, detail: Localization.byteCount(item.bytes), symbol: "waveform",
-                                 inUse: installed(item) && model.settings.modelPath == model.paths.models.appendingPathComponent(item.filename).path) {
-                            if model.downloadID == item.id {
-                                ProgressView().controlSize(.small)
-                                Button(L("Cancel")) { model.downloadTask?.cancel() }
-                            } else if installed(item) {
-                                if model.settings.modelPath != model.paths.models.appendingPathComponent(item.filename).path {
-                                    Button(L("Use")) { model.settings.modelPath = model.paths.models.appendingPathComponent(item.filename).path }
-                                }
-                                Button(role: .destructive) { removeModel = model.paths.models.appendingPathComponent(item.filename) } label: { Image(systemName: "trash") }
-                                    .buttonStyle(.borderless).help(L("Delete Model"))
-                            } else {
-                                Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }.disabled(model.downloadID != nil)
-                            }
-                        }
-                    }
-                } header: { Text(L("Multilingual Whisper Models")) }
-                  footer: { Text(L("Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster.")) }
-            } else if model.settings.speechProvider == .nemotron {
-                Section(L("On-device Streaming")) {
-                    LabeledContent(L("Current Model")) {
-                        Text(model.settings.nemotronModel.multilingual ? L("Nemotron 3.5 · Multilingual") : L("Nemotron · English")).lineLimit(1)
-                    }
-                    LabeledContent(L("Compute"), value: "CPU · INT8")
-                    Text(L("English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    ForEach(NemotronModel.catalog) { item in
-                        ModelRow(title: item.multilingual ? L("3.5 Multilingual") : L("English · Default"),
-                                 detail: Localization.byteCount(item.bytes), symbol: item.multilingual ? "globe" : "character.bubble",
-                                 link: item.modelCard, inUse: installed(item) && model.settings.nemotronModel.id == item.id) {
-                            if model.downloadID == item.id {
-                                ProgressView().controlSize(.small)
-                                Button(L("Cancel")) { model.downloadTask?.cancel() }
-                            } else if installed(item) {
-                                if model.settings.nemotronModel.id != item.id {
-                                    Button(L("Use")) { model.settings.nemotronModelID = item.id }
-                                }
-                                Button(role: .destructive) { removeModel = item.directory(in: model.paths.models) } label: { Image(systemName: "trash") }
-                                    .buttonStyle(.borderless).help(L("Delete Model"))
-                            } else {
-                                Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }
-                                    .disabled(model.downloadID != nil)
-                            }
-                        }
-                    }
-                } header: { Text(L("Nemotron Models")) }
-                  footer: { Text(L("The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation.")) }
-            } else if model.settings.speechProvider == .fluidAudio {
-                Section(L("On-device Compute")) {
-                    LabeledContent(L("Current Model"), value: model.settings.fluidAudioModel.title)
-                    LabeledContent(L("Compute"), value: "Core ML · CPU + Neural Engine")
-                    Text(L("Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section(L("FluidAudio Models")) {
-                    ForEach(FluidAudioModel.allCases) { item in
-                        ModelRow(title: item.title, detail: "Parakeet TDT · 0.6B", symbol: "cpu", link: item.modelCard,
-                                 inUse: item.isInstalled(in: model.paths.models) && model.settings.fluidAudioModel == item) {
-                            if model.downloadID == item.id {
-                                ProgressView().controlSize(.small)
-                                Button(L("Cancel")) { model.downloadTask?.cancel() }
-                            } else if item.isInstalled(in: model.paths.models) {
-                                if model.settings.fluidAudioModel != item {
-                                    Button(L("Use")) { model.settings.fluidAudioModelID = item.id }
-                                }
-                                Button(role: .destructive) { removeModel = item.directory(in: model.paths.models) } label: { Image(systemName: "trash") }
-                                    .buttonStyle(.borderless).help(L("Delete Model")).disabled(model.downloadID != nil)
-                            } else {
-                                Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }.disabled(model.downloadID != nil)
-                            }
-                        }
-                    }
-                }
-                chunkedLocalNote
-            } else if model.settings.speechProvider == .appleSpeech {
-                Section(L("System Language Model")) {
-                    Picker(L("Language"), selection: Binding(get: { model.settings.appleSpeechLocale },
-                                                             set: { model.settings.appleSpeechLocaleID = $0 })) {
-                        if !model.appleSpeechLocales.contains(model.settings.appleSpeechLocale) {
-                            Text(localeName(model.settings.appleSpeechLocale)).tag(model.settings.appleSpeechLocale)
-                        }
-                        ForEach(model.appleSpeechLocales, id: \.self) { Text(localeName($0)).tag($0) }
-                    }.disabled(model.downloadID == "apple-speech")
-                    LabeledContent(L("Model Status"), value: model.appleSpeechStatus.title)
-                    LabeledContent(L("Compute"), value: L("Managed by macOS"))
-                    HStack {
-                        if model.downloadID == "apple-speech" {
-                            ProgressView().controlSize(.small)
-                            Button(L("Cancel")) { model.downloadTask?.cancel() }
-                        } else if model.appleSpeechStatus == .downloadRequired || model.appleSpeechStatus == .downloading {
-                            Button(L("Install Language Model"), systemImage: "arrow.down.circle") { model.installAppleSpeech() }
-                                .disabled(model.downloadID != nil)
-                        }
-                        Button(L("Refresh Status")) { Task { await model.refreshAppleSpeech() } }
-                            .disabled(model.downloadID == "apple-speech")
-                    }
-                    Text(L("Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed."))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                chunkedLocalNote
-            } else {
-                Section(L("Service")) {
-                    if model.settings.speechProvider == .compatible {
-                        DisclosureGroup(L("Endpoint Override")) {
-                            TextField(L("API Base URL"), text: $model.settings.speechBaseURL)
-                            Button(L("Use OpenAI Endpoint")) { model.settings.speechBaseURL = "https://api.openai.com/v1" }
-                            Text(L("Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio."))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    CredentialEditor(endpoint: model.settings.speechEndpoint).id(model.settings.speechEndpoint)
-                }
-                if model.settings.usesCloudLive {
-                    Section(L("Live Speech")) {
-                        Toggle(L("Translate directly from audio"), isOn: Binding(get: { model.settings.cloudDirectTranslation ?? true },
-                                                                              set: { model.settings.cloudDirectTranslation = $0 }))
-                        LabeledContent(L("Transcription"), value: AppSettings.liveSpeechModel(provider: model.settings.speechProvider, direct: false))
-                        LabeledContent(L("Direct Translation"), value: AppSettings.liveSpeechModel(provider: model.settings.speechProvider, direct: true))
-                        Text(L("When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played, but the service still bills it."))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Section(L("File Transcription")) {
-                    if model.settings.speechProvider == .compatible {
-                        ModelNamePicker(presets: OpenAITranscriptionModel.allCases.map(\.rawValue),
-                                        selection: $model.settings.speechModel, overrideName: $model.settings.speechModelOverride)
-                        if model.settings.openAITranscriptionModel?.isDeprecated == true {
-                            Text(L("This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe."))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        if model.settings.openAITranscriptionModel == .diarize {
-                            Text(L("This model does not accept vocabulary hints. This app uses its text output without speaker labels."))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Picker(L("File Transcription Model"), selection: Binding(get: { model.settings.effectiveGeminiSpeechModel },
-                                                                                set: { model.settings.geminiSpeechModel = $0 })) {
-                            Text("gemini-3.5-transcribe").tag("gemini-3.5-transcribe")
-                        }
-                    }
-                }
-                Section {
-                    Text(model.settings.usesCloudLive ?
-                         L("Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically.") :
-                         L("Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files."))
-                        .font(.caption).foregroundStyle(.secondary)
-                    if model.settings.speechProvider == .gemini {
-                        Text(L("Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence."))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+            switch model.settings.speechProvider {
+            case .whisper: whisper
+            case .nemotron: nemotron
+            case .fluidAudio: fluidAudio
+            case .appleSpeech: appleSpeech
+            case .compatible, .gemini: cloudSpeech
             }
             if model.settings.supportsVocabulary {
-                Section(L("Vocabulary")) {
-                    TextField(L("Names and terms, separated by commas"), text: $model.settings.vocabulary, axis: .vertical)
-                        .lineLimit(2...4)
-                }
+                Section {
+                    SettingsTextField(L("Vocabulary"), text: $model.settings.vocabulary,
+                                      prompt: L("Names and terms, separated by commas"), multiline: true)
+                } header: { Text(L("Vocabulary")) }
+                  footer: { Text(L("Helps recognize names and terms without rewriting the original text.")) }
             }
         }
         .disabled(model.busy)
@@ -306,6 +167,192 @@ struct SettingsView: View {
         .animation(Motion.quick, value: model.downloadID)
         .animation(Motion.quick, value: model.modelRevision)
     }
+
+    @ViewBuilder private var whisper: some View {
+        Section(L("On-device Compute")) {
+            Toggle(L("Use Metal GPU Acceleration"), isOn: $model.settings.useGPU)
+            LabeledContent(L("Current Model")) {
+                Text(model.settings.speechModelTitle(live: true)).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(model.settings.effectiveModelPath.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
+            }
+            Button(L("Choose Existing Model…")) { chooseModel() }
+        }
+        Section {
+            ForEach(WhisperModel.catalog) { item in
+                ModelRow(title: item.title, detail: Localization.byteCount(item.bytes), symbol: "waveform",
+                         inUse: installed(item) && model.settings.modelPath == model.paths.models.appendingPathComponent(item.filename).path) {
+                    if model.downloadID == item.id {
+                        ProgressView().controlSize(.small)
+                        Button(L("Cancel")) { model.downloadTask?.cancel() }
+                    } else if installed(item) {
+                        if model.settings.modelPath != model.paths.models.appendingPathComponent(item.filename).path {
+                            Button(L("Use")) { model.settings.modelPath = model.paths.models.appendingPathComponent(item.filename).path }
+                        }
+                        Button(role: .destructive) { removeModel = model.paths.models.appendingPathComponent(item.filename) } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless).help(L("Delete Model"))
+                    } else {
+                        Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }.disabled(model.downloadID != nil)
+                    }
+                }
+            }
+        } header: { Text(L("Multilingual Whisper Models")) }
+          footer: { Text(L("Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster.")) }
+    }
+
+    @ViewBuilder private var nemotron: some View {
+        Section(L("On-device Streaming")) {
+            LabeledContent(L("Current Model")) {
+                Text(model.settings.nemotronModel.multilingual ? L("Nemotron 3.5 · Multilingual") : L("Nemotron · English")).lineLimit(1)
+            }
+            LabeledContent(L("Compute"), value: "CPU · INT8")
+            Text(L("English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            ForEach(NemotronModel.catalog) { item in
+                ModelRow(title: item.multilingual ? L("3.5 Multilingual") : L("English · Default"),
+                         detail: Localization.byteCount(item.bytes), symbol: item.multilingual ? "globe" : "character.bubble",
+                         link: item.modelCard, inUse: installed(item) && model.settings.nemotronModel.id == item.id) {
+                    if model.downloadID == item.id {
+                        ProgressView().controlSize(.small)
+                        Button(L("Cancel")) { model.downloadTask?.cancel() }
+                    } else if installed(item) {
+                        if model.settings.nemotronModel.id != item.id {
+                            Button(L("Use")) { model.settings.nemotronModelID = item.id }
+                        }
+                        Button(role: .destructive) { removeModel = item.directory(in: model.paths.models) } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless).help(L("Delete Model"))
+                    } else {
+                        Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }
+                            .disabled(model.downloadID != nil)
+                    }
+                }
+            }
+        } header: { Text(L("Nemotron Models")) }
+          footer: { Text(L("The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation.")) }
+    }
+
+    @ViewBuilder private var fluidAudio: some View {
+        Section(L("On-device Compute")) {
+            LabeledContent(L("Current Model"), value: model.settings.fluidAudioModel.title)
+            LabeledContent(L("Compute"), value: "Core ML · CPU + Neural Engine")
+            Text(L("Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section(L("FluidAudio Models")) {
+            ForEach(FluidAudioModel.allCases) { item in
+                ModelRow(title: item.title, detail: "Parakeet TDT · 0.6B", symbol: "cpu", link: item.modelCard,
+                         inUse: item.isInstalled(in: model.paths.models) && model.settings.fluidAudioModel == item) {
+                    if model.downloadID == item.id {
+                        ProgressView().controlSize(.small)
+                        Button(L("Cancel")) { model.downloadTask?.cancel() }
+                    } else if item.isInstalled(in: model.paths.models) {
+                        if model.settings.fluidAudioModel != item {
+                            Button(L("Use")) { model.settings.fluidAudioModelID = item.id }
+                        }
+                        Button(role: .destructive) { removeModel = item.directory(in: model.paths.models) } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless).help(L("Delete Model")).disabled(model.downloadID != nil)
+                    } else {
+                        Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }.disabled(model.downloadID != nil)
+                    }
+                }
+            }
+        }
+        chunkedLocalNote
+    }
+
+    @ViewBuilder private var appleSpeech: some View {
+        Section(L("System Language Model")) {
+            Picker(L("Language"), selection: Binding(get: { model.settings.appleSpeechLocale },
+                                                     set: { model.settings.appleSpeechLocaleID = $0 })) {
+                if !model.appleSpeechLocales.contains(model.settings.appleSpeechLocale) {
+                    Text(localeName(model.settings.appleSpeechLocale)).tag(model.settings.appleSpeechLocale)
+                }
+                ForEach(model.appleSpeechLocales, id: \.self) { Text(localeName($0)).tag($0) }
+            }.disabled(model.downloadID == "apple-speech")
+            LabeledContent(L("Model Status"), value: model.appleSpeechStatus.title)
+            LabeledContent(L("Compute"), value: L("Managed by macOS"))
+            HStack {
+                if model.downloadID == "apple-speech" {
+                    ProgressView().controlSize(.small)
+                    Button(L("Cancel")) { model.downloadTask?.cancel() }
+                } else if model.appleSpeechStatus == .downloadRequired || model.appleSpeechStatus == .downloading {
+                    Button(L("Install Language Model"), systemImage: "arrow.down.circle") { model.installAppleSpeech() }
+                        .disabled(model.downloadID != nil)
+                }
+                Button(L("Refresh Status")) { Task { await model.refreshAppleSpeech() } }
+                    .disabled(model.downloadID == "apple-speech")
+            }
+            Text(L("Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        chunkedLocalNote
+    }
+
+    @ViewBuilder private var cloudSpeech: some View {
+        let provider = model.settings.speechProvider
+        Section(L("Service")) {
+            if provider == .compatible {
+                SettingsTextField(L("Service URL"), text: $model.settings.speechBaseURL, prompt: "https://api.openai.com/v1")
+                if !model.settings.usesCloudLive {
+                    Label(L("A custom endpoint must implement audio/transcriptions. Live audio is sent to it in 8-second chunks; Realtime transcription is OpenAI only."),
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                    Button(L("Use OpenAI Endpoint")) { model.settings.speechBaseURL = "https://api.openai.com/v1" }
+                }
+            }
+            CredentialEditor(endpoint: model.settings.speechEndpoint).id(model.settings.speechEndpoint)
+        }
+        if model.settings.usesCloudLive {
+            Section {
+                Picker(L("Live Mode"), selection: Binding(get: { model.settings.cloudDirectTranslation ?? true },
+                                                          set: { model.settings.cloudDirectTranslation = $0 })) {
+                    Text(L("Transcribe") + " · " + AppSettings.liveSpeechModel(provider: provider, direct: false)).tag(false)
+                    Text(L("Translate directly, keeping the source text") + " · " + AppSettings.liveSpeechModel(provider: provider, direct: true)).tag(true)
+                }
+                .pickerStyle(.radioGroup)
+                LabeledContent(L("In Effect"), value: model.settings.liveSpeechModel)
+                if (model.settings.cloudDirectTranslation ?? true) && !model.settings.translate {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Label(L("Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio."), systemImage: "info.circle")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                        Button(L("Turn On Translate")) { model.settings.translate = true }
+                    }
+                }
+            } header: { Text(L("Live Speech")) }
+              footer: { Text(L("Direct translation returns both the original and translated text and needs only the speech key. Generated audio is never played, but the service still bills it.")) }
+        }
+        Section(L("File Transcription")) {
+            if provider == .compatible {
+                ModelChoice(presets: OpenAITranscriptionModel.allCases.map(\.rawValue),
+                            label: { name in OpenAITranscriptionModel(rawValue: name)?.isDeprecated == true ? name + " · " + L("legacy") : name },
+                            selection: $model.settings.speechModel, custom: $model.settings.speechModelOverride)
+                if model.settings.openAITranscriptionModel?.isDeprecated == true {
+                    Text(L("This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if model.settings.openAITranscriptionModel == .diarize {
+                    Text(L("This model does not accept vocabulary hints. This app uses its text output without speaker labels."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                LabeledContent(L("File Transcription Model"), value: model.settings.effectiveGeminiSpeechModel)
+            }
+        }
+        Section {
+            Text(model.settings.usesCloudLive ?
+                 L("Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically.") :
+                 L("Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files."))
+                .font(.caption).foregroundStyle(.secondary)
+            if provider == .gemini {
+                Text(L("Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Text
 
     private var text: some View {
         Group {
@@ -316,59 +363,57 @@ struct SettingsView: View {
                 }
                 Toggle(L("Summarize when finished"), isOn: $model.settings.summarize)
             }
-            Section(L("Service")) {
-                Picker(L("Text Service"), selection: $model.settings.textProvider) {
+            Section {
+                Picker(L("Text Service"), selection: Binding(get: { model.settings.textProvider },
+                                                             set: { switchService(provider: $0) })) {
                     ForEach(TextProvider.allCases) { Text($0.title).tag($0) }
                 }
                 if model.settings.textProvider == .compatible {
-                    TextField(L("API Base URL"), text: $model.settings.textBaseURL)
-                    HStack {
-                        Text(L("Presets")).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Ollama") {
-                            model.settings.textBaseURL = "http://127.0.0.1:11434/v1"
-                            model.settings.textModel = ""; model.settings.textModelOverride = nil; models = []
-                        }
-                        Button("OpenAI") {
-                            model.settings.textBaseURL = "https://api.openai.com/v1"
-                            model.settings.textModel = TextModelPresets.openAI[0]; model.settings.textModelOverride = nil; models = []
+                    SettingsTextField(L("API Base URL"), text: $model.settings.textBaseURL, prompt: "http://127.0.0.1:11434/v1")
+                    LabeledContent(L("Quick Fill")) {
+                        HStack(spacing: 8) {
+                            Button("Ollama") { switchService(baseURL: "http://127.0.0.1:11434/v1") }
+                            Button("OpenAI") { switchService(baseURL: "https://api.openai.com/v1") }
                         }
                     }
                 }
-                ModelNamePicker(presets: textModels, selection: $model.settings.textModel, overrideName: $model.settings.textModelOverride)
+                ModelChoice(presets: model.settings.textModelPresets, fetched: models,
+                            selection: $model.settings.textModel, custom: $model.settings.textModelOverride)
+                LabeledContent(L("Model List")) {
+                    HStack(spacing: 8) {
+                        if let connectionStatus {
+                            Text(connectionStatus.text).font(.caption).foregroundStyle(.secondary).transition(.opacity)
+                        }
+                        if loadingModels { ProgressView().controlSize(.small).transition(.pop) }
+                        Button(L("Fetch Models")) { fetchModels() }.disabled(loadingModels)
+                    }
+                    .animation(Motion.quick, value: loadingModels)
+                }
                 if model.settings.textProvider == .anthropic {
-                    TextField(L("Workspace ID (optional)"), text: Binding(get: { model.settings.anthropicWorkspaceID ?? "" },
-                                                                         set: { model.settings.anthropicWorkspaceID = $0 }))
+                    SettingsTextField(L("Workspace ID (optional)"),
+                                      text: Binding(get: { model.settings.anthropicWorkspaceID ?? "" }, set: { model.settings.anthropicWorkspaceID = $0 }),
+                                      prompt: "wrkspc_…")
                 }
-                Text(L("File translation and summaries use this text model. Live direct speech translation uses the speech service. For local services, fetch installed models or use an override."))
-                    .font(.caption).foregroundStyle(.secondary)
                 CredentialEditor(endpoint: model.settings.textEndpoint).id(model.settings.textEndpoint)
-            }
-            Section(L("Available Models")) {
-                HStack {
-                    Button(L("Fetch Models")) { fetchModels() }.disabled(loadingModels)
-                    if loadingModels { ProgressView().controlSize(.small).transition(.pop) }
-                    if let connectionStatus {
-                        Text(connectionStatus.text).font(.caption).foregroundStyle(.secondary).transition(.opacity)
-                    }
-                }
-                .animation(Motion.quick, value: loadingModels)
-                Text(L("Run Ollama locally with an installed text model. Online services use HTTPS; keys are saved separately for each API base URL. Fetching models does not run inference."))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            } header: { Text(L("Service")) } footer: { Text(serviceNote) }
         }
         .disabled(model.busy)
         .animation(Motion.content, value: models)
         .animation(Motion.content, value: model.settings.textProvider)
         .onChange(of: model.settings.textEndpoint) { _, _ in models = []; connectionStatus = nil }
-        .onChange(of: model.settings.textProvider) { _, _ in
-            model.settings.textModel = model.settings.textModelPresets.first ?? ""
-            model.settings.textModelOverride = nil
+    }
+
+    private var serviceNote: String {
+        switch model.settings.textProvider {
+        case .compatible:
+            L("File translation and summaries use this text model; live direct speech translation uses the speech service. Ollama must be running with a text model installed; a local model list loads automatically. Online services use HTTPS, and keys are saved separately for each API base URL.")
+        case .gemini, .anthropic:
+            L("File translation and summaries use this text model; live direct speech translation uses the speech service. Keys are saved separately for each API base URL. Fetching the model list does not run inference.")
         }
     }
-    private var textModels: [String] {
-        let presets = model.settings.textModelPresets
-        return presets + models.filter { !presets.contains($0) }
+    private func switchService(provider: TextProvider? = nil, baseURL: String? = nil) {
+        model.settings.switchTextService(provider: provider, baseURL: baseURL)
+        models = []; connectionStatus = nil
     }
     private var chunkedLocalNote: some View {
         Section {
@@ -395,7 +440,9 @@ struct SettingsView: View {
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url { model.settings.modelPath = url.path }
     }
-    private func fetchModels() {
+    /// Lists the service's models. A quiet fetch, run on the page's behalf, reports failure inline
+    /// instead of raising the app's alert.
+    private func fetchModels(quietly: Bool = false) {
         loadingModels = true; connectionStatus = nil
         let endpoint = model.settings.textEndpoint
         let provider = model.settings.textProvider
@@ -408,28 +455,68 @@ struct SettingsView: View {
                 guard endpoint == model.settings.textEndpoint, provider == model.settings.textProvider else { return }
                 models = fetched
                 connectionStatus = LocalizedText("Models found: %@", String(models.count))
-            } catch { model.error = LocalizedText(error: error) }
+            } catch {
+                if quietly { connectionStatus = LocalizedText("Model list unavailable: %@", LocalizedText(error: error).text) }
+                else { model.error = LocalizedText(error: error) }
+            }
         }
     }
 }
 
-private struct ModelNamePicker: View {
-    let presets: [String]
-    @Binding var selection: String
-    @Binding var overrideName: String?
+/// A labelled row with a visible, bordered field, so the prompt reads as a placeholder and
+/// never as the row's title.
+struct SettingsTextField: View {
+    let title: String
+    @Binding var text: String
+    var prompt: String
+    var multiline = false
+
+    init(_ title: String, text: Binding<String>, prompt: String, multiline: Bool = false) {
+        self.title = title; _text = text; self.prompt = prompt; self.multiline = multiline
+    }
 
     var body: some View {
-        Picker(L("Model"), selection: $selection) {
-            if !presets.contains(selection) {
+        LabeledContent(title) {
+            TextField("", text: $text, prompt: Text(prompt), axis: multiline ? .vertical : .horizontal)
+                .lineLimit(multiline ? 2...4 : 1...1)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: 420)
+        }
+    }
+}
+
+/// The service's models plus a Custom entry that reveals a name field. A custom name, or a chosen
+/// name the service's list does not confirm, is flagged where it is chosen.
+private struct ModelChoice: View {
+    let presets: [String]
+    var fetched: [String] = []
+    var label: (String) -> String = { $0 }
+    @Binding var selection: String
+    @Binding var custom: String?
+    private static let customTag = "\u{1}custom"
+
+    private var options: [String] { presets + fetched.filter { !presets.contains($0) } }
+
+    var body: some View {
+        Picker(L("Model"), selection: Binding(get: { custom != nil ? Self.customTag : selection }, set: { value in
+            if value == Self.customTag { custom = custom ?? selection } else { custom = nil; selection = value }
+        })) {
+            if custom == nil && !options.contains(selection) {
                 Text(selection.isEmpty ? L("Select Model") : selection).tag(selection)
             }
-            ForEach(presets, id: \.self) { Text($0).tag($0) }
-        }.disabled(overrideName != nil)
-        Toggle(L("Override Model Name"), isOn: Binding(get: { overrideName != nil }, set: {
-            overrideName = $0 ? selection : nil
-        }))
-        if overrideName != nil {
-            TextField(L("Custom Model Name"), text: Binding(get: { overrideName ?? "" }, set: { overrideName = $0 }))
+            ForEach(options, id: \.self) { Text(label($0)).tag($0) }
+            Divider()
+            Text(L("Custom Name…")).tag(Self.customTag)
+        }
+        if custom != nil {
+            SettingsTextField(L("Custom Model Name"), text: Binding(get: { custom ?? "" }, set: { custom = $0 }),
+                              prompt: L("Exactly as the service names it"))
+            Label(L("A custom model name is in use. The app has not checked it against the service."), systemImage: "exclamationmark.triangle.fill")
+                .font(.caption).foregroundStyle(.orange)
+        } else if !presets.isEmpty && !selection.isEmpty && !options.contains(selection) {
+            Label(L("This model is not in the service's preset list. Fetch the model list to check it."), systemImage: "exclamationmark.triangle.fill")
+                .font(.caption).foregroundStyle(.orange)
         }
     }
 }
@@ -484,25 +571,53 @@ private struct ModelRow<Accessory: View>: View {
     }
 }
 
+/// Saves one API key for an endpoint. The stored key is never shown again; the row says whether
+/// one is saved, and a new entry replaces it.
 struct CredentialEditor: View {
     let endpoint: String
     @State private var key = ""
+    @State private var configured = false
     @State private var message: LocalizedText?
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                SecureField(L("API Key (optional for local services)"), text: $key)
-                Button(L("Save Key")) {
-                    do { try KeychainStore.save(key.trimmingCharacters(in: .whitespacesAndNewlines), endpoint: endpoint); message = LocalizedText("Saved to Keychain") }
-                    catch { message = LocalizedText(error: error) }
+        LabeledContent(L("API Key")) {
+            HStack(spacing: 8) {
+                SecureField("", text: $key, prompt: Text(configured ? L("Enter a new key to replace the saved one") : L("Paste the key for this service")))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 360)
+                    .onSubmit(save)
+                Button(L("Save Key"), action: save)
+                    .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if configured {
+                    Button(L("Remove"), action: remove)
                 }
             }
-            if let message { Text(message.text).font(.caption).foregroundStyle(.secondary).transition(.rise) }
         }
-        .animation(Motion.content, value: message)
-        .task {
-            do { key = try KeychainStore.read(endpoint: endpoint) }
+        HStack(spacing: 6) {
+            Image(systemName: configured ? "checkmark.seal.fill" : "key")
+                .foregroundStyle(configured ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+            Text(message?.text ?? (configured ? L("Saved in Keychain for this API address.") : L("No key saved. Local services can go without one.")))
+        }
+        .font(.caption).foregroundStyle(.secondary)
+        .animation(Motion.quick, value: configured)
+        .task(id: endpoint) {
+            do { configured = try !KeychainStore.read(endpoint: endpoint).isEmpty }
             catch { message = LocalizedText(error: error) }
         }
+    }
+
+    private func save() {
+        let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        do {
+            try KeychainStore.save(value, endpoint: endpoint)
+            key = ""; configured = true; message = LocalizedText("Saved to Keychain")
+        } catch { message = LocalizedText(error: error) }
+    }
+    private func remove() {
+        do {
+            try KeychainStore.save("", endpoint: endpoint)
+            key = ""; configured = false; message = LocalizedText("The saved key was removed.")
+        } catch { message = LocalizedText(error: error) }
     }
 }

@@ -1,10 +1,8 @@
 /* Application-owned strings. Keep keys in sync between languages. */
 "%@ waiting" = "%@ 个等待处理";
 "3.5 Multilingual" = "3.5 多语言版";
-"A speech model is needed" = "需要下载语音模型";
 "A task is still running" = "仍有任务正在处理";
 "API Base URL" = "API 地址";
-"API Key (optional for local services)" = "API 密钥（本机服务可留空）";
 "Add Files…" = "添加文件…";
 "Allow Altranscribe in System Settings → Privacy & Security → Microphone." = "请在系统设置 → 隐私与安全性 → 麦克风中允许 Altranscribe。";
 "Allow Altranscribe in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen the app." = "请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许 Altranscribe，然后重新打开应用。";
@@ -16,7 +14,6 @@
 "Audio Source" = "音频来源";
 "Audio conversion failed." = "音频转换失败。";
 "Audio timestamp" = "音频时间";
-"Available Models" = "可用模型";
 "Bring in a recording" = "导入一段录音";
 "Cancel" = "取消";
 "Captions appear here when transcription starts." = "开始转写后，字幕会显示在这里。";
@@ -43,7 +40,6 @@
 "Could not update the API key." = "无法更新 API 密钥。";
 "Creating summary…" = "正在生成摘要…";
 "Current Model" = "当前模型";
-"Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio." = "自定义服务必须支持 audio/transcriptions；仅支持聊天的服务无法转录音频。";
 "Custom Model Name" = "自定义模型名称";
 "Dark" = "深色";
 "Data & Privacy" = "数据与隐私";
@@ -58,11 +54,9 @@
 "Discard this recording?" = "丢弃本次记录？";
 "Download" = "下载";
 "Download a Local Model" = "下载本地模型";
-"Download one in Settings to transcribe on this Mac." = "在设置中下载后，即可在本机转写。";
 "Download or select a Whisper model in Settings first." = "请先在设置中下载或选择 Whisper 模型。";
 "Download the selected Nemotron model in Settings first." = "请先在设置中下载所选 Nemotron 模型。";
 "Drop audio or video here, or choose files from your Mac. Files are processed in order." = "拖入音频或视频，或从 Mac 中选择文件。多个文件将依次处理。";
-"Endpoint Override" = "覆盖服务地址";
 "Engine" = "引擎";
 "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline." = "默认采用英语版。字幕随讲话更新，停顿后定稿；停止时会补齐最后一句。识别过程无需联网。";
 "English · Default" = "英语版 · 默认";
@@ -128,7 +122,6 @@
 "No microphone is available." = "没有可用的麦克风。";
 "No speech was transcribed." = "没有转写出文字。";
 "No transcripts yet" = "还没有记录";
-"None selected" = "未选择";
 "OK" = "好";
 "On-device Compute" = "本机计算";
 "On-device Streaming" = "本机流式识别";
@@ -136,15 +129,12 @@
 "Open Transcript" = "打开记录";
 "Open in Finder" = "在访达中打开";
 "OpenAI / Ollama / Compatible" = "OpenAI / Ollama / 兼容服务";
-"OpenAI Transcription" = "OpenAI 音频转录";
-"Override Model Name" = "覆盖模型名称（Override）";
 "Pause" = "暂停";
 "Pause / Resume" = "暂停 / 继续";
 "Paused" = "已暂停";
 "Pending translations: %@" = "待翻译 %@ 段";
 "Plain text (TXT)" = "纯文本 (TXT)";
 "Preparing…" = "正在加载模型…";
-"Presets" = "快速填入";
 "Previous 30 Days" = "过去 30 天";
 "Previous 7 Days" = "过去 7 天";
 "Processing Failed" = "处理失败";
@@ -156,7 +146,6 @@
 "Rename…" = "重命名…";
 "Resume" = "继续";
 "Retry" = "重试";
-"Run Ollama locally with an installed text model. Online services use HTTPS; keys are saved separately for each API base URL. Fetching models does not run inference." = "Ollama 需在本机运行并提前安装文本模型。在线服务使用 HTTPS，密钥按 API 地址分别保存。获取列表不会运行推理。";
 "Save" = "保存";
 "Save As:" = "存储为：";
 "Save Key" = "保存密钥";
@@ -288,10 +277,6 @@
 
 "Cloud transcription could not keep up. The received text was retained." = "云端转录未能跟上音频。已收到的文本已保留。";
 
-"Direct Translation" = "直接翻译";
-
-"File translation and summaries use this text model. Live direct speech translation uses the speech service. For local services, fetch installed models or use an override." = "文件翻译与摘要使用此文本模型。实时直接语音翻译使用语音服务。本机服务可获取已安装模型或手动指定名称。";
-
 "Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically." = "文件按不超过十分钟分段处理。实时云端会话在到期前续接。时间戳为估算值，付费请求不会自动重发。";
 
 "Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence." = "Gemini 实时翻译为预览版。如果服务未确认收尾，保存的记录会提醒你核对最后一句。";
@@ -308,14 +293,110 @@
 
 "The preview translation service did not confirm the final output. Review the last sentence." = "预览版翻译服务未确认最终输出，请核对最后一句。";
 
-"Translate directly from audio" = "直接从音频翻译";
-
 "Vocabulary hints apply to transcription, not direct speech translation." = "词汇提示用于转录，不适用于直接语音翻译。";
-
-"When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played, but the service still bills it." = "开启翻译后，直接语音翻译会同时返回原文与译文，只需语音服务密钥。生成的音频不会播放，但服务仍按音频输出计费。";
 
 "The service timed out. The request was not retried; try again later or choose another model." = "服务响应超时。请求未自动重试，请稍后再试或选择其他模型。";
 
 "HTTP %@. The service is temporarily unavailable. Try again later or choose another model." = "HTTP %@。服务暂时不可用，请稍后再试或选择其他模型。";
 
 "Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files." = "自定义服务的实时音频按 8 秒分段，文件按不超过十分钟分段。";
+
+/* Settings, home summary and inspector wording (2026-10-26). */
+"A custom endpoint must implement audio/transcriptions. Live audio is sent to it in 8-second chunks; Realtime transcription is OpenAI only." = "自定义地址必须实现 audio/transcriptions。实时音频会按 8 秒分段发送到该地址；Realtime 实时转写仅限 OpenAI 官方地址。";
+
+"A custom model name is in use. The app has not checked it against the service." = "正在使用自定义模型名称，本应用未向服务核对该名称。";
+
+"A session is running. Speech and text settings unlock when it ends." = "会话进行中，语音与文本设置将在结束后解锁。";
+
+"API Key" = "API 密钥";
+
+"Compatible Service" = "兼容服务";
+
+"Created" = "创建时间";
+
+"Custom Name…" = "自定义名称…";
+
+"Direct from audio" = "直接从音频";
+
+"Direct translation returns both the original and translated text and needs only the speech key. Generated audio is never played, but the service still bills it." = "直接翻译同时返回原文与译文，只需语音服务密钥。生成的音频不会播放，但服务仍按音频输出计费。";
+
+"Direct translation with source text" = "直接翻译并保留原文";
+
+"Duration" = "时长";
+
+"Enter a new key to replace the saved one" = "输入新密钥以替换已保存的密钥";
+
+"Exactly as the service names it" = "与服务端的模型名称完全一致";
+
+"File translation and summaries use this text model; live direct speech translation uses the speech service. Keys are saved separately for each API base URL. Fetching the model list does not run inference." = "文件翻译与摘要使用此文本模型；实时直接语音翻译使用语音服务。密钥按 API 地址分别保存。获取模型列表不会运行推理。";
+
+"File translation and summaries use this text model; live direct speech translation uses the speech service. Ollama must be running with a text model installed; a local model list loads automatically. Online services use HTTPS, and keys are saved separately for each API base URL." = "文件翻译与摘要使用此文本模型；实时直接语音翻译使用语音服务。Ollama 需在本机运行并已安装文本模型，本机模型列表会自动加载。在线服务使用 HTTPS，密钥按 API 地址分别保存。";
+
+"In Effect" = "当前生效";
+
+"legacy" = "旧模型";
+
+"Live Mode" = "实时模式";
+
+"Local Service" = "本机服务";
+
+"Model List" = "模型列表";
+
+"Model list unavailable: %@" = "无法获取模型列表：%@";
+
+"No key saved. Local services can go without one." = "未保存密钥。本机服务可以不填。";
+
+"No model selected" = "未选择模型";
+
+"Not configured" = "未配置";
+
+"Not used" = "未使用";
+
+"Off" = "关闭";
+
+"On" = "开启";
+
+"OpenAI / Compatible" = "OpenAI / 兼容服务";
+
+"Paste the key for this service" = "粘贴该服务的密钥";
+
+"Quick Fill" = "快速填入";
+
+"Remove" = "移除";
+
+"Saved in Keychain for this API address." = "已为此 API 地址保存到钥匙串。";
+
+"Service URL" = "服务地址";
+
+"Source" = "来源";
+
+"Speech Model" = "语音模型";
+
+"Speech Settings…" = "语音设置…";
+
+"Status" = "状态";
+
+"Text Model" = "文本模型";
+
+"Text Model Settings…" = "文本模型设置…";
+
+"The saved key was removed." = "已移除保存的密钥。";
+
+"These use the text model from Settings and replace this transcript's existing translation or summary." = "使用设置中的文本模型，并替换这份文稿已有的译文或摘要。";
+
+"This model is not in the service's preset list. Fetch the model list to check it." = "此模型不在该服务的预选列表中，可获取模型列表核对。";
+
+"This Transcript" = "这份文稿";
+
+"Transcribe" = "转录";
+
+"Translate directly, keeping the source text" = "直接翻译，同时保留原文";
+
+"Translate or Summarize Again" = "重新翻译或生成摘要";
+
+"Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio." = "翻译未开启，实时会话按转录运行。开启翻译后才会直接从音频翻译。";
+
+"Translation or summary needs a text model." = "翻译或摘要需要文本模型。";
+
+"Turn On Translate" = "开启翻译";
+

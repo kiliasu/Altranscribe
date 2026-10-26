@@ -188,6 +188,26 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertEqual(try app.store.load().records.first?.segments.last?.text, "Nex", "A lone interim update still reaches the disk within about a second")
     }
 
+    func testStartWaitsForTheModelsTheSessionNeeds() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = app(at: root)
+        app.settings.speechProvider = .compatible; app.settings.speechBaseURL = "https://api.openai.com/v1"
+        XCTAssertTrue(app.canStart(live: true)); XCTAssertNil(app.modelIssue)
+        app.settings.summarize = true; app.settings.textModel = ""
+        XCTAssertFalse(app.canStart(live: true), "A summary needs a text model before the session starts")
+        app.settings.summarize = false; app.settings.translate = true
+        XCTAssertTrue(app.canStart(live: true), "Live direct translation needs only the speech service")
+        XCTAssertFalse(app.canStart(live: false), "File translation needs the text model")
+        app.settings.textModel = "gpt-6.1-sol"
+        XCTAssertTrue(app.canStart(live: false))
+        app.settings.speechProvider = .whisper; app.settings.modelPath = ""
+        XCTAssertFalse(app.canStart(live: true))
+        XCTAssertEqual(app.modelIssue?.rendered(language: .english), "No Whisper model is selected.")
+        app.settings.modelPath = root.appendingPathComponent("missing.bin").path
+        XCTAssertEqual(app.modelIssue?.rendered(language: .english), "The selected Whisper model file is missing.")
+    }
+
     func testBrokenSettingsDoNotHideSavedTranscripts() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

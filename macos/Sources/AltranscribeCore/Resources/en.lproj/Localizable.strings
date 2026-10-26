@@ -1,10 +1,8 @@
 /* Application-owned strings. Keep keys in sync between languages. */
 "%@ waiting" = "%@ waiting";
 "3.5 Multilingual" = "3.5 Multilingual";
-"A speech model is needed" = "A speech model is needed";
 "A task is still running" = "A task is still running";
 "API Base URL" = "API Base URL";
-"API Key (optional for local services)" = "API Key (optional for local services)";
 "Add Files…" = "Add Files…";
 "Allow Altranscribe in System Settings → Privacy & Security → Microphone." = "Allow Altranscribe in System Settings → Privacy & Security → Microphone.";
 "Allow Altranscribe in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen the app." = "Allow Altranscribe in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen the app.";
@@ -16,7 +14,6 @@
 "Audio Source" = "Audio Source";
 "Audio conversion failed." = "Audio conversion failed.";
 "Audio timestamp" = "Audio timestamp";
-"Available Models" = "Available Models";
 "Bring in a recording" = "Bring in a recording";
 "Cancel" = "Cancel";
 "Captions appear here when transcription starts." = "Captions appear here when transcription starts.";
@@ -43,7 +40,6 @@
 "Could not update the API key." = "Could not update the API key.";
 "Creating summary…" = "Creating summary…";
 "Current Model" = "Current Model";
-"Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio." = "Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio.";
 "Custom Model Name" = "Custom Model Name";
 "Dark" = "Dark";
 "Data & Privacy" = "Data & Privacy";
@@ -58,11 +54,9 @@
 "Discard this recording?" = "Discard this recording?";
 "Download" = "Download";
 "Download a Local Model" = "Download a Local Model";
-"Download one in Settings to transcribe on this Mac." = "Download one in Settings to transcribe on this Mac.";
 "Download or select a Whisper model in Settings first." = "Download or select a Whisper model in Settings first.";
 "Download the selected Nemotron model in Settings first." = "Download the selected Nemotron model in Settings first.";
 "Drop audio or video here, or choose files from your Mac. Files are processed in order." = "Drop audio or video here, or choose files from your Mac. Files are processed in order.";
-"Endpoint Override" = "Endpoint Override";
 "Engine" = "Engine";
 "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline." = "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline.";
 "English · Default" = "English · Default";
@@ -128,7 +122,6 @@
 "No microphone is available." = "No microphone is available.";
 "No speech was transcribed." = "No speech was transcribed.";
 "No transcripts yet" = "No transcripts yet";
-"None selected" = "None selected";
 "OK" = "OK";
 "On-device Compute" = "On-device Compute";
 "On-device Streaming" = "On-device Streaming";
@@ -136,15 +129,12 @@
 "Open Transcript" = "Open Transcript";
 "Open in Finder" = "Open in Finder";
 "OpenAI / Ollama / Compatible" = "OpenAI / Ollama / Compatible";
-"OpenAI Transcription" = "OpenAI Transcription";
-"Override Model Name" = "Override Model Name";
 "Pause" = "Pause";
 "Pause / Resume" = "Pause / Resume";
 "Paused" = "Paused";
 "Pending translations: %@" = "Pending translations: %@";
 "Plain text (TXT)" = "Plain text (TXT)";
 "Preparing…" = "Preparing…";
-"Presets" = "Presets";
 "Previous 30 Days" = "Previous 30 Days";
 "Previous 7 Days" = "Previous 7 Days";
 "Processing Failed" = "Processing Failed";
@@ -156,7 +146,6 @@
 "Rename…" = "Rename…";
 "Resume" = "Resume";
 "Retry" = "Retry";
-"Run Ollama locally with an installed text model. Online services use HTTPS; keys are saved separately for each API base URL. Fetching models does not run inference." = "Run Ollama locally with an installed text model. Online services use HTTPS; keys are saved separately for each API base URL. Fetching models does not run inference.";
 "Save" = "Save";
 "Save As:" = "Save As:";
 "Save Key" = "Save Key";
@@ -288,10 +277,6 @@
 
 "Cloud transcription could not keep up. The received text was retained." = "Cloud transcription could not keep up. The received text was retained.";
 
-"Direct Translation" = "Direct Translation";
-
-"File translation and summaries use this text model. Live direct speech translation uses the speech service. For local services, fetch installed models or use an override." = "File translation and summaries use this text model. Live direct speech translation uses the speech service. For local services, fetch installed models or use an override.";
-
 "Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically." = "Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically.";
 
 "Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence." = "Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence.";
@@ -308,14 +293,110 @@
 
 "The preview translation service did not confirm the final output. Review the last sentence." = "The preview translation service did not confirm the final output. Review the last sentence.";
 
-"Translate directly from audio" = "Translate directly from audio";
-
 "Vocabulary hints apply to transcription, not direct speech translation." = "Vocabulary hints apply to transcription, not direct speech translation.";
-
-"When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played, but the service still bills it." = "When Translate is enabled, direct speech translation returns both the original and translated text. It needs only the speech key. Generated audio is never played, but the service still bills it.";
 
 "The service timed out. The request was not retried; try again later or choose another model." = "The service timed out. The request was not retried; try again later or choose another model.";
 
 "HTTP %@. The service is temporarily unavailable. Try again later or choose another model." = "HTTP %@. The service is temporarily unavailable. Try again later or choose another model.";
 
 "Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files." = "Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files.";
+
+/* Settings, home summary and inspector wording (2026-10-26). */
+"A custom endpoint must implement audio/transcriptions. Live audio is sent to it in 8-second chunks; Realtime transcription is OpenAI only." = "A custom endpoint must implement audio/transcriptions. Live audio is sent to it in 8-second chunks; Realtime transcription is OpenAI only.";
+
+"A custom model name is in use. The app has not checked it against the service." = "A custom model name is in use. The app has not checked it against the service.";
+
+"A session is running. Speech and text settings unlock when it ends." = "A session is running. Speech and text settings unlock when it ends.";
+
+"API Key" = "API Key";
+
+"Compatible Service" = "Compatible Service";
+
+"Created" = "Created";
+
+"Custom Name…" = "Custom Name…";
+
+"Direct from audio" = "Direct from audio";
+
+"Direct translation returns both the original and translated text and needs only the speech key. Generated audio is never played, but the service still bills it." = "Direct translation returns both the original and translated text and needs only the speech key. Generated audio is never played, but the service still bills it.";
+
+"Direct translation with source text" = "Direct translation with source text";
+
+"Duration" = "Duration";
+
+"Enter a new key to replace the saved one" = "Enter a new key to replace the saved one";
+
+"Exactly as the service names it" = "Exactly as the service names it";
+
+"File translation and summaries use this text model; live direct speech translation uses the speech service. Keys are saved separately for each API base URL. Fetching the model list does not run inference." = "File translation and summaries use this text model; live direct speech translation uses the speech service. Keys are saved separately for each API base URL. Fetching the model list does not run inference.";
+
+"File translation and summaries use this text model; live direct speech translation uses the speech service. Ollama must be running with a text model installed; a local model list loads automatically. Online services use HTTPS, and keys are saved separately for each API base URL." = "File translation and summaries use this text model; live direct speech translation uses the speech service. Ollama must be running with a text model installed; a local model list loads automatically. Online services use HTTPS, and keys are saved separately for each API base URL.";
+
+"In Effect" = "In Effect";
+
+"legacy" = "legacy";
+
+"Live Mode" = "Live Mode";
+
+"Local Service" = "Local Service";
+
+"Model List" = "Model List";
+
+"Model list unavailable: %@" = "Model list unavailable: %@";
+
+"No key saved. Local services can go without one." = "No key saved. Local services can go without one.";
+
+"No model selected" = "No model selected";
+
+"Not configured" = "Not configured";
+
+"Not used" = "Not used";
+
+"Off" = "Off";
+
+"On" = "On";
+
+"OpenAI / Compatible" = "OpenAI / Compatible";
+
+"Paste the key for this service" = "Paste the key for this service";
+
+"Quick Fill" = "Quick Fill";
+
+"Remove" = "Remove";
+
+"Saved in Keychain for this API address." = "Saved in Keychain for this API address.";
+
+"Service URL" = "Service URL";
+
+"Source" = "Source";
+
+"Speech Model" = "Speech Model";
+
+"Speech Settings…" = "Speech Settings…";
+
+"Status" = "Status";
+
+"Text Model" = "Text Model";
+
+"Text Model Settings…" = "Text Model Settings…";
+
+"The saved key was removed." = "The saved key was removed.";
+
+"These use the text model from Settings and replace this transcript's existing translation or summary." = "These use the text model from Settings and replace this transcript's existing translation or summary.";
+
+"This model is not in the service's preset list. Fetch the model list to check it." = "This model is not in the service's preset list. Fetch the model list to check it.";
+
+"This Transcript" = "This Transcript";
+
+"Transcribe" = "Transcribe";
+
+"Translate directly, keeping the source text" = "Translate directly, keeping the source text";
+
+"Translate or Summarize Again" = "Translate or Summarize Again";
+
+"Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio." = "Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio.";
+
+"Translation or summary needs a text model." = "Translation or summary needs a text model.";
+
+"Turn On Translate" = "Turn On Translate";
+

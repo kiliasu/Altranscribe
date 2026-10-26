@@ -43,21 +43,6 @@ struct FlowLayout: Layout {
     }
 }
 
-/// A quiet capsule that names one setting of the session, such as the engine or the translation target.
-struct InfoChip: View {
-    let title: String
-    let symbol: String
-    var body: some View {
-        Label(title, systemImage: symbol)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(.fill.tertiary, in: .capsule)
-    }
-}
-
 /// The last moments of input level, scrolling from right to left like the meter in Voice Memos.
 struct LevelHistory: View {
     let levels: [Float]

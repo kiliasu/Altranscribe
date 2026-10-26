@@ -30,7 +30,7 @@ public enum SpeechProvider: String, Codable, CaseIterable, Identifiable, Sendabl
         case .nemotron: L("Nemotron · On Device")
         case .fluidAudio: L("FluidAudio · On Device")
         case .appleSpeech: "Apple SpeechTranscriber"
-        case .compatible: L("OpenAI Transcription")
+        case .compatible: L("OpenAI / Compatible")
         case .gemini: "Google Gemini"
         }
     }
@@ -68,6 +68,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var textModel = ""
     public var textModelOverride: String?
     public var anthropicWorkspaceID: String?
+    /// The model last chosen for each text service, so switching services and back restores it.
+    public var textModels: [String: String]?
     public var sourceLanguage = "auto"
     public var targetLanguage = "zh"
     public var translate = false
@@ -151,6 +153,63 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case .anthropic: TextModelPresets.anthropic
         }
     }
+    // MARK: Presentation shared by the home page, the inspectors and the settings pages.
+
+    /// The speech service as a user would name it: the official provider, or a compatible service by host.
+    public var speechServiceTitle: String {
+        guard speechProvider == .compatible else { return speechProvider.title }
+        let host = URL(string: speechBaseURL)?.host?.lowercased() ?? ""
+        if host == "api.openai.com" { return "OpenAI" }
+        return (isLoopback(speechBaseURL) ? L("Local Service") : L("Compatible Service")) + (host.isEmpty ? "" : " · " + host)
+    }
+    /// The model a session would use, in the words the settings pages use.
+    public func speechModelTitle(live: Bool) -> String {
+        switch speechProvider {
+        case .whisper:
+            guard !effectiveModelPath.isEmpty else { return L("No model selected") }
+            let file = URL(fileURLWithPath: effectiveModelPath).lastPathComponent
+            return WhisperModel.catalog.first { $0.filename == file }?.title ?? file
+        case .nemotron: return nemotronModel.multilingual ? L("Nemotron 3.5 · Multilingual") : L("Nemotron · English")
+        case .fluidAudio: return fluidAudioModel.title
+        case .appleSpeech: return InterfaceLanguage.current.locale.localizedString(forIdentifier: appleSpeechLocale) ?? appleSpeechLocale
+        case .gemini: return live ? liveSpeechModel : effectiveGeminiSpeechModel
+        case .compatible: return live && usesCloudLive ? liveSpeechModel : effectiveSpeechModel
+        }
+    }
+    /// Records keep model identifiers; show them the way the settings name them.
+    public static func speechModelDisplayName(_ stored: String) -> String {
+        if let nemotron = NemotronModel.catalog.first(where: { $0.id == stored }) {
+            return nemotron.multilingual ? L("Nemotron 3.5 · Multilingual") : L("Nemotron · English")
+        }
+        if let fluid = FluidAudioModel(rawValue: stored) { return fluid.title }
+        return stored
+    }
+    public var textServiceTitle: String {
+        guard textProvider == .compatible else { return textProvider.title }
+        let host = URL(string: textBaseURL)?.host?.lowercased() ?? ""
+        if host == "api.openai.com" { return "OpenAI" }
+        return (isLoopback(textBaseURL) ? L("Local Service") : L("Compatible Service")) + (host.isEmpty ? "" : " · " + host)
+    }
+    /// Translation of files and summaries always need the text service; live direct translation does not.
+    public func needsTextModel(live: Bool) -> Bool { (translate && !(live && usesDirectSpeechTranslation)) || summarize }
+    public func textModelMissing(live: Bool) -> Bool { needsTextModel(live: live) && effectiveTextModel.isEmpty }
+    private func isLoopback(_ url: String) -> Bool { (try? APIEndpoint(url).isLoopback) == true }
+
+    var textModelKey: String {
+        textProvider == .compatible ? "compatible:" + (URL(string: textBaseURL)?.host?.lowercased() ?? "") : textProvider.rawValue
+    }
+    /// Change the text service or its address, keeping the model chosen for the service being left and
+    /// restoring the one chosen earlier for the service being entered, or its first preset.
+    public mutating func switchTextService(provider: TextProvider? = nil, baseURL: String? = nil) {
+        var memory = textModels ?? [:]
+        if !effectiveTextModel.isEmpty { memory[textModelKey] = effectiveTextModel }
+        if let provider { textProvider = provider }
+        if let baseURL { textBaseURL = baseURL }
+        textModel = memory[textModelKey] ?? textModelPresets.first ?? ""
+        textModelOverride = nil
+        textModels = memory
+    }
+
     public static var languages: [(String, String)] { [
         ("auto", L("Detect Automatically")), ("zh", "中文"), ("en", "English"),
         ("ja", "日本語"), ("ko", "한국어"), ("es", "Español"), ("fr", "Français"),

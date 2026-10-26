@@ -10,12 +10,18 @@ struct ContentView: View {
             Sidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 256, max: 360)
         } detail: {
-            detail
-                .inspector(isPresented: Binding(get: { showInspector && model.destination != .settings },
-                                                set: { if model.destination != .settings { showInspector = $0 } })) {
-                    SessionInspector(model: model)
-                        .inspectorColumnWidth(min: 250, ideal: 280, max: 360)
-                }
+            // Pages give way to one another the way the welcome page gives way to a transcript.
+            ZStack {
+                detail
+                    .id(model.destination ?? .live)
+                    .transition(.page)
+            }
+            .animation(Motion.content, value: model.destination)
+            .inspector(isPresented: Binding(get: { showInspector && model.destination != .settings },
+                                            set: { if model.destination != .settings { showInspector = $0 } })) {
+                inspector
+                    .inspectorColumnWidth(min: 250, ideal: 280, max: 360)
+            }
         }
         .frame(minWidth: 860, minHeight: 560)
         .alert(L("Attention"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
@@ -29,6 +35,15 @@ struct ContentView: View {
         .onChange(of: model.settings) { _, _ in model.saveSettings() }
         .task(id: model.settings.appleSpeechLocale + model.settings.speechProvider.rawValue) {
             if model.settings.speechProvider == .appleSpeech { await model.refreshAppleSpeech() }
+        }
+    }
+
+    /// A saved transcript shows its own facts; the capture pages show what the next session will use.
+    @ViewBuilder private var inspector: some View {
+        if case .transcript(let id) = model.destination, let record = model.records.first(where: { $0.id == id }) {
+            RecordInspector(model: model, record: record).id(id)
+        } else {
+            SessionInspector(model: model)
         }
     }
 
@@ -233,10 +248,10 @@ struct SessionInspector: View {
             Section(L("Recognition")) {
                 LabeledContent(L("Engine")) {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(model.settings.speechProvider.title)
-                        if model.settings.speechProvider.isLocal {
-                            Text(compute).font(.caption).foregroundStyle(.secondary)
-                        }
+                        Text(model.settings.speechServiceTitle)
+                        Text(model.settings.speechModelTitle(live: model.destination != .files) + (model.settings.speechProvider.isLocal ? " · " + compute : ""))
+                            .font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
                     }
                 }
                 if !model.modelReady {
@@ -256,7 +271,9 @@ struct SessionInspector: View {
                         ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
                     }
                 }
-                Button(L("Manage Models…")) { model.settingsPage = .speech; model.destination = .settings }
+                Button(model.settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…")) {
+                    model.settingsPage = .speech; model.destination = .settings
+                }
             }
             Section {
                 Toggle(L("Translate"), isOn: $model.settings.translate)
@@ -307,5 +324,43 @@ struct SessionInspector: View {
         case .appleSpeech: L("Managed by macOS")
         default: model.settings.speechProvider == .whisper && model.settings.useGPU ? "Metal GPU" : "CPU"
         }
+    }
+}
+
+/// A saved transcript's own facts, instead of the session settings that only apply to a new session.
+struct RecordInspector: View {
+    let model: AppModel
+    let record: TranscriptRecord
+
+    var body: some View {
+        Form {
+            Section(L("This Transcript")) {
+                LabeledContent(L("Source"), value: record.source.title)
+                LabeledContent(L("Created"), value: Localization.date(record.createdAt))
+                if record.duration > 0 { LabeledContent(L("Duration"), value: durationText(record.duration)) }
+                LabeledContent(L("Language"), value: languageName(record.language) + (record.targetLanguage.map { " → " + languageName($0) } ?? ""))
+                LabeledContent(L("Speech Model"), value: AppSettings.speechModelDisplayName(record.speechModel))
+                LabeledContent(L("Status"), value: record.status.title)
+                if let path = record.sourcePath {
+                    Button(L("Show Source in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                }
+            }
+            Section {
+                LabeledContent(L("Text Model")) {
+                    Text(model.settings.effectiveTextModel.isEmpty ? L("Not configured") : model.settings.textServiceTitle + " · " + model.settings.effectiveTextModel)
+                        .foregroundStyle(model.settings.effectiveTextModel.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                LabeledContent(L("Target Language"), value: languageName(model.settings.targetLanguage))
+                Button(L("Translate Transcript")) { model.postProcess(record, summary: false) }
+                    .disabled(model.busy || record.segments.isEmpty || model.settings.effectiveTextModel.isEmpty)
+                Button(L("Generate Summary")) { model.postProcess(record, summary: true) }
+                    .disabled(model.busy || record.segments.isEmpty || model.settings.effectiveTextModel.isEmpty)
+                Button(L("Text Model Settings…")) { model.settingsPage = .text; model.destination = .settings }
+            } header: { Text(L("Translate or Summarize Again")) } footer: {
+                Text(L("These use the text model from Settings and replace this transcript's existing translation or summary."))
+            }
+        }
+        .formStyle(.grouped)
     }
 }

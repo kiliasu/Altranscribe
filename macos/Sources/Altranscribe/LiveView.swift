@@ -76,20 +76,7 @@ private struct LiveWelcome: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 440)
                 }
-                FlowLayout(alignment: .center, spacing: 8, lineSpacing: 8) {
-                    InfoChip(title: engine, symbol: model.settings.speechProvider.isLocal ? "cpu" : "cloud")
-                    if model.settings.speechProvider != .nemotron || model.settings.nemotronModel.multilingual {
-                        InfoChip(title: languageName(model.settings.recognitionLanguage), symbol: "globe").transition(.pop)
-                    }
-                    if model.settings.translate {
-                        InfoChip(title: L("Translate") + " → " + languageName(model.settings.targetLanguage), symbol: "translate")
-                            .transition(.pop)
-                    }
-                    if model.settings.summarize { InfoChip(title: L("Summary"), symbol: "sparkles").transition(.pop) }
-                }
-                .frame(maxWidth: 520)
-                .animation(Motion.content, value: model.settings)
-                if !model.modelReady { ModelCallout(model: model).transition(.rise) }
+                SessionSummary(model: model)
             }
             .animation(Motion.content, value: model.modelReady)
             .padding(40)
@@ -101,37 +88,77 @@ private struct LiveWelcome: View {
         .animation(Motion.content, value: model.phase == .preparing)
     }
 
-    private var engine: String {
-        switch model.settings.speechProvider {
-        case .nemotron: model.settings.nemotronModel.multilingual ? L("Nemotron 3.5 · Multilingual") : L("Nemotron · English")
-        case .whisper: "Whisper · " + URL(fileURLWithPath: model.settings.effectiveModelPath).deletingPathExtension().lastPathComponent
-            .replacingOccurrences(of: "ggml-", with: "")
-        case .fluidAudio: "FluidAudio · " + model.settings.fluidAudioModel.title
-        case .appleSpeech, .compatible, .gemini: model.settings.speechProvider.title
-        }
-    }
 }
 
-private struct ModelCallout: View {
-    let model: AppModel
+/// What the next session will use, one row per decision. Each row opens the page that changes it,
+/// and whatever would stop the session from starting is named on its row.
+private struct SessionSummary: View {
+    @Bindable var model: AppModel
+
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "arrow.down.circle.fill")
-                .font(.title)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.settings.speechProvider == .appleSpeech ? model.appleSpeechStatus.title : L("A speech model is needed")).font(.headline)
-                if model.settings.speechProvider != .appleSpeech {
-                    Text(L("Download one in Settings to transcribe on this Mac.")).foregroundStyle(.secondary)
-                }
+        let settings = model.settings
+        VStack(spacing: 0) {
+            SummaryRow(symbol: settings.speechProvider.isLocal ? "cpu" : "cloud", title: L("Speech"),
+                       value: settings.speechServiceTitle + " · " + settings.speechModelTitle(live: true),
+                       warning: model.modelIssue?.text) { open(.speech) }
+            if settings.usesCloudLive {
+                SummaryRow(symbol: "waveform", title: L("Live Mode"),
+                           value: settings.usesDirectSpeechTranslation ? L("Direct translation with source text") : L("Transcribe")) { open(.speech) }
             }
-            Spacer(minLength: 12)
-            Button(L("Manage Models…")) { model.settingsPage = .speech; model.destination = .settings }
-                .buttonStyle(.borderedProminent)
+            SummaryRow(symbol: "character.bubble", title: L("Text Model"),
+                       value: settings.needsTextModel(live: true)
+                           ? (settings.effectiveTextModel.isEmpty ? L("Not configured") : settings.textServiceTitle + " · " + settings.effectiveTextModel)
+                           : L("Not used"),
+                       warning: settings.textModelMissing(live: true) ? L("Translation or summary needs a text model.") : nil) { open(.text) }
+            SummaryRow(symbol: "translate", title: L("Translate"),
+                       value: settings.translate
+                           ? languageName(settings.targetLanguage) + (settings.usesDirectSpeechTranslation ? " · " + L("Direct from audio") : "")
+                           : L("Off")) { open(.text) }
+            SummaryRow(symbol: "sparkles", title: L("Summary"), value: settings.summarize ? L("On") : L("Off"), last: true) { open(.text) }
         }
-        .padding(16)
         .frame(maxWidth: 520)
         .background(.fill.quaternary, in: .rect(cornerRadius: 16))
+        .animation(Motion.content, value: settings)
+        .animation(Motion.content, value: model.modelReady)
+    }
+
+    private func open(_ page: SettingsPage) { model.settingsPage = page; model.destination = .settings }
+}
+
+private struct SummaryRow: View {
+    let symbol: String
+    let title: String
+    let value: String
+    var warning: String? = nil
+    var last = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).frame(width: 20).foregroundStyle(.secondary)
+                Text(title).foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(value).lineLimit(1).truncationMode(.middle)
+                    if let warning {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                            .transition(.rise)
+                    }
+                }
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .contentShape(.rect)
+            .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .overlay(alignment: .bottom) { if !last { Divider().padding(.leading, 48) } }
+        .animation(Motion.quick, value: hovering)
     }
 }
 
@@ -231,7 +258,7 @@ struct TransportBar: View {
             Button(L("Start Transcription"), systemImage: "record.circle.fill") { model.startLive() }
                 .buttonStyle(.glassProminent)
                 .tint(.red)
-                .disabled(model.busy || !model.modelReady)
+                .disabled(model.busy || !model.canStart(live: true))
                 .help(L("Start Transcription") + " ⇧⌘R")
         case .preparing, .finishing:
             Button(L("Cancel")) { model.cancel() }

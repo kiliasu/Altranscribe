@@ -62,6 +62,45 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(try store.load().records.isEmpty)
     }
 
+    func testTextServiceMemoryStartReadinessAndDisplayNames() {
+        var settings = AppSettings()
+        settings.textBaseURL = "https://api.openai.com/v1"; settings.textModel = "gpt-6-luna"
+        settings.switchTextService(provider: .anthropic)
+        XCTAssertEqual(settings.textModel, "claude-sonnet-5-5", "A new service starts from its first preset, never a stale name")
+        settings.textModelOverride = "claude-custom"
+        settings.switchTextService(provider: .gemini)
+        XCTAssertEqual(settings.textModel, "gemini-3.5-flash-lite"); XCTAssertNil(settings.textModelOverride)
+        settings.switchTextService(provider: .compatible)
+        XCTAssertEqual(settings.textModel, "gpt-6-luna", "Switching back restores the model chosen for that service")
+        settings.switchTextService(provider: .anthropic)
+        XCTAssertEqual(settings.textModel, "claude-custom", "A custom name is remembered as the service's model")
+        settings.switchTextService(provider: .compatible, baseURL: "http://127.0.0.1:11434/v1")
+        XCTAssertEqual(settings.textModel, "", "A local service has no presets until its list is fetched")
+        XCTAssertEqual(settings.textServiceTitle, L("Local Service") + " · 127.0.0.1")
+
+        settings.translate = true
+        XCTAssertTrue(settings.textModelMissing(live: true)); XCTAssertTrue(settings.textModelMissing(live: false))
+        settings.speechProvider = .gemini
+        XCTAssertFalse(settings.textModelMissing(live: true), "Live direct translation needs only the speech service")
+        XCTAssertTrue(settings.textModelMissing(live: false), "File translation still needs the text model")
+        settings.summarize = true
+        XCTAssertTrue(settings.textModelMissing(live: true))
+        XCTAssertEqual(settings.speechModelTitle(live: true), "gemini-3.5-live-translate-preview")
+        XCTAssertEqual(settings.speechModelTitle(live: false), "gemini-3.5-transcribe")
+
+        settings.speechProvider = .whisper; settings.modelPath = ""
+        XCTAssertEqual(settings.speechModelTitle(live: true), L("No model selected"))
+        settings.modelPath = "/tmp/ggml-tiny.bin"
+        XCTAssertEqual(settings.speechModelTitle(live: true), "Tiny")
+        settings.speechProvider = .compatible; settings.speechBaseURL = "http://127.0.0.1:8080/v1"
+        XCTAssertEqual(settings.speechServiceTitle, L("Local Service") + " · 127.0.0.1")
+        settings.speechBaseURL = "https://api.openai.com/v1"
+        XCTAssertEqual(settings.speechServiceTitle, "OpenAI")
+        XCTAssertEqual(AppSettings.speechModelDisplayName("nemotron-en-0.6b"), L("Nemotron · English"))
+        XCTAssertEqual(AppSettings.speechModelDisplayName("parakeet-tdt-0.6b-v3-coreml"), L("Parakeet v3 · Multilingual"))
+        XCTAssertEqual(AppSettings.speechModelDisplayName("gpt-transcribe"), "gpt-transcribe")
+    }
+
     func testExportsEscapeHTMLAndRetainBilingualContent() {
         var record = TranscriptRecord(title: "<script>alert('x')</script>", source: .file, language: "en", speechModel: "tiny")
         var segment = TranscriptSegment(start: 65, end: 70, text: "A & B < C", estimated: true)
