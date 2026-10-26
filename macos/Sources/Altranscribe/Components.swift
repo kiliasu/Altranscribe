@@ -229,3 +229,26 @@ extension AudioSource {
         switch self { case .microphone: "mic.fill"; case .system: "speaker.wave.2.fill"; case .file: "doc.text.fill" }
     }
 }
+
+/// The same caption controls are available in Settings and directly on the floating panel.
+struct CaptionControls: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        LabeledContent(L("Text Size")) {
+            HStack(spacing: 10) {
+                Slider(value: $model.settings.captionSize, in: 16...60, step: 1)
+                    .accessibilityLabel(L("Text Size"))
+                    .frame(maxWidth: 220)
+                Text("\(Int(model.settings.captionSize)) pt")
+                    .monospacedDigit().foregroundStyle(.secondary)
+                    .frame(width: 40, alignment: .trailing)
+            }
+        }
+        Stepper(L("Visible Sentences") + " · " + String(model.settings.visibleCaptionCount),
+                value: Binding(get: { model.settings.visibleCaptionCount }, set: { model.settings.captionSentenceCount = $0 }), in: 1...8)
+            .accessibilityLabel(L("Visible Sentences"))
+            .accessibilityValue(String(model.settings.visibleCaptionCount))
+        Toggle(L("Show only translation when available"), isOn: $model.settings.captionTranslationOnly)
+    }
+}

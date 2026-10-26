@@ -128,6 +128,9 @@ struct SegmentRow: View {
                     .font(.system(size: textSize))
                     .lineSpacing(textSize * 0.3)
                 if let translation = segment.translation {
+                    if segment.translationIsProvisional == true {
+                        Text(L("Provisional translation")).font(.caption).foregroundStyle(.tertiary)
+                    }
                     Text(translation)
                         .font(.system(size: textSize))
                         .lineSpacing(textSize * 0.3)

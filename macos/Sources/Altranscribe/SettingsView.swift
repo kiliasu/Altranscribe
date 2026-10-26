@@ -92,21 +92,7 @@ struct SettingsView: View {
                 }
             }
             Section(L("Floating Captions")) {
-                // Whole points only, so dragging saves settings once per step instead of on every movement.
-                LabeledContent(L("Text Size")) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "textformat.size.smaller").foregroundStyle(.secondary)
-                        Slider(value: Binding(get: { model.settings.captionSize },
-                                              set: { model.settings.captionSize = $0.rounded() }), in: 16...44)
-                            .frame(maxWidth: 220)
-                        Image(systemName: "textformat.size.larger").foregroundStyle(.secondary)
-                        Text("\(Int(model.settings.captionSize)) pt")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 40, alignment: .trailing)
-                    }
-                }
-                Toggle(L("Show only translation when available"), isOn: $model.settings.captionTranslationOnly)
+                CaptionControls(model: model)
                 Button(L("Show Caption Window")) { model.showCaptions() }
             }
             Section(L("Data & Privacy")) {
@@ -149,6 +135,24 @@ struct SettingsView: View {
                     }
                 }
             }
+            Section {
+                if model.settings.usesBatchLiveAudio {
+                    Picker(L("Live Audio Chunks"), selection: Binding(get: { model.settings.liveChunkMode ?? .automatic },
+                        set: { model.settings.liveChunkMode = $0 })) {
+                        ForEach(LiveChunkMode.allCases) { Text($0.title).tag($0) }
+                    }
+                    Text(L("Automatic cuts at pauses and waits at most 4 seconds. Shorter chunks respond faster but have less context."))
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Label(L("Continuous streaming · No audio slicing"), systemImage: "waveform")
+                        .foregroundStyle(.secondary)
+                }
+                Toggle(L("Adaptive gain for quiet speech"), isOn: Binding(get: { model.settings.adaptiveInputGain ?? true },
+                    set: { model.settings.adaptiveInputGain = $0 }))
+                Toggle(L("Apple microphone voice processing"), isOn: Binding(get: { model.settings.microphoneVoiceProcessing ?? false },
+                    set: { model.settings.microphoneVoiceProcessing = $0 }))
+            } header: { Text(L("Live Audio")) }
+              footer: { Text(L("Gain helps quiet or distant voices. Apple's microphone processing reduces noise but may suppress distant speakers; leave it off for lectures or virtual inputs. It only processes microphone input and may lower other apps' audio.")) }
             switch model.settings.speechProvider {
             case .whisper: whisper
             case .nemotron: nemotron
@@ -289,7 +293,10 @@ struct SettingsView: View {
             Text(L("Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed."))
                 .font(.caption).foregroundStyle(.secondary)
         }
-        chunkedLocalNote
+        Section {
+            Text(L("Apple Speech streams words as you speak. Stable phrases are translated without waiting for a long pause; stopping finalizes the last words."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder private var cloudSpeech: some View {
@@ -298,7 +305,7 @@ struct SettingsView: View {
             if provider == .compatible {
                 SettingsTextField(L("Service URL"), text: $model.settings.speechBaseURL, prompt: "https://api.openai.com/v1")
                 if !model.settings.usesCloudLive {
-                    Label(L("A custom endpoint must implement audio/transcriptions. Live audio is sent to it in 8-second chunks; Realtime transcription is OpenAI only."),
+                    Label(L("A custom endpoint must implement audio/transcriptions. Live audio follows the chunk setting above; Realtime transcription is OpenAI only."),
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.caption).foregroundStyle(.orange)
                     Button(L("Use OpenAI Endpoint")) { model.settings.speechBaseURL = "https://api.openai.com/v1" }
@@ -351,7 +358,7 @@ struct SettingsView: View {
         Section {
             Text(model.settings.usesCloudLive ?
                  L("Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically.") :
-                 L("Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files."))
+                 L("Custom endpoints use the live chunk setting above and chunks of up to ten minutes for files."))
                 .font(.caption).foregroundStyle(.secondary)
             if provider == .gemini {
                 Text(L("Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence."))
@@ -437,7 +444,7 @@ struct SettingsView: View {
     }
     private var chunkedLocalNote: some View {
         Section {
-            Text(L("Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac."))
+            Text(L("Live audio follows the chunk setting above. Files use 20-second chunks. Stopping retains the final audio. Recognition stays on this Mac."))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

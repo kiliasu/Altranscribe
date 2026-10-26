@@ -30,11 +30,11 @@ Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large 
 | 模型管理 | Nemotron / Whisper 下载、SHA-256 校验、删除；FluidAudio 下载与删除；Apple 语言模型安装和状态刷新；Whisper 可选择已有 GGML 文件 |
 | 麦克风 | AVAudioEngine；使用 macOS 当前默认输入设备 |
 | 系统声音 | ScreenCaptureKit；只读取音频，不保存画面，排除本应用的声音 |
-| 实时转写 | Nemotron 持续流式更新，保留上下文，停顿后定稿；其他引擎约 8 秒分段；暂停、继续、停止并保存、丢弃 |
+| 实时转写 | Nemotron / Apple / 云端保持连续流；Whisper / Parakeet 默认自动按停顿切片（最长 4 秒），可选固定 2 / 4 / 8 秒；暂停、继续、停止并保存、丢弃 |
 | 文件队列 | 原生文件选择与拖放，依次处理，20 秒分块增量解码，停止时保留部分记录；处理中显示当前文件的阶段、进度、速度、预计剩余、所用模型、已翻译句数，以及实时生成的原文与译文 |
 | 语音 API | OpenAI / Gemini 文件转录、实时转录、直接语音翻译；OpenAI 文件模型 / 地址 override |
 | 翻译和摘要 | Apple Intelligence 本机模型、本机 Ollama 的 OpenAI 兼容接口、在线兼容服务、OpenAI、Gemini、Anthropic |
-| 双语悬浮字幕 | 可移动、可调整大小的原生 NSPanel，字号和只显示翻译选项；只跟随进行中的实时会话，空闲或文件转写时显示空状态 |
+| 双语悬浮字幕 | 可移动、可调整大小的原生 NSPanel；面板内直接调整 16–60 pt 字号、最近 1–8 个片段和只显示翻译；原译文逐条配对，只跟随进行中的实时会话 |
 | 记录 | 侧栏按日期分组，搜索原文/翻译/摘要；复制、导出、原位重命名、删除、在访达中显示源文件 |
 | 导出 | TXT、Markdown、独立 HTML；HTML 内容转义，不执行转写文本 |
 | 本地持久化 | 定稿、译文和状态立即原子保存，临时文本最多每秒合并写入一次；重启后未完成记录标记为已中断 |
@@ -48,20 +48,22 @@ Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large 
    本地 ad-hoc 签名会随重新构建改变。如果开关已开启但仍提示权限拒绝，退出应用，在上述系统设置中移除旧的 Altranscribe 条目，再用「+」添加当前构建的 `.app` 并重开；只切换旧条目的开关可能无效。
    如果重新构建后麦克风停在启动阶段，可退出应用，在「隐私与安全性 → 麦克风」中关闭再打开已有的 Altranscribe 授权，然后重开应用。
 3. 文件转写使用 ⌘O 或拖入媒体文件。支持 macOS 可解码的 WAV、M4A、MP3、AAC、AIFF、MP4、MOV 等；实际支持取决于文件编码。MKV、WebM、OGG、WMA 等可能需要先转换。
-4. 翻译/摘要默认关闭。OpenAI / Gemini 的实时直接翻译只需语音服务密钥；语音设置中的「实时模式」用「转录 / 直接翻译」分段控件选择，下方标明当前生效的模型，页脚列出两种模式各自的模型，翻译未开启时说明原因；首页「翻译」菜单里的「实时翻译方式」是同一个设置。文件翻译、先转录再翻译及摘要需要配置文本模型。Ollama 默认地址是 `http://127.0.0.1:11434/v1`，本机模型列表在打开文本页时自动获取；模型选择器末尾的「自定义名称…」展开输入框，使用自定义名称时在行下方提示未经核对。切换文本服务时记住各服务上次选择的模型。
+4. 翻译/摘要默认关闭。OpenAI / Gemini 的实时直接翻译只需语音服务密钥；语音设置中的「实时模式」用「转录 / 直接翻译」分段控件选择，下方标明当前生效的模型，页脚列出两种模式各自的模型，翻译未开启时说明原因；首页「翻译」菜单里的「实时翻译方式」是同一个设置。文件翻译、先转录再翻译及摘要需要配置文本模型。Ollama 默认地址是 `http://127.0.0.1:11434/v1`，本机模型列表在打开文本页时自动获取；模型选择器末尾的「自定义名称…」展开输入框，使用自定义名称时在行下方提示未经核对。首页与检查器的文本快捷菜单可直接切换 OpenAI、Gemini、Anthropic、Apple 本机服务，记住各服务上次选择的模型。
 5. 「停止并保存」会等待最后一段语音与文本处理完成。「停止处理」立即取消剩余任务并保留已保存文本。在侧栏选择记录后，可在工具栏复制、导出，或在「更多」菜单中重新翻译、生成摘要；双击标题可直接重命名。
 
-Nemotron 英语版固定识别英语；多语言版使用右侧的语言选择。模型使用 dev 分支相同的固定 ONNX 导出和 SHA-256 值，四个文件全部校验后才安装，取消或失败不激活不完整模型。实时采集每 320 ms 送入一次音频，模型采用 560 ms 分块；这两个数字均不是最终字幕延迟。临时文本原位更新，最多每秒写盘一次；定稿立即写盘，之后才送入可选翻译服务，停止和文件结尾会排空模型尾段。Nemotron 暂不提供词汇提示或 GPU 加速。
+Nemotron 英语版固定识别英语；多语言版使用右侧的语言选择。模型使用 dev 分支相同的固定 ONNX 导出和 SHA-256 值，四个文件全部校验后才安装，取消或失败不激活不完整模型。实时采集每 320 ms 送入一次音频，模型采用 560 ms 分块；这两个数字均不是最终字幕延迟。临时文本原位更新，最多每秒写盘一次；实时模式在停顿或约 3 秒的已识别内容后按词边界定稿，再送入可选翻译服务，停止和文件结尾会排空模型尾段。Nemotron 暂不提供词汇提示或 GPU 加速。
 
 FluidAudio 默认提供 Parakeet v2 英语版，使用 Core ML 的 CPU / Neural Engine；可选 v3 自动识别 25 种欧洲语言，不支持中文。本应用不启用 FluidAudio 的额外词汇模型，首次请在语音设置里显式下载模型，之后识别只从本地加载。
 
-Apple SpeechTranscriber 默认英语（美国），在语音设置里从系统实际支持的语言中选择，按需安装并刷新状态。模型由 macOS 管理，不放在应用的 `Models/` 目录中；可用性与资产下载取决于设备及系统。没有使用旧的 SFSpeechRecognizer，也不需要语音 API 密钥。FluidAudio 与 Apple 均复用实时采集、文件队列、翻译、摘要和导出；实时每约 8 秒转写一次，停止时处理不足 8 秒的尾段，并非 Nemotron 的逐步更新模式。
+Apple SpeechTranscriber 默认英语（美国），在语音设置里从系统实际支持的语言中选择，按需安装并刷新状态。模型由 macOS 管理，不放在应用的 `Models/` 目录中；可用性与资产下载取决于设备及系统。没有使用旧的 SFSpeechRecognizer，也不需要语音 API 密钥。Apple 实时使用持续运行的 SpeechAnalyzer 和快速临时结果，不再每 8 秒重建分析器；停止时排空尾句。它可能较晚返回最终句子，因此非 Gemini 文本服务最多每 4 秒翻译一次稳定片段的当前草稿，界面标注「暂定译文」，定稿后校正；暂定译文不写入记录文件。FluidAudio 的当前 Parakeet v2 / v3 模型与 Whisper 一样使用切片。自动模式在至少 3 秒后寻找短停顿，最长等 4 秒；2 秒模式更快，但上下文更少。短停止尾段带上前一片段重识别，修订已有行而非追加重复行。
 
 「翻译与摘要 → 文本服务 → Apple Intelligence · 本机」使用 Apple 官方 Foundation Models 的设备端文本模型，支持转录后的翻译和摘要，无需密钥、额外服务器或打包模型权重。需要兼容 Apple Intelligence 的 Mac，系统模型已启用并完成准备；Mac 与 Siri 语言须一致。应用读取实际可用状态和语言支持，未就绪时解释原因。它独立于 Apple SpeechTranscriber，不替代语音识别引擎；不会回退到云端。切换前的文本服务和模型会保留。
 
 Apple 本地模型的上下文和能力随系统模型版本变化。请求按系统报告的容量预检，长文分段翻译或逐层汇总，保留末段；旧系统使用保守预算。翻译采用 Apple 官方文本转换模式，结构化摘要保留默认内容检查。模型仍可能拒绝部分内容，或遗漏摘要细节，需要核对重要结果。接口依据 [Foundation Models](https://developer.apple.com/documentation/foundationmodels)、[多语言指南](https://developer.apple.com/documentation/foundationmodels/supporting-languages-and-locales-with-foundation-models)及[文本转换模式](https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel/guardrails/permissivecontenttransformations)。
 
-实时翻译单独排队，不阻塞语音识别；积压超过 8 个待处理片段时，保留原文并标明可稍后补译。「停止并保存」会等待已排队翻译，取消处理则保留已保存结果。悬浮字幕保留最近完成的译文，落后于当前原文时显示对应时间。重新翻译记录时按记录的源语言处理，全部成功后一次替换译文；失败或取消保留原记录，并提供进度及取消按钮。
+实时翻译单独排队，不阻塞语音识别；OpenAI / 兼容服务与 Anthropic 最多同时处理两条，Apple 本机和 Gemini 保持单条处理。积压超过 8 个待处理片段时，保留原文并标明可稍后补译。「停止并保存」会等待已排队翻译，取消处理则保留已保存结果。悬浮字幕默认保留最近三个片段，每条原文显示自己的译文与等待状态；旧请求不会覆盖修订后的原文。重新翻译记录时按记录的源语言处理，全部成功后一次替换译文；失败或取消保留原记录，并提供进度及取消按钮。
+
+「语音模型 → 实时音频」可开启自适应增益（默认开启），提升较轻或较远的声音，同时限制峰值并避免持续放大静音。另提供可选的 Apple 麦克风语音处理（默认关闭），使用系统噪声抑制与自动增益；不重复叠加软件增益，不应用于系统音频。它可能过滤非人声或影响其他音频的音量，远距离混响和噪声仍可能影响识别。实时任务持有防止 App Nap / 空闲睡眠的活动，并使用明确的实时优先级；停止后释放。
 
 界面支持与原项目一致的简体中文和英语，在设置 → 通用 → 语言切换；另保留 macOS 版的「跟随系统」，系统偏好中没有支持的语言时使用英语。主窗口、设置、悬浮字幕、自定义菜单、状态和应用错误立即切换；macOS 标准菜单与系统对话框在重新打开应用后更新。语言偏好保存在应用自己的 UserDefaults 中。
 
@@ -113,7 +115,7 @@ OpenAI、Gemini、Anthropic 的真实云端验证、协议依据、十分钟边�
 swift test --package-path macos --filter CloudSessionTests
 ```
 
-FluidAudio / Apple 只新增一项真实引擎组合测试，覆盖 8 秒采集分块与停止尾段、取消、文件队列和持久保存；旧设置兼容与 i18n 复用已有测试。只读取公开英语文件，不播放到扬声器，也不采集麦克风：
+早期 FluidAudio / Apple 组合测试覆盖文件与旧版 8 秒采集分块、停止尾段、取消、文件队列和持久保存；旧设置兼容与 i18n 复用已有测试。只读取公开英语文件，不播放到扬声器，也不采集麦克风：
 
 ```sh
 ALTRANSCRIBE_TEST_ADDITIONAL_ROOT="$PWD/.build/additional-speech-validation" \
@@ -122,6 +124,16 @@ swift test --package-path macos --filter 'AdditionalSpeechTests|testEnglishDefau
 ```
 
 该可选测试会按需下载 FluidAudio 英语模型到验证目录，并为测试进程安装 Apple 英语语言资产。实际执行结果见 [验证记录](VALIDATION.md)。
+
+本轮实时验证使用已安装模型，不下载、不播放声音；组合检查按真实时间输入低音量语音，另检查长静音后的 48 kHz 双声道采集与 Nemotron 首句：
+
+```sh
+ALTRANSCRIBE_REALTIME_MODELS="$HOME/Library/Application Support/Altranscribe/Models" \
+ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/bindings/go/samples/jfk.wav" \
+swift test --package-path macos --filter RealtimeSpeechTests
+```
+
+采集与流式实现依据：[SpeechAnalyzer 连续识别](https://developer.apple.com/videos/play/wwdc2025/277/)、[快速临时结果](https://developer.apple.com/documentation/speech/speechtranscriber/reportingoption/fastresults)、[AVAudioEngine 原生语音处理](https://developer.apple.com/documentation/avfaudio/avaudioionode/setvoiceprocessingenabled(_:))。实际虚拟麦克风、暂定翻译及后台检查结果另见 [验证记录](VALIDATION.md)。
 
 i18n 仅新增 2 项测试：双语资源完整性、格式占位符、旧记录兼容和导出；摘要语言不受翻译目标语言影响。复用 3 项工作流回归，共 5 项：
 

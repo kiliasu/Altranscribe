@@ -7,7 +7,7 @@ import AltranscribeCore
     private let panel: NSPanel
     private(set) var isVisible = false
     init(model: AppModel) {
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 200),
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 340),
                         styleMask: [.titled, .closable, .resizable, .nonactivatingPanel, .fullSizeContentView],
                         backing: .buffered, defer: false)
         super.init()
@@ -66,6 +66,7 @@ private struct CaptionView: View {
     let close: () -> Void
     @AppStorage("interfaceLanguage") private var interfaceLanguage = "system"
     @State private var hovering = false
+    @State private var showingOptions = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -78,6 +79,12 @@ private struct CaptionView: View {
                     .foregroundStyle(.secondary)
                     .contentTransition(.opacity)
                 Spacer()
+                control("textformat.size", help: L("Caption Settings")) { showingOptions.toggle() }
+                    .popover(isPresented: $showingOptions) {
+                        Form { CaptionControls(model: model) }
+                            .formStyle(.grouped)
+                            .frame(width: 350, height: 210)
+                    }
                 if hovering {
                     HStack(spacing: 6) {
                         if model.isCapturing {
@@ -91,13 +98,12 @@ private struct CaptionView: View {
             }
             .frame(height: 26)
             .animation(Motion.quick, value: model.phase)
-            if let segment = model.currentCaption {
+            if !model.captionSegments.isEmpty {
                 ScrollView {
-                    captions(segment)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        // A new sentence rises in as the previous one lifts away; a sentence that grows stays put.
-                        .animation(Motion.content, value: model.currentCaption?.id)
-                        .animation(Motion.content, value: model.currentCaptionTranslation?.id)
+                    VStack(alignment: .leading, spacing: model.settings.captionSize * 0.55) {
+                        ForEach(model.captionSegments) { segment in captions(segment) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .defaultScrollAnchor(.bottom)
                 .scrollIndicators(.never)
@@ -119,6 +125,7 @@ private struct CaptionView: View {
         .glassEffect(.regular, in: .rect(cornerRadius: 26))
         .ignoresSafeArea()
         .onHover { value in withAnimation(Motion.quick) { hovering = value } }
+        .onChange(of: model.settings) { _, _ in model.saveSettings() }
         .id(interfaceLanguage)
         .environment(\.locale, InterfaceLanguage.current.locale)
     }
@@ -126,34 +133,24 @@ private struct CaptionView: View {
     @ViewBuilder private func captions(_ segment: TranscriptSegment) -> some View {
         let size = model.settings.captionSize
         let translationOnly = model.settings.captionTranslationOnly
-        let translated = model.currentCaptionTranslation
-        VStack(alignment: .leading, spacing: size * 0.35) {
-            if !translationOnly || translated == nil {
-                // Each slot is a ZStack, so the outgoing and incoming sentence share one place while they cross.
-                ZStack(alignment: .topLeading) {
-                    Text(segment.text)
-                        .font(.system(size: size, weight: .semibold))
-                        .textSelection(.enabled)
-                        .id(segment.id)
-                        .transition(.rise)
-                }
+        VStack(alignment: .leading, spacing: size * 0.25) {
+            if !translationOnly || segment.translation == nil {
+                Text(segment.text)
+                    .font(.system(size: size, weight: .semibold))
+                    .textSelection(.enabled)
             }
-            if let translated, let translation = translated.translation {
-                ZStack(alignment: .topLeading) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        if translated.id != segment.id && !translationOnly {
-                            Text(L("Translation") + " · " + timestamp(translated.start))
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Text(translation)
-                            .font(.system(size: translationOnly ? size : size * 0.92, weight: translationOnly ? .semibold : .regular))
-                            .foregroundStyle(translationOnly ? .primary : .secondary)
-                            .textSelection(.enabled)
-                    }
-                    .id(translated.id)
-                    .transition(.rise)
+            if let translation = segment.translation {
+                if segment.translationIsProvisional == true {
+                    Text(L("Provisional translation")).font(.caption).foregroundStyle(.tertiary)
                 }
+                Text(translation)
+                    .font(.system(size: translationOnly ? size : size * 0.92, weight: translationOnly ? .semibold : .regular))
+                    .foregroundStyle(translationOnly ? .primary : .secondary)
+                    .textSelection(.enabled)
+            } else if model.isTranslationPending(segment.id) {
+                Text(L("Translating…")).font(.caption).foregroundStyle(.secondary)
+            } else if let error = segment.translationError {
+                Text(error.text).font(.caption).foregroundStyle(.orange)
             }
         }
     }
