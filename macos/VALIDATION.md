@@ -6,6 +6,13 @@
 
 环境：macOS 27.0.1、Xcode 27.0、Swift 6.4、Apple M3 Pro。部署目标 macOS 26.0，交付包为 arm64。
 
+## 首页音源切换过渡（2026-10-26）
+
+- 底部「麦克风 / 系统声音」继续使用原生等宽分段控件，在选中项变化时用 Core Animation 淡入淡出 0.24 秒；「减少动态效果」下缩短为 0.1 秒。复用同一个控件，不缩放、不重建，不延迟音源选择。图标和标题仍跟随原有状态更新；重复点击已选项不触发额外过渡。
+- 临时原生控件探针确认，仅添加 SwiftUI 绑定动画或使用 `animator().selectedSegment` 没有产生选择动画。实现使用官方 [CATransition.fade](https://developer.apple.com/documentation/quartzcore/catransitiontype/fade) 与 [CALayer.add](https://developer.apple.com/documentation/quartzcore/calayer/add(_:forkey:))，系统自动替换并清理同一过渡，不叠加额外视图。
+- 新增 **1 项**定向回归，复用 **1 项**底栏布局测试，共 2 项通过：选中值立即同步、快速反复切换、原控件焦点和尺寸保持、动画结束清理、减少动态效果、文件队列忙碌时禁用，以及窄列下录音控制换行。实机双向点击后，图标、标题和选中值一致；未开始录音或播放声音。
+- Release 构建、严格签名及 ZIP 检查通过，34 个解压文件与应用包哈希一致；解压版本的双向切换正常。当前设置文件、原有 JSON 数据及外观偏好未变，保留本轮用户选用的 FluidAudio / OpenAI。日志与本轮偏好快照位于 `.build/source-transition-2026-10-26/`。
+
 ## 标题栏背景与明暗过渡（2026-10-26）
 
 - 用户确认异常是窗口按钮同一高度附近的整条高亮。旧版深色主页可见横跨内容区的矩形背景；主窗口与独立设置窗口改为使用 `toolbarBackgroundVisibility(.hidden, for: .windowToolbar)`，保留原生玻璃按钮和分页选择器。实机在标题栏空白区域点击、切换页面后未再看到整条色块，选择状态未改变；未把控件自身的悬停反馈移除。

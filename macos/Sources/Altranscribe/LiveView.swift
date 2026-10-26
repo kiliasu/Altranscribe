@@ -309,13 +309,9 @@ struct TransportBar: View {
                 Label(L("Saved"), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                Picker(L("Audio Source"), selection: $model.source) {
-                    ForEach([AudioSource.microphone, .system]) { Label($0.title, systemImage: $0.symbol).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .disabled(model.busy)
+                AudioSourcePicker(selection: $model.source)
+                    .fixedSize()
+                    .disabled(model.busy)
             }
         case .preparing, .finishing:
             HStack(spacing: 8) {
