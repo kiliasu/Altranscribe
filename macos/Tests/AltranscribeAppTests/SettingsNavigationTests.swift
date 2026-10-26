@@ -4,6 +4,11 @@ import SwiftUI
 import AltranscribeCore
 
 @MainActor final class SettingsNavigationTests: XCTestCase {
+    override func setUp() async throws {
+        // Settings pages read API keys; keep them away from the person's real Keychain items.
+        KeychainStore.service = "app.altranscribe.mac.api.tests"
+    }
+
     func testChangingSettingsPagesKeepsTheToolbarAndScrollContainer() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

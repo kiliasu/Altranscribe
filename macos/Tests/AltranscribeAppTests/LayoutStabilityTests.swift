@@ -7,6 +7,11 @@ import AltranscribeCore
 /// Settings from the home controls. A layout feedback loop makes AppKit raise "more Update Constraints
 /// in Window passes than there are views", which XCTest reports here instead of the app crashing.
 @MainActor final class LayoutStabilityTests: XCTestCase {
+    override func setUp() async throws {
+        // Settings pages read API keys; keep them away from the person's real Keychain items.
+        KeychainStore.service = "app.altranscribe.mac.api.tests"
+    }
+
     func testMainWindowWithInspectorSettlesAtEachSizeAndPage() throws {
         let sizes = [NSSize(width: 860, height: 600), NSSize(width: 1040, height: 700), NSSize(width: 1316, height: 855)]
         let configurations: [(String, (inout AppSettings) -> Void)] = [

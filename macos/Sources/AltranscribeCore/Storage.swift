@@ -63,7 +63,9 @@ public struct RecordStore: Sendable {
 }
 
 public enum KeychainStore {
-    private static let service = "app.altranscribe.mac.api"
+    /// Tests point this at a service of their own, so they never read the person's saved keys or make
+    /// macOS ask for access to them.
+    nonisolated(unsafe) public static var service = "app.altranscribe.mac.api"
     private static func query(_ endpoint: String) throws -> [String: Any] {
         let scope = try APIEndpoint(endpoint).base.absoluteString
         let account = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()

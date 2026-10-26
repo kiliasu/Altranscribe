@@ -25,6 +25,11 @@ private final class ResponseGate: @unchecked Sendable {
 }
 
 @MainActor final class WorkflowTests: XCTestCase {
+    override func setUp() async throws {
+        // Settings pages read API keys; keep them away from the person's real Keychain items.
+        KeychainStore.service = "app.altranscribe.mac.api.tests"
+    }
+
     private func app(at root: URL) -> AppModel {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [WorkflowProtocol.self]
