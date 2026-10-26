@@ -94,6 +94,7 @@ private struct LiveWelcome: View {
 /// is named once, underneath, with the one action that fixes it.
 private struct SessionSetup: View {
     @Bindable var model: AppModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         let settings = model.settings
@@ -127,6 +128,14 @@ private struct SessionSetup: View {
                 ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.inline)
+            // Installed models switch in place; a live cloud session's model follows its translation choice.
+            if !(settings.usesCloudLive) && !model.speechModelChoices.isEmpty {
+                Picker(settings.speechProvider == .appleSpeech ? L("Language") : L("Model"),
+                       selection: Binding(get: { model.selectedSpeechModel }, set: { model.selectedSpeechModel = $0 })) {
+                    ForEach(model.speechModelChoices) { Text($0.title).tag($0.id) }
+                }
+                .pickerStyle(.inline)
+            }
             Divider()
             Button(settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…")) { open(.speech) }
         } label: {
@@ -217,7 +226,8 @@ private struct SessionSetup: View {
         return nil
     }
 
-    private func open(_ page: SettingsPage) { model.settingsPage = page; model.destination = .settings }
+    /// Settings open in their own window, so the person stays on this page.
+    private func open(_ page: SettingsPage) { model.settingsPage = page; openSettings() }
 }
 
 private struct SetupNotice: View {

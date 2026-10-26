@@ -238,6 +238,32 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertEqual(app.records.first?.segments.first?.translation, "文件里的一句话。")
     }
 
+    func testInspectorListsInstalledModelsAndSwitchesInPlace() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = app(at: root)
+        try app.paths.prepare()
+        for name in ["ggml-tiny.bin", "ggml-base.bin"] { try Data([0]).write(to: app.paths.models.appendingPathComponent(name)) }
+        app.settings.speechProvider = .whisper; app.settings.modelPath = ""
+        XCTAssertEqual(app.speechModelChoices.map(\.title), ["Tiny", "Base"], "Only downloaded models are offered in place")
+        XCTAssertFalse(app.modelReady)
+        let base = app.paths.models.appendingPathComponent("ggml-base.bin").path
+        app.selectedSpeechModel = base
+        XCTAssertEqual(app.settings.modelPath, base)
+        XCTAssertTrue(app.modelReady); XCTAssertNil(app.modelIssue)
+        let custom = root.appendingPathComponent("custom.bin")
+        try Data([0]).write(to: custom)
+        app.settings.modelPath = custom.path
+        XCTAssertEqual(app.speechModelChoices.last?.id, custom.path, "A model chosen from disk stays selectable")
+        app.settings.speechProvider = .nemotron
+        XCTAssertTrue(app.speechModelChoices.isEmpty); XCTAssertNotNil(app.modelIssue)
+        app.settings.speechProvider = .compatible; app.settings.speechModelOverride = "my-model"
+        XCTAssertEqual(app.speechModelChoices.count, OpenAITranscriptionModel.allCases.count)
+        app.selectedSpeechModel = "whisper-1"
+        XCTAssertEqual(app.settings.effectiveSpeechModel, "whisper-1")
+        XCTAssertNil(app.settings.speechModelOverride, "Choosing a listed model clears a custom name")
+    }
+
     func testInterimTextIsWrittenLazilyAndFinalTextImmediately() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

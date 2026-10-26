@@ -372,8 +372,6 @@
 
 "The saved key was removed." = "已移除保存的密钥。";
 
-"These use the text model from Settings and replace this transcript's existing translation or summary." = "使用设置中的文本模型，并替换这份文稿已有的译文或摘要。";
-
 "This model is not in the service's preset list. Fetch the model list to check it." = "此模型不在该服务的预选列表中，可获取模型列表核对。";
 
 "This Transcript" = "这份文稿";
@@ -432,3 +430,8 @@
 
 "Translated %@ of %@" = "已翻译 %@ / %@ 句";
 
+/* In-place adjustments (2026-10-26). */
+"Not downloaded" = "未下载";
+
+"Live translation uses %@." = "实时翻译使用 %@。";
+"These use the text model above and replace this transcript's existing translation or summary." = "使用上方的文本模型，替换这份文稿已有的译文或摘要。";

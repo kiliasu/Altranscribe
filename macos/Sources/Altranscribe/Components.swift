@@ -128,6 +128,53 @@ struct ExportMenu: View {
     }
 }
 
+/// Opens the Settings window on one page and leaves the main window where it is, so adjusting a setting
+/// never takes the person away from the page they were working on. Closing Settings returns them there.
+struct OpenSettingsButton: View {
+    let title: String
+    let page: SettingsPage
+    let model: AppModel
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Button(title) {
+            model.settingsPage = page
+            openSettings()
+        }
+    }
+}
+
+/// The text service's model, switchable among the service's presets in place. A local service lists
+/// its models only in Settings, so here it is named; a missing model is named in orange.
+struct TextModelPicker: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        let settings = model.settings
+        let presets = settings.textModelPresets
+        if presets.isEmpty {
+            LabeledContent(L("Text Model")) {
+                Text(settings.effectiveTextModel.isEmpty ? L("Not configured") : settings.effectiveTextModel)
+                    .foregroundStyle(settings.effectiveTextModel.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            .help(settings.textServiceTitle)
+        } else {
+            Picker(L("Text Model"), selection: Binding(get: { settings.effectiveTextModel }, set: {
+                model.settings.textModel = $0; model.settings.textModelOverride = nil
+            })) {
+                if settings.effectiveTextModel.isEmpty {
+                    Text(L("Select Model")).tag("")
+                } else if !presets.contains(settings.effectiveTextModel) {
+                    Text(settings.effectiveTextModel).tag(settings.effectiveTextModel)
+                }
+                ForEach(presets, id: \.self) { Text($0).tag($0) }
+            }
+            .help(settings.textServiceTitle)
+        }
+    }
+}
+
 /// Shows or hides the inspector. Every page ends its toolbar with it, as Apple's apps do.
 struct InspectorToggle: ToolbarContent {
     @Binding var isPresented: Bool

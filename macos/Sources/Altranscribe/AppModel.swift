@@ -25,6 +25,12 @@ struct FileRun: Equatable {
     private(set) var updated = Date()
 }
 
+/// One model the current engine can use without downloading anything.
+struct SpeechModelChoice: Identifiable, Hashable {
+    let id: String
+    let title: String
+}
+
 struct QueuedFile: Identifiable {
     let id = UUID()
     let url: URL
@@ -125,6 +131,62 @@ struct QueuedFile: Identifiable {
     /// A session can begin only with a usable speech model and, where translation or a summary
     /// needs it, a text model. The home page explains whichever is missing.
     func canStart(live: Bool) -> Bool { modelReady && !settings.textModelMissing(live: live) }
+    /// What the current engine can switch to in place: installed local models, the cloud file models,
+    /// or the languages Apple's transcriber supports. Downloading stays in Settings.
+    var speechModelChoices: [SpeechModelChoice] {
+        _ = modelRevision
+        let models = paths.models
+        switch settings.speechProvider {
+        case .whisper:
+            var choices = WhisperModel.catalog
+                .filter { FileManager.default.fileExists(atPath: models.appendingPathComponent($0.filename).path) }
+                .map { SpeechModelChoice(id: models.appendingPathComponent($0.filename).path, title: $0.title) }
+            let path = settings.effectiveModelPath
+            if !path.isEmpty, !choices.contains(where: { $0.id == path }), FileManager.default.fileExists(atPath: path) {
+                choices.append(SpeechModelChoice(id: path, title: URL(fileURLWithPath: path).lastPathComponent))
+            }
+            return choices
+        case .nemotron:
+            return NemotronModel.catalog.filter { $0.isInstalled(in: models) }.map {
+                SpeechModelChoice(id: $0.id, title: $0.multilingual ? L("Nemotron 3.5 · Multilingual") : L("Nemotron · English"))
+            }
+        case .fluidAudio:
+            return FluidAudioModel.allCases.filter { $0.isInstalled(in: models) }.map { SpeechModelChoice(id: $0.id, title: $0.title) }
+        case .appleSpeech:
+            return appleSpeechLocales.map {
+                SpeechModelChoice(id: $0, title: InterfaceLanguage.current.locale.localizedString(forIdentifier: $0) ?? $0)
+            }
+        case .compatible:
+            return OpenAITranscriptionModel.allCases.map {
+                SpeechModelChoice(id: $0.rawValue, title: $0.isDeprecated ? $0.rawValue + " · " + L("legacy") : $0.rawValue)
+            }
+        case .gemini:
+            return [SpeechModelChoice(id: settings.effectiveGeminiSpeechModel, title: settings.effectiveGeminiSpeechModel)]
+        }
+    }
+    /// The current engine's model, as one of `speechModelChoices`.
+    var selectedSpeechModel: String {
+        get {
+            switch settings.speechProvider {
+            case .whisper: settings.effectiveModelPath
+            case .nemotron: settings.nemotronModel.id
+            case .fluidAudio: settings.fluidAudioModel.id
+            case .appleSpeech: settings.appleSpeechLocale
+            case .compatible: settings.effectiveSpeechModel
+            case .gemini: settings.effectiveGeminiSpeechModel
+            }
+        }
+        set {
+            switch settings.speechProvider {
+            case .whisper: settings.modelPath = newValue
+            case .nemotron: settings.nemotronModelID = newValue
+            case .fluidAudio: settings.fluidAudioModelID = newValue
+            case .appleSpeech: settings.appleSpeechLocaleID = newValue
+            case .compatible: settings.speechModel = newValue; settings.speechModelOverride = nil
+            case .gemini: settings.geminiSpeechModel = newValue
+            }
+        }
+    }
     var modelIssue: LocalizedText? {
         guard !modelReady else { return nil }
         switch settings.speechProvider {

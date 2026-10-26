@@ -372,8 +372,6 @@
 
 "The saved key was removed." = "The saved key was removed.";
 
-"These use the text model from Settings and replace this transcript's existing translation or summary." = "These use the text model from Settings and replace this transcript's existing translation or summary.";
-
 "This model is not in the service's preset list. Fetch the model list to check it." = "This model is not in the service's preset list. Fetch the model list to check it.";
 
 "This Transcript" = "This Transcript";
@@ -432,3 +430,8 @@
 
 "Translated %@ of %@" = "Translated %@ of %@";
 
+/* In-place adjustments (2026-10-26). */
+"Not downloaded" = "Not downloaded";
+
+"Live translation uses %@." = "Live translation uses %@.";
+"These use the text model above and replace this transcript's existing translation or summary." = "These use the text model above and replace this transcript's existing translation or summary.";

@@ -4,6 +4,7 @@ import AltranscribeCore
 struct ContentView: View {
     @Bindable var model: AppModel
     @AppStorage("showInspector") private var showInspector = true
+    @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
         // The sidebar keeps the system's column widths. An explicit sidebar width together with the
@@ -26,7 +27,9 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 560)
-        .alert(L("Attention"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+        // With Settings open beside it, only the window in front shows an error.
+        .alert(L("Attention"), isPresented: Binding(get: { model.error != nil && appearsActive },
+                                                    set: { if !$0 && appearsActive { model.error = nil } })) {
             Button(L("OK"), role: .cancel) { model.error = nil }
         } message: { Text(model.error?.text ?? "") }
         .confirmationDialog(L("Delete this transcript?"),
@@ -244,16 +247,28 @@ struct RecordGroup: Identifiable {
 
 struct SessionInspector: View {
     @Bindable var model: AppModel
+    /// The live page shows the live model; the files page shows the model files use.
+    private var live: Bool { model.destination != .files }
 
     var body: some View {
+        let settings = model.settings
         Form {
             Section(L("Recognition")) {
-                LabeledContent(L("Engine")) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(model.settings.speechServiceTitle)
-                        Text(model.settings.speechModelTitle(live: model.destination != .files) + (model.settings.speechProvider.isLocal ? " · " + compute : ""))
-                            .font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.middle)
+                Picker(L("Speech Engine"), selection: $model.settings.speechProvider) {
+                    ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
+                }
+                speechModel
+                if settings.usesCloudLive && live {
+                    Picker(L("Live Mode"), selection: Binding(get: { settings.cloudDirectTranslation ?? true },
+                                                              set: { model.settings.cloudDirectTranslation = $0 })) {
+                        Text(L("Transcribe")).tag(false)
+                        Text(L("Translate Directly")).tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                if settings.offersLanguageChoice {
+                    Picker(L("Language"), selection: $model.settings.sourceLanguage) {
+                        ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
                     }
                 }
                 if let issue = model.modelIssue {
@@ -262,20 +277,8 @@ struct SessionInspector: View {
                         .foregroundStyle(.orange)
                         .transition(.rise)
                 }
-                if model.settings.speechProvider == .appleSpeech {
-                    LabeledContent(L("Language"), value: InterfaceLanguage.current.locale.localizedString(forIdentifier: model.settings.appleSpeechLocale) ?? model.settings.appleSpeechLocale)
-                } else if model.settings.speechProvider == .fluidAudio {
-                    LabeledContent(L("Language"), value: model.settings.fluidAudioModel == .english ? "English" : L("Detect Automatically"))
-                } else if model.settings.speechProvider == .nemotron && !model.settings.nemotronModel.multilingual {
-                    LabeledContent(L("Language"), value: "English")
-                } else {
-                    Picker(L("Language"), selection: $model.settings.sourceLanguage) {
-                        ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
-                    }
-                }
-                Button(model.settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…")) {
-                    model.settingsPage = .speech; model.destination = .settings
-                }
+                OpenSettingsButton(title: settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…"),
+                                   page: .speech, model: model)
             }
             Section {
                 Toggle(L("Translate"), isOn: $model.settings.translate)
@@ -284,21 +287,19 @@ struct SessionInspector: View {
                 }
                 Toggle(L("Summarize when finished"), isOn: $model.settings.summarize)
                     .help(L("Titles and summaries use the app language at task start, independently of the translation language."))
+                if settings.needsTextModel(live: live) {
+                    TextModelPicker(model: model)
+                    OpenSettingsButton(title: L("Text Model Settings…"), page: .text, model: model)
+                }
             } header: {
                 Text(L("Text Processing"))
             } footer: {
-                if model.destination != .files && model.settings.usesDirectSpeechTranslation {
-                    Label(model.settings.liveSpeechModel, systemImage: "waveform")
+                if live && settings.usesDirectSpeechTranslation {
+                    Text(L("Live translation uses %@.", settings.liveSpeechModel))
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if (model.settings.translate && !(model.destination != .files && model.settings.usesDirectSpeechTranslation)) || model.settings.summarize {
-                    Label(model.settings.effectiveTextModel.isEmpty ? L("Configure a text model in Settings.") : model.settings.effectiveTextModel,
-                          systemImage: model.settings.effectiveTextModel.isEmpty ? "exclamationmark.triangle" : "character.bubble")
-                        .font(.caption)
-                        .foregroundStyle(model.settings.effectiveTextModel.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
-                }
             }
-            if model.settings.supportsVocabulary {
+            if settings.supportsVocabulary {
                 Section {
                     TextField(L("Names and terms, separated by commas"), text: $model.settings.vocabulary, axis: .vertical)
                         .lineLimit(3...6)
@@ -306,7 +307,7 @@ struct SessionInspector: View {
                 } header: {
                     Text(L("Vocabulary"))
                 } footer: {
-                    Text(model.destination != .files && model.settings.usesDirectSpeechTranslation ?
+                    Text(live && settings.usesDirectSpeechTranslation ?
                          L("Vocabulary hints apply to transcription, not direct speech translation.") :
                          L("Helps recognize names and terms without rewriting the original text."))
                         .font(.caption).foregroundStyle(.secondary)
@@ -316,8 +317,31 @@ struct SessionInspector: View {
         .formStyle(.grouped)
         .disabled(model.busy)
         .animation(Motion.content, value: model.modelReady)
-        .animation(Motion.content, value: model.settings.translate || model.settings.summarize)
-        .animation(Motion.content, value: model.settings.speechProvider)
+        .animation(Motion.content, value: settings.translate || settings.summarize)
+        .animation(Motion.content, value: settings.speechProvider)
+    }
+
+    /// The engine's model, switchable among what is installed; a live cloud session's model follows its mode.
+    @ViewBuilder private var speechModel: some View {
+        let settings = model.settings
+        if settings.usesCloudLive && live {
+            LabeledContent(L("Model"), value: settings.liveSpeechModel)
+        } else if model.speechModelChoices.isEmpty {
+            LabeledContent(settings.speechProvider == .appleSpeech ? L("Language") : L("Model")) {
+                Text(settings.speechProvider == .appleSpeech ? settings.speechModelTitle(live: live) : L("Not downloaded"))
+                    .foregroundStyle(settings.speechProvider == .appleSpeech ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+            }
+        } else {
+            let choices = model.speechModelChoices
+            Picker(settings.speechProvider == .appleSpeech ? L("Language") : L("Model"),
+                   selection: Binding(get: { model.selectedSpeechModel }, set: { model.selectedSpeechModel = $0 })) {
+                if !choices.contains(where: { $0.id == model.selectedSpeechModel }) {
+                    // Nothing chosen yet reads differently from a chosen model whose files are gone.
+                    Text(model.selectedSpeechModel.isEmpty ? L("Select Model") : L("Not downloaded")).tag(model.selectedSpeechModel)
+                }
+                ForEach(choices) { Text($0.title).tag($0.id) }
+            }
+        }
     }
 
     private var compute: String {
@@ -331,7 +355,7 @@ struct SessionInspector: View {
 
 /// A saved transcript's own facts, instead of the session settings that only apply to a new session.
 struct RecordInspector: View {
-    let model: AppModel
+    @Bindable var model: AppModel
     let record: TranscriptRecord
 
     var body: some View {
@@ -348,21 +372,20 @@ struct RecordInspector: View {
                 }
             }
             Section {
-                LabeledContent(L("Text Model")) {
-                    Text(model.settings.effectiveTextModel.isEmpty ? L("Not configured") : model.settings.textServiceTitle + " · " + model.settings.effectiveTextModel)
-                        .foregroundStyle(model.settings.effectiveTextModel.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
-                        .lineLimit(1).truncationMode(.middle)
+                TextModelPicker(model: model)
+                Picker(L("Target Language"), selection: $model.settings.targetLanguage) {
+                    ForEach(AppSettings.languages.filter { $0.0 != "auto" }, id: \.0) { Text($0.1).tag($0.0) }
                 }
-                LabeledContent(L("Target Language"), value: languageName(model.settings.targetLanguage))
                 Button(L("Translate Transcript")) { model.postProcess(record, summary: false) }
                     .disabled(model.busy || record.segments.isEmpty || model.settings.effectiveTextModel.isEmpty)
                 Button(L("Generate Summary")) { model.postProcess(record, summary: true) }
                     .disabled(model.busy || record.segments.isEmpty || model.settings.effectiveTextModel.isEmpty)
-                Button(L("Text Model Settings…")) { model.settingsPage = .text; model.destination = .settings }
+                OpenSettingsButton(title: L("Text Model Settings…"), page: .text, model: model)
             } header: { Text(L("Translate or Summarize Again")) } footer: {
-                Text(L("These use the text model from Settings and replace this transcript's existing translation or summary."))
+                Text(L("These use the text model above and replace this transcript's existing translation or summary."))
             }
         }
         .formStyle(.grouped)
+        .disabled(model.busy)
     }
 }

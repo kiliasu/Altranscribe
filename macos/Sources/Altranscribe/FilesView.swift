@@ -328,6 +328,7 @@ private struct QueueRow: View {
 /// File progress and actions share the same native bottom-bar layout as live capture.
 private struct QueueBar: View {
     @Bindable var model: AppModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         let waiting = model.queue.filter { $0.status == .waiting }.count
@@ -349,7 +350,15 @@ private struct QueueBar: View {
     }
 
     @ViewBuilder private func progress(waiting: Int) -> some View {
-        if let summary = summary(waiting: waiting) {
+        if !model.queueRunning, waiting > 0, let blocker {
+            // Say why Start is unavailable and open the setting that fixes it, without leaving the queue.
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(blocker.text).foregroundStyle(.secondary).lineLimit(1)
+                Button(blocker.action) { model.settingsPage = blocker.page; openSettings() }
+                    .buttonStyle(.link)
+            }
+        } else if let summary = summary(waiting: waiting) {
             HStack(spacing: 8) {
                 if model.queueRunning { ProgressView().controlSize(.small) }
                 Text(summary).foregroundStyle(.secondary).monospacedDigit()
@@ -370,6 +379,17 @@ private struct QueueBar: View {
                     .disabled(model.busy || !model.canStart(live: false) || waiting == 0)
             }
         }
+    }
+
+    /// The first thing that keeps the queue from starting, with the settings page that fixes it.
+    private var blocker: (text: String, action: String, page: SettingsPage)? {
+        if let issue = model.modelIssue {
+            return (issue.text, model.settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…"), .speech)
+        }
+        if model.settings.textModelMissing(live: false) {
+            return (L("Translation or summary needs a text model."), L("Choose a Text Model…"), .text)
+        }
+        return nil
     }
 
     /// Only what the rows cannot say at a glance: where a running queue is, or how much is left to start.

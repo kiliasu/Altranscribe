@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var loadingModels = false
     @State private var connectionStatus: LocalizedText?
     @State private var removeModel: URL?
+    @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
         // Keep the scroll container (and its toolbar edge effect) alive when changing pages;
@@ -40,7 +41,8 @@ struct SettingsView: View {
                   (try? APIEndpoint(model.settings.textEndpoint).isLoopback) == true else { return }
             fetchModels(quietly: true)
         }
-        .alert(L("Attention"), isPresented: Binding(get: { !embedded && model.error != nil }, set: { if !$0 { model.error = nil } })) {
+        .alert(L("Attention"), isPresented: Binding(get: { !embedded && model.error != nil && appearsActive },
+                                                    set: { if !$0 && appearsActive { model.error = nil } })) {
             Button(L("OK"), role: .cancel) { model.error = nil }
         } message: { Text(model.error?.text ?? "") }
         .confirmationDialog(L("Delete the downloaded model?"), isPresented: Binding(get: { removeModel != nil }, set: { if !$0 { removeModel = nil } })) {

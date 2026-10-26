@@ -28,6 +28,11 @@ import AltranscribeCore
                 defer { try? FileManager.default.removeItem(at: root) }
                 let model = AppModel(paths: AppPaths(root: root))
                 configure(&model.settings)
+                var record = TranscriptRecord(title: "Saved lecture", source: .file, language: "en", speechModel: "nemotron-en-0.6b")
+                record.segments = [TranscriptSegment(start: 0, end: 4, text: "A saved line with a translation")]
+                record.segments[0].translation = "一句带译文的已保存文本"
+                record.status = .completed
+                model.records = [record]
                 let window = NSWindow(contentViewController: NSHostingController(rootView: ContentView(model: model)))
                 window.styleMask.insert(.fullSizeContentView) // As in the app's SwiftUI window.
                 window.setContentSize(size)
@@ -35,7 +40,7 @@ import AltranscribeCore
                 defer { window.close() }
                 settle(0.5)
                 for (destination, page) in [(Destination.settings, SettingsPage.speech), (.live, nil), (.files, nil),
-                                            (.settings, .text), (.live, nil)] {
+                                            (.transcript(record.id), nil), (.settings, .text), (.live, nil)] {
                     if let page { model.settingsPage = page }
                     model.destination = destination
                     settle(0.6)
