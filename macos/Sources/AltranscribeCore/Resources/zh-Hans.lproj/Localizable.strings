@@ -14,7 +14,6 @@
 "Appearance" = "外观";
 "Attention" = "需要注意";
 "Audio Source" = "音频来源";
-"Audio and text stay on this Mac" = "音频和文本均在本机处理";
 "Audio conversion failed." = "音频转换失败。";
 "Audio timestamp" = "音频时间";
 "Available Models" = "可用模型";
@@ -130,7 +129,6 @@
 "No transcripts yet" = "还没有记录";
 "None selected" = "未选择";
 "OK" = "好";
-"On this Mac" = "仅在本机";
 "On-device Compute" = "本机计算";
 "On-device Streaming" = "本机流式识别";
 "Online APIs require HTTPS. HTTP is allowed only for loopback addresses." = "在线 API 必须使用 HTTPS；HTTP 仅限本机地址。";
@@ -152,7 +150,6 @@
 "Rate limit or quota exceeded." = "请求限流或额度不足。";
 "Ready" = "准备就绪";
 "Recognition" = "识别";
-"Relevant audio or text is sent to the selected API" = "相关音频或文本将发送至所选 API";
 "Remove from Queue" = "从队列移除";
 "Rename…" = "重命名…";
 "Resume" = "继续";
@@ -235,7 +232,6 @@
 "Unreadable record files: %@. The files were retained." = "有 %@ 个记录文件无法读取，原文件已保留。";
 "Use" = "使用";
 "Use Metal GPU Acceleration" = "使用 Metal GPU 加速";
-"Uses an online API" = "使用在线 API";
 "View" = "查看";
 "Vocabulary" = "词汇提示";
 "Waiting" = "等待处理";
@@ -244,3 +240,26 @@
 "Yesterday" = "昨天";
 "Your words, kept close" = "你的声音，随时回顾";
 "macOS could not decode this media file. Convert it to WAV, M4A or MP4 first." = "macOS 无法解码此媒体文件。请先转换为 WAV、M4A 或 MP4。";
+
+"Apple SpeechTranscriber could not select an audio format." = "Apple SpeechTranscriber 无法选择兼容的音频格式。";
+"Apple SpeechTranscriber is unavailable on this Mac." = "此 Mac 无法使用 Apple SpeechTranscriber。";
+"Checking availability…" = "正在检查可用性…";
+"Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed." = "请明确选择音频中的语言。macOS 负责管理和更新本机模型，可用性取决于此 Mac，无需语音 API 密钥。";
+"Download a FluidAudio model in Settings first." = "请先在设置中下载 FluidAudio 模型。";
+"Downloading…" = "正在下载…";
+"FluidAudio Models" = "FluidAudio 模型";
+"FluidAudio · On Device" = "FluidAudio · 本机";
+"Install Language Model" = "安装语言模型";
+"Install the Apple language model in Settings first." = "请先在设置中安装 Apple 语言模型。";
+"Language model download required" = "需要下载语言模型";
+"Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac." = "实时转写约每 8 秒更新一次，文件按 20 秒分块处理。停止时也会转写剩余音频，识别完全在此 Mac 上运行。";
+"Managed by macOS" = "由 macOS 管理";
+"Model Status" = "模型状态";
+"Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported." = "Parakeet v2 识别英语。V3 自动检测 25 种欧洲语言，不支持中文。";
+"Parakeet v2 · English" = "Parakeet v2 · 英语";
+"Parakeet v3 · Multilingual" = "Parakeet v3 · 多语言";
+"Ready for offline transcription" = "可离线转写";
+"Refresh Status" = "刷新状态";
+"Settings" = "设置";
+"System Language Model" = "系统语言模型";
+"This language is not supported by Apple SpeechTranscriber." = "Apple SpeechTranscriber 不支持此语言。";

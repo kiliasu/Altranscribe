@@ -7,7 +7,6 @@ import SwiftUI
 /// - Something changing state in place (a label, a count, a symbol) cross-fades, rolls or replaces its symbol.
 /// - A whole view giving way to another (a welcome page and its transcript) blurs across.
 /// - Small marks and accessories (a timer, a dot, a chip) pop in and out.
-/// - Liquid Glass controls morph from one shape into the next with a single spring.
 /// - Finished work draws its checkmark; failed work shakes its mark once.
 ///
 /// With Reduce Motion the movement, scaling and blur fall away and every transition becomes a cross-fade.
@@ -16,8 +15,6 @@ enum Motion {
     static let quick = Animation.snappy(duration: 0.24)
     /// Content arriving, leaving or rearranging: lines, cards, rows, pages.
     static let content = Animation.smooth(duration: 0.4)
-    /// Liquid Glass controls changing shape.
-    static let glass = Animation.spring(duration: 0.5, bounce: 0.18)
     /// Seconds the end of a task, such as "Saved", stays in view before the controls move on.
     static let acknowledgement: TimeInterval = 1.8
 }

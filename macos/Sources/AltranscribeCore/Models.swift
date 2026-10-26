@@ -22,17 +22,19 @@ public enum AudioSource: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 public enum SpeechProvider: String, Codable, CaseIterable, Identifiable, Sendable {
-    case whisper, nemotron, compatible, gemini
+    case whisper, nemotron, fluidAudio, appleSpeech, compatible, gemini
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .whisper: L("Whisper · On Device")
         case .nemotron: L("Nemotron · On Device")
+        case .fluidAudio: L("FluidAudio · On Device")
+        case .appleSpeech: "Apple SpeechTranscriber"
         case .compatible: L("OpenAI / OpenAI Compatible")
         case .gemini: "Google Gemini"
         }
     }
-    public var isLocal: Bool { self == .whisper || self == .nemotron }
+    public var isLocal: Bool { self != .compatible && self != .gemini }
 }
 
 public enum TextProvider: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -52,6 +54,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var modelPath = ""
     // Optional so settings saved before Nemotron was added still decode unchanged.
     public var nemotronModelID: String?
+    // Optional fields preserve settings written by earlier app versions.
+    public var fluidAudioModelID: String?
+    public var appleSpeechLocaleID: String?
     public var useGPU = true
     public var speechBaseURL = "https://api.openai.com/v1"
     public var speechModel = "gpt-4o-mini-transcribe"
@@ -72,8 +77,16 @@ public struct AppSettings: Codable, Equatable, Sendable {
         NemotronModel.catalog.first { $0.id == nemotronModelID } ?? NemotronModel.catalog[0]
     }
     public var recognitionLanguage: String {
-        speechProvider == .nemotron && !nemotronModel.multilingual ? "en" : sourceLanguage
+        switch speechProvider {
+        case .nemotron where !nemotronModel.multilingual: "en"
+        case .fluidAudio: fluidAudioModel == .english ? "en" : "auto"
+        case .appleSpeech: Locale(identifier: appleSpeechLocale).language.languageCode?.identifier ?? "en"
+        default: sourceLanguage
+        }
     }
+    public var fluidAudioModel: FluidAudioModel { FluidAudioModel(rawValue: fluidAudioModelID ?? "") ?? .english }
+    public var appleSpeechLocale: String { appleSpeechLocaleID ?? "en-US" }
+    public var supportsVocabulary: Bool { speechProvider != .nemotron && speechProvider != .fluidAudio }
 
     public var effectiveModelPath: String {
         if !modelPath.isEmpty { return modelPath }

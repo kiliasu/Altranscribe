@@ -9,6 +9,9 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v26)],
     products: [.executable(name: "Altranscribe", targets: ["Altranscribe"])],
+    dependencies: [
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7", traits: [])
+    ],
     targets: [
         .binaryTarget(
             name: "SherpaOnnxMacOS",
@@ -29,7 +32,8 @@ let package = Package(
                 .linkedFramework("MetalKit"), .linkedFramework("Foundation"), .linkedLibrary("c++")
             ]
         ),
-        .target(name: "AltranscribeCore", dependencies: ["WhisperBridge", "SherpaOnnxMacOS", "OnnxruntimeMacOS"],
+        .target(name: "AltranscribeCore", dependencies: ["WhisperBridge", "SherpaOnnxMacOS", "OnnxruntimeMacOS",
+                                                       .product(name: "FluidAudio", package: "FluidAudio")],
                 resources: [.process("Resources")],
                 linkerSettings: [.linkedFramework("CoreML")]),
         .executableTarget(name: "Altranscribe", dependencies: ["AltranscribeCore"]),

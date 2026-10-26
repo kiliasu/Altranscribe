@@ -14,7 +14,6 @@
 "Appearance" = "Appearance";
 "Attention" = "Attention";
 "Audio Source" = "Audio Source";
-"Audio and text stay on this Mac" = "Audio and text stay on this Mac";
 "Audio conversion failed." = "Audio conversion failed.";
 "Audio timestamp" = "Audio timestamp";
 "Available Models" = "Available Models";
@@ -130,7 +129,6 @@
 "No transcripts yet" = "No transcripts yet";
 "None selected" = "None selected";
 "OK" = "OK";
-"On this Mac" = "On this Mac";
 "On-device Compute" = "On-device Compute";
 "On-device Streaming" = "On-device Streaming";
 "Online APIs require HTTPS. HTTP is allowed only for loopback addresses." = "Online APIs require HTTPS. HTTP is allowed only for loopback addresses.";
@@ -152,7 +150,6 @@
 "Rate limit or quota exceeded." = "Rate limit or quota exceeded.";
 "Ready" = "Ready";
 "Recognition" = "Recognition";
-"Relevant audio or text is sent to the selected API" = "Relevant audio or text is sent to the selected API";
 "Remove from Queue" = "Remove from Queue";
 "Rename…" = "Rename…";
 "Resume" = "Resume";
@@ -235,7 +232,6 @@
 "Unreadable record files: %@. The files were retained." = "Unreadable record files: %@. The files were retained.";
 "Use" = "Use";
 "Use Metal GPU Acceleration" = "Use Metal GPU Acceleration";
-"Uses an online API" = "Uses an online API";
 "View" = "View";
 "Vocabulary" = "Vocabulary";
 "Waiting" = "Waiting";
@@ -244,3 +240,26 @@
 "Yesterday" = "Yesterday";
 "Your words, kept close" = "Your words, kept close";
 "macOS could not decode this media file. Convert it to WAV, M4A or MP4 first." = "macOS could not decode this media file. Convert it to WAV, M4A or MP4 first.";
+
+"Apple SpeechTranscriber could not select an audio format." = "Apple SpeechTranscriber could not select an audio format.";
+"Apple SpeechTranscriber is unavailable on this Mac." = "Apple SpeechTranscriber is unavailable on this Mac.";
+"Checking availability…" = "Checking availability…";
+"Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed." = "Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed.";
+"Download a FluidAudio model in Settings first." = "Download a FluidAudio model in Settings first.";
+"Downloading…" = "Downloading…";
+"FluidAudio Models" = "FluidAudio Models";
+"FluidAudio · On Device" = "FluidAudio · On Device";
+"Install Language Model" = "Install Language Model";
+"Install the Apple language model in Settings first." = "Install the Apple language model in Settings first.";
+"Language model download required" = "Language model download required";
+"Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac." = "Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac.";
+"Managed by macOS" = "Managed by macOS";
+"Model Status" = "Model Status";
+"Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported." = "Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported.";
+"Parakeet v2 · English" = "Parakeet v2 · English";
+"Parakeet v3 · Multilingual" = "Parakeet v3 · Multilingual";
+"Ready for offline transcription" = "Ready for offline transcription";
+"Refresh Status" = "Refresh Status";
+"Settings" = "Settings";
+"System Language Model" = "System Language Model";
+"This language is not supported by Apple SpeechTranscriber." = "This language is not supported by Apple SpeechTranscriber.";

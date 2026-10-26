@@ -17,11 +17,21 @@ import AltranscribeCore
         settings.modelPath = "/existing/ggml-small.bin"
         var old = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
         old.removeValue(forKey: "nemotronModelID")
+        old.removeValue(forKey: "fluidAudioModelID")
+        old.removeValue(forKey: "appleSpeechLocaleID")
         let restored = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: old))
         XCTAssertEqual(restored.speechProvider, .whisper)
         XCTAssertEqual(restored.modelPath, settings.modelPath)
         XCTAssertEqual(restored.sourceLanguage, "zh")
         XCTAssertFalse(restored.nemotronModel.multilingual)
+        XCTAssertEqual(restored.fluidAudioModel, .english)
+        XCTAssertEqual(restored.appleSpeechLocale, "en-US")
+        for provider in [SpeechProvider.fluidAudio, .appleSpeech] {
+            settings.speechProvider = provider
+            XCTAssertTrue(provider.isLocal)
+            XCTAssertEqual(settings.recognitionLanguage, "en")
+            XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)), settings)
+        }
     }
 
     func testRealStreamingTailAndFileQueue() async throws {

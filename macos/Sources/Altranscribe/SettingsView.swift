@@ -4,6 +4,7 @@ import AltranscribeCore
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    var embedded = false
     @AppStorage("interfaceLanguage") private var language = "system"
     @AppStorage("appearance") private var appearance = "system"
     @State private var models: [String] = []
@@ -12,17 +13,34 @@ struct SettingsView: View {
     @State private var removeModel: URL?
 
     var body: some View {
-        // Each pane keeps its own height, so the window resizes when switching tabs as macOS settings do.
-        TabView {
-            Tab(L("General"), systemImage: "gearshape") { general.frame(height: 590) }
-            Tab(L("Speech"), systemImage: "waveform") { speech.frame(height: 560) }
-            Tab(L("Text Models"), systemImage: "character.bubble") { text.frame(height: 520) }
+        pane
+        .frame(width: embedded ? nil : 600, height: embedded ? nil : 620)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker(L("Settings"), selection: $model.settingsPage) {
+                    Text(L("General")).tag(SettingsPage.general)
+                    Text(L("Speech")).tag(SettingsPage.speech)
+                    Text(L("Text Models")).tag(SettingsPage.text)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
         }
-        .frame(width: 600)
-        .onChange(of: model.settings) { _, _ in model.saveSettings() }
-        .alert(L("Attention"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+        .onChange(of: model.settings) { _, _ in if !embedded { model.saveSettings() } }
+        .task(id: model.settings.appleSpeechLocale + model.settings.speechProvider.rawValue) {
+            if !embedded && model.settings.speechProvider == .appleSpeech { await model.refreshAppleSpeech() }
+        }
+        .alert(L("Attention"), isPresented: Binding(get: { !embedded && model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(L("OK"), role: .cancel) { model.error = nil }
         } message: { Text(model.error?.text ?? "") }
+    }
+
+    @ViewBuilder private var pane: some View {
+        switch model.settingsPage {
+        case .general: general
+        case .speech: speech
+        case .text: text
+        }
     }
 
     private var general: some View {
@@ -78,9 +96,6 @@ struct SettingsView: View {
                         Text("Altranscribe").font(.headline)
                         Text((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.8.0") + " · macOS")
                             .foregroundStyle(.secondary)
-                        Text("SwiftUI · Whisper / Metal · Nemotron / CPU")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
                     }
                 }
                 .padding(.vertical, 4)
@@ -93,6 +108,12 @@ struct SettingsView: View {
             Section {
                 Picker(L("Speech Engine"), selection: $model.settings.speechProvider) {
                     ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
+                }
+                if model.settings.speechProvider == .whisper || !model.settings.speechProvider.isLocal ||
+                    (model.settings.speechProvider == .nemotron && model.settings.nemotronModel.multilingual) {
+                    Picker(L("Language"), selection: $model.settings.sourceLanguage) {
+                        ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
+                    }
                 }
             }
             if model.settings.speechProvider == .whisper {
@@ -159,6 +180,59 @@ struct SettingsView: View {
                     }
                 } header: { Text(L("Nemotron Models")) }
                   footer: { Text(L("The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation.")) }
+            } else if model.settings.speechProvider == .fluidAudio {
+                Section(L("On-device Compute")) {
+                    LabeledContent(L("Current Model"), value: model.settings.fluidAudioModel.title)
+                    LabeledContent(L("Compute"), value: "Core ML · CPU + Neural Engine")
+                    Text(L("Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section(L("FluidAudio Models")) {
+                    ForEach(FluidAudioModel.allCases) { item in
+                        ModelRow(title: item.title, detail: "Parakeet TDT · 0.6B", symbol: "cpu", link: item.modelCard,
+                                 inUse: item.isInstalled(in: model.paths.models) && model.settings.fluidAudioModel == item) {
+                            if model.downloadID == item.id {
+                                ProgressView().controlSize(.small)
+                                Button(L("Cancel")) { model.downloadTask?.cancel() }
+                            } else if item.isInstalled(in: model.paths.models) {
+                                if model.settings.fluidAudioModel != item {
+                                    Button(L("Use")) { model.settings.fluidAudioModelID = item.id }
+                                }
+                                Button(role: .destructive) { removeModel = item.directory(in: model.paths.models) } label: { Image(systemName: "trash") }
+                                    .buttonStyle(.borderless).help(L("Delete Model")).disabled(model.downloadID != nil)
+                            } else {
+                                Button(L("Download"), systemImage: "arrow.down.circle") { model.download(item) }.disabled(model.downloadID != nil)
+                            }
+                        }
+                    }
+                }
+                chunkedLocalNote
+            } else if model.settings.speechProvider == .appleSpeech {
+                Section(L("System Language Model")) {
+                    Picker(L("Language"), selection: Binding(get: { model.settings.appleSpeechLocale },
+                                                             set: { model.settings.appleSpeechLocaleID = $0 })) {
+                        if !model.appleSpeechLocales.contains(model.settings.appleSpeechLocale) {
+                            Text(localeName(model.settings.appleSpeechLocale)).tag(model.settings.appleSpeechLocale)
+                        }
+                        ForEach(model.appleSpeechLocales, id: \.self) { Text(localeName($0)).tag($0) }
+                    }.disabled(model.downloadID == "apple-speech")
+                    LabeledContent(L("Model Status"), value: model.appleSpeechStatus.title)
+                    LabeledContent(L("Compute"), value: L("Managed by macOS"))
+                    HStack {
+                        if model.downloadID == "apple-speech" {
+                            ProgressView().controlSize(.small)
+                            Button(L("Cancel")) { model.downloadTask?.cancel() }
+                        } else if model.appleSpeechStatus == .downloadRequired || model.appleSpeechStatus == .downloading {
+                            Button(L("Install Language Model"), systemImage: "arrow.down.circle") { model.installAppleSpeech() }
+                                .disabled(model.downloadID != nil)
+                        }
+                        Button(L("Refresh Status")) { Task { await model.refreshAppleSpeech() } }
+                            .disabled(model.downloadID == "apple-speech")
+                    }
+                    Text(L("Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                chunkedLocalNote
             } else {
                 Section(L("Service")) {
                     if model.settings.speechProvider == .compatible {
@@ -173,6 +247,12 @@ struct SettingsView: View {
                 Section {
                     Text(L("Live audio is sent in approximately 8-second chunks; files in 20-second chunks. Timestamps are estimates. Paid inference requests are not retried automatically."))
                         .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if model.settings.supportsVocabulary {
+                Section(L("Vocabulary")) {
+                    TextField(L("Names and terms, separated by commas"), text: $model.settings.vocabulary, axis: .vertical)
+                        .lineLimit(2...4)
                 }
             }
         }
@@ -197,6 +277,13 @@ struct SettingsView: View {
 
     private var text: some View {
         Form {
+            Section(L("Text Processing")) {
+                Toggle(L("Translate"), isOn: $model.settings.translate)
+                Picker(L("Target Language"), selection: $model.settings.targetLanguage) {
+                    ForEach(AppSettings.languages.filter { $0.0 != "auto" }, id: \.0) { Text($0.1).tag($0.0) }
+                }
+                Toggle(L("Summarize when finished"), isOn: $model.settings.summarize)
+            }
             Section(L("Service")) {
                 Picker(L("Text Service"), selection: $model.settings.textProvider) {
                     ForEach(TextProvider.allCases) { Text($0.title).tag($0) }
@@ -238,6 +325,15 @@ struct SettingsView: View {
         .disabled(model.busy)
         .animation(Motion.content, value: models)
         .animation(Motion.content, value: model.settings.textProvider)
+    }
+    private var chunkedLocalNote: some View {
+        Section {
+            Text(L("Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func localeName(_ identifier: String) -> String {
+        InterfaceLanguage.current.locale.localizedString(forIdentifier: identifier) ?? identifier
     }
     private func installed(_ item: WhisperModel) -> Bool {
         _ = model.modelRevision

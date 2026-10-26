@@ -1,0 +1,65 @@
+import Foundation
+import FluidAudio
+
+public enum FluidAudioModel: String, CaseIterable, Identifiable, Sendable {
+    case english = "parakeet-tdt-0.6b-v2-coreml"
+    case multilingual = "parakeet-tdt-0.6b-v3-coreml"
+
+    public var id: String { rawValue }
+    public var title: String { self == .english ? L("Parakeet v2 · English") : L("Parakeet v3 · Multilingual") }
+    private var version: AsrModelVersion { self == .english ? .v2 : .v3 }
+    public var modelCard: URL { URL(string: "https://huggingface.co/FluidInference/\(rawValue)")! }
+    public func directory(in models: URL) -> URL {
+        models.appendingPathComponent((self == .english ? Repo.parakeetV2 : Repo.parakeetV3).folderName, isDirectory: true)
+    }
+    public func isInstalled(in models: URL) -> Bool {
+        AsrModels.modelsExist(at: directory(in: models), version: version)
+    }
+    public func download(to models: URL) async throws {
+        try Task.checkCancellation()
+        try await AsrModels.download(to: directory(in: models), version: version)
+        try Task.checkCancellation()
+    }
+    fileprivate func load(from models: URL) throws -> AsrModels {
+        // Only the explicit Download action may access the network.
+        try AsrModels.loadLocal(from: directory(in: models), version: version)
+    }
+}
+
+public actor NativeFluidAudio {
+    private var manager: AsrManager?
+    public init() {}
+
+    public func load(model: FluidAudioModel, models: URL) async throws {
+        try Task.checkCancellation()
+        guard model.isInstalled(in: models) else {
+            throw AppError("Download a FluidAudio model in Settings first.")
+        }
+        let manager = AsrManager()
+        try await manager.loadModels(model.load(from: models))
+        self.manager = manager
+        try Task.checkCancellation()
+    }
+
+    public func transcribe(_ chunk: AudioChunk) async throws -> [TranscriptSegment] {
+        try Task.checkCancellation()
+        guard let manager else { throw AppError("The local model is not loaded.") }
+        guard !chunk.samples.isEmpty,
+              chunk.samples.reduce(Float.zero, { $0 + $1 * $1 }) / Float(chunk.samples.count) >= 0.00000001 else { return [] }
+        // Each capture/file chunk is independent; decoder state must not leak between files.
+        var state = try TdtDecoderState()
+        let result = try await manager.transcribe(chunk.samples, decoderState: &state)
+        try Task.checkCancellation()
+        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return [] }
+        let timings = result.tokenTimings ?? []
+        let start = min(chunk.duration, max(0, timings.first?.startTime ?? 0))
+        let end = min(chunk.duration, max(start, timings.last?.endTime ?? chunk.duration))
+        return [TranscriptSegment(start: chunk.start + start, end: chunk.start + end, text: text, estimated: timings.isEmpty)]
+    }
+
+    public func unload() async {
+        await manager?.cleanup()
+        manager = nil
+    }
+}

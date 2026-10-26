@@ -39,7 +39,11 @@ struct FilesView: View {
             return !urls.isEmpty
         } isTargeted: { targeted = $0 }
         .safeAreaBar(edge: .bottom) {
-            if !model.queue.isEmpty { QueueBar(model: model).padding(.bottom, 18).transition(.rise) }
+            if !model.queue.isEmpty {
+                QueueBar(model: model)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+            }
         }
         .animation(Motion.content, value: model.queue.isEmpty)
         .animation(Motion.quick, value: targeted)
@@ -202,54 +206,50 @@ private struct QueueRow: View {
     }
 }
 
-/// The floating queue controls: how far along the files are, and the one action that moves them on.
+/// File progress and actions share the same native bottom-bar layout as live capture.
 private struct QueueBar: View {
     @Bindable var model: AppModel
-    @Namespace private var glass
 
     var body: some View {
         let waiting = model.queue.filter { $0.status == .waiting }.count
         let completed = model.queue.filter { $0.status == .completed }.count
-        // Start Queue morphs into Stop Queue and back; the summary and Clear Completed grow out of it.
-        GlassEffectContainer(spacing: 12) {
-            HStack(spacing: 12) {
-                if let summary = summary(waiting: waiting) {
-                    HStack(spacing: 10) {
-                        if model.queueRunning { ProgressView().controlSize(.small).transition(.pop) }
-                        Text(summary)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .rollingNumbers(summary)
-                    }
-                    .padding(.horizontal, 18)
-                    .frame(height: 44)
-                    .glassEffect(.regular, in: .capsule)
-                    .glassEffectID("summary", in: glass)
-                }
-
-                if model.queueRunning {
-                    Button { model.cancel() } label: { Label(L("Stop Queue"), systemImage: "stop.fill").padding(.horizontal, 4) }
-                        .buttonStyle(.glass)
-                        .controlSize(.extraLarge)
-                        .glassEffectID("primary", in: glass)
-                } else {
-                    if completed > 0 {
-                        Button(L("Clear Completed")) { model.clearCompletedQueue() }
-                            .buttonStyle(.glass)
-                            .controlSize(.extraLarge)
-                            .glassEffectID("clear", in: glass)
-                    }
-                    Button { model.startQueue() } label: { Label(L("Start Queue"), systemImage: "play.fill").padding(.horizontal, 4) }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.extraLarge)
-                        .glassEffectID("primary", in: glass)
-                        .disabled(model.busy || !model.modelReady || waiting == 0)
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                progress(waiting: waiting)
+                Spacer(minLength: 16)
+                actions(waiting: waiting, completed: completed)
+            }
+            VStack(spacing: 12) {
+                progress(waiting: waiting)
+                actions(waiting: waiting, completed: completed)
             }
         }
-        .animation(Motion.glass, value: model.queueRunning)
-        .animation(Motion.glass, value: waiting > 0)
-        .animation(Motion.glass, value: completed > 0)
+        .controlSize(.large)
+        .buttonStyle(.bordered)
+    }
+
+    @ViewBuilder private func progress(waiting: Int) -> some View {
+        if let summary = summary(waiting: waiting) {
+            HStack(spacing: 8) {
+                if model.queueRunning { ProgressView().controlSize(.small) }
+                Text(summary).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }
+    }
+
+    private func actions(waiting: Int, completed: Int) -> some View {
+        HStack {
+            if model.queueRunning {
+                Button(L("Stop Queue"), systemImage: "stop.fill") { model.cancel() }
+            } else {
+                if completed > 0 {
+                    Button(L("Clear Completed")) { model.clearCompletedQueue() }
+                }
+                Button(L("Start Queue"), systemImage: "play.fill") { model.startQueue() }
+                    .buttonStyle(.glassProminent)
+                    .disabled(model.busy || !model.modelReady || waiting == 0)
+            }
+        }
     }
 
     /// Only what the rows cannot say at a glance: where a running queue is, or how much is left to start.

@@ -11,7 +11,8 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 256, max: 360)
         } detail: {
             detail
-                .inspector(isPresented: $showInspector) {
+                .inspector(isPresented: Binding(get: { showInspector && model.destination != .settings },
+                                                set: { if model.destination != .settings { showInspector = $0 } })) {
                     SessionInspector(model: model)
                         .inspectorColumnWidth(min: 250, ideal: 280, max: 360)
                 }
@@ -26,12 +27,16 @@ struct ContentView: View {
             Button(L("Delete"), role: .destructive) { model.deleteRecord(id) }
         } message: { _ in Text(L("The original media file will be kept.")) }
         .onChange(of: model.settings) { _, _ in model.saveSettings() }
+        .task(id: model.settings.appleSpeechLocale + model.settings.speechProvider.rawValue) {
+            if model.settings.speechProvider == .appleSpeech { await model.refreshAppleSpeech() }
+        }
     }
 
     @ViewBuilder private var detail: some View {
         switch model.destination ?? .live {
         case .live: LiveView(model: model)
         case .files: FilesView(model: model)
+        case .settings: SettingsView(model: model, embedded: true).navigationTitle(L("Settings"))
         case .transcript(let id):
             if let record = model.records.first(where: { $0.id == id }) {
                 TranscriptPage(model: model, record: record).id(id)
@@ -53,6 +58,7 @@ private struct Sidebar: View {
             Section {
                 LiveRow(model: model).tag(Destination.live)
                 FilesRow(model: model).tag(Destination.files)
+                Label(L("Settings"), systemImage: "gearshape").tag(Destination.settings)
             }
             let groups = RecordGroup.make(model.filteredRecords)
             ForEach(groups) { group in
@@ -234,19 +240,23 @@ struct SessionInspector: View {
                     }
                 }
                 if !model.modelReady {
-                    Label(L("The selected model is not downloaded yet."), systemImage: "exclamationmark.triangle.fill")
+                    Label(model.settings.speechProvider == .appleSpeech ? model.appleSpeechStatus.title : L("The selected model is not downloaded yet."), systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundStyle(.orange)
                         .transition(.rise)
                 }
-                if model.settings.speechProvider == .nemotron && !model.settings.nemotronModel.multilingual {
+                if model.settings.speechProvider == .appleSpeech {
+                    LabeledContent(L("Language"), value: InterfaceLanguage.current.locale.localizedString(forIdentifier: model.settings.appleSpeechLocale) ?? model.settings.appleSpeechLocale)
+                } else if model.settings.speechProvider == .fluidAudio {
+                    LabeledContent(L("Language"), value: model.settings.fluidAudioModel == .english ? "English" : L("Detect Automatically"))
+                } else if model.settings.speechProvider == .nemotron && !model.settings.nemotronModel.multilingual {
                     LabeledContent(L("Language"), value: "English")
                 } else {
                     Picker(L("Language"), selection: $model.settings.sourceLanguage) {
                         ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
                     }
                 }
-                SettingsLink { Text(L("Manage Models…")) }
+                Button(L("Manage Models…")) { model.settingsPage = .speech; model.destination = .settings }
             }
             Section {
                 Toggle(L("Translate"), isOn: $model.settings.translate)
@@ -265,7 +275,7 @@ struct SessionInspector: View {
                         .foregroundStyle(model.settings.textModel.isEmpty ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
                 }
             }
-            if model.settings.speechProvider != .nemotron {
+            if model.settings.supportsVocabulary {
                 Section {
                     TextField(L("Names and terms, separated by commas"), text: $model.settings.vocabulary, axis: .vertical)
                         .lineLimit(3...6)
@@ -277,12 +287,6 @@ struct SessionInspector: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Section {
-                Label(model.localProcessing ? L("Audio and text stay on this Mac") : L("Relevant audio or text is sent to the selected API"),
-                      systemImage: model.localProcessing ? "lock.shield" : "network")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
         .disabled(model.busy)
@@ -292,6 +296,10 @@ struct SessionInspector: View {
     }
 
     private var compute: String {
-        model.settings.speechProvider == .whisper && model.settings.useGPU ? "Metal GPU" : "CPU"
+        switch model.settings.speechProvider {
+        case .fluidAudio: "Core ML · CPU + Neural Engine"
+        case .appleSpeech: L("Managed by macOS")
+        default: model.settings.speechProvider == .whisper && model.settings.useGPU ? "Metal GPU" : "CPU"
+        }
     }
 }

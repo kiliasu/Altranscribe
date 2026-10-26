@@ -3,12 +3,13 @@ import Observation
 import UniformTypeIdentifiers
 import AltranscribeCore
 
-/// What the sidebar has selected: one of the two capture pages or a saved transcript.
+/// What the sidebar has selected: a capture page, settings, or a saved transcript.
 enum Destination: Hashable {
-    case live, files, transcript(UUID)
+    case live, files, settings, transcript(UUID)
 }
 
 enum SessionPhase { case idle, preparing, recording, paused, finishing, files }
+enum SettingsPage { case general, speech, text }
 enum QueueStatus { case waiting, processing, completed, failed, cancelled }
 struct QueuedFile: Identifiable {
     let id = UUID()
@@ -22,6 +23,7 @@ struct QueuedFile: Identifiable {
 @MainActor @Observable final class AppModel {
     var settings = AppSettings()
     var destination: Destination? = .live
+    var settingsPage: SettingsPage = .general
     var source: AudioSource = .microphone
     var records: [TranscriptRecord] = []
     var activeRecordID: UUID?
@@ -36,6 +38,8 @@ struct QueuedFile: Identifiable {
     var downloadID: String?
     var downloadTask: Task<Void, Never>?
     var modelRevision = 0
+    var appleSpeechLocales: [String] = []
+    var appleSpeechStatus: AppleSpeechStatus = .checking
     var isPostProcessing = false
     private(set) var postProcessingID: UUID?
     var renamingRecordID: UUID?
@@ -48,6 +52,8 @@ struct QueuedFile: Identifiable {
     let store: RecordStore
     private let whisper = NativeWhisper()
     private let nemotron = NativeNemotron()
+    private let fluidAudio = NativeFluidAudio()
+    private let appleSpeech = NativeAppleSpeech()
     private let api: APIClient
     private let capture = AudioCapture()
     private var work: Task<Void, Never>?
@@ -83,14 +89,11 @@ struct QueuedFile: Identifiable {
         switch settings.speechProvider {
         case .whisper: return FileManager.default.fileExists(atPath: settings.effectiveModelPath)
         case .nemotron: return settings.nemotronModel.isInstalled(in: paths.models)
+        case .fluidAudio: return settings.fluidAudioModel.isInstalled(in: paths.models)
+        case .appleSpeech: return appleSpeechStatus == .installed
         default: return true
         }
     }
-    var localProcessing: Bool {
-        let localSpeech = settings.speechProvider.isLocal || (try? APIEndpoint(settings.speechEndpoint).isLoopback) == true
-        return localSpeech && (!(settings.translate || settings.summarize) || (try? APIEndpoint(settings.textEndpoint).isLoopback) == true)
-    }
-
     func saveSettings() {
         do { try store.saveSettings(settings) } catch { self.error = LocalizedText(error: error) }
     }
@@ -111,6 +114,10 @@ struct QueuedFile: Identifiable {
         } else if configuration.speechProvider == .nemotron {
             let model = configuration.nemotronModel
             try await nemotron.load(model: model, directory: model.directory(in: paths.models), language: configuration.recognitionLanguage)
+        } else if configuration.speechProvider == .fluidAudio {
+            try await fluidAudio.load(model: configuration.fluidAudioModel, models: paths.models)
+        } else if configuration.speechProvider == .appleSpeech {
+            try await appleSpeech.load(locale: configuration.appleSpeechLocale)
         } else {
             let endpoint = try APIEndpoint(configuration.speechEndpoint)
             speechKey = try KeychainStore.read(endpoint: configuration.speechEndpoint)
@@ -132,6 +139,8 @@ struct QueuedFile: Identifiable {
         switch configuration.speechProvider {
         case .whisper: speechModel = URL(fileURLWithPath: configuration.effectiveModelPath).deletingPathExtension().lastPathComponent
         case .nemotron: speechModel = configuration.nemotronModel.id
+        case .fluidAudio: speechModel = configuration.fluidAudioModel.id
+        case .appleSpeech: speechModel = "Apple SpeechTranscriber · " + configuration.appleSpeechLocale
         case .gemini: speechModel = configuration.geminiSpeechModel
         case .compatible: speechModel = configuration.speechModel
         }
@@ -186,6 +195,8 @@ struct QueuedFile: Identifiable {
             await translationWork?.value
             await whisper.unload()
             await nemotron.unload()
+            await fluidAudio.unload()
+            await appleSpeech.unload()
             if discard, let recordID { deleteRecord(recordID) }
             if saved { sessionSavedAt = .now }
             phase = .idle; meter = 0; status = LocalizedText("Ready"); work = nil
@@ -221,6 +232,10 @@ struct QueuedFile: Identifiable {
         } else if configuration.speechProvider == .nemotron {
             let update = try await nemotron.accept(chunk)
             segments = update.finalized; partial = update.partial
+        } else if configuration.speechProvider == .fluidAudio {
+            segments = try await fluidAudio.transcribe(chunk)
+        } else if configuration.speechProvider == .appleSpeech {
+            segments = try await appleSpeech.transcribe(chunk, vocabulary: configuration.vocabulary)
         } else { segments = try await api.transcribe(chunk, settings: configuration, key: keys.speechKey) }
         try await saveSegments(segments, partial: partial, recordID: recordID, configuration: configuration, textKey: keys.textKey)
     }
@@ -409,6 +424,8 @@ struct QueuedFile: Identifiable {
             catch { self.error = LocalizedText(error: error) }
             await whisper.unload()
             await nemotron.unload()
+            await fluidAudio.unload()
+            await appleSpeech.unload()
             phase = .idle; queueRunning = false; work = nil; status = LocalizedText("Ready")
             endActivity()
         }
@@ -475,6 +492,42 @@ struct QueuedFile: Identifiable {
             downloadID = nil; downloadTask = nil
         }
     }
+    func download(_ model: FluidAudioModel) {
+        guard downloadTask == nil, !busy else { return }
+        downloadID = model.id
+        downloadTask = Task {
+            do {
+                try await model.download(to: paths.models)
+                settings.fluidAudioModelID = model.id; saveSettings(); modelRevision += 1
+            } catch is CancellationError { }
+            catch { if !Task.isCancelled { self.error = LocalizedText(error: error) } }
+            downloadID = nil; downloadTask = nil
+        }
+    }
+
+    func refreshAppleSpeech() async {
+        let locale = settings.appleSpeechLocale
+        let locales = await NativeAppleSpeech.supportedLocales()
+        let status = await NativeAppleSpeech.status(locale: locale)
+        guard !Task.isCancelled, settings.appleSpeechLocale == locale else { return }
+        appleSpeechLocales = locales
+        appleSpeechStatus = status
+    }
+
+    func installAppleSpeech() {
+        guard downloadTask == nil, !busy else { return }
+        let locale = settings.appleSpeechLocale
+        downloadID = "apple-speech"
+        appleSpeechStatus = .downloading
+        downloadTask = Task {
+            do { try await NativeAppleSpeech.install(locale: locale) }
+            catch is CancellationError { }
+            catch { if !Task.isCancelled { self.error = LocalizedText(error: error) } }
+            downloadID = nil; downloadTask = nil
+            Task { await refreshAppleSpeech() }
+        }
+    }
+
     func showCaptions() {
         if captions == nil { captions = CaptionWindow(model: self) }
         captions?.show()
