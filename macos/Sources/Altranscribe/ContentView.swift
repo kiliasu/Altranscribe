@@ -6,9 +6,11 @@ struct ContentView: View {
     @AppStorage("showInspector") private var showInspector = true
 
     var body: some View {
+        // The sidebar keeps the system's column widths. An explicit sidebar width together with the
+        // window's minimum size below made AppKit loop through Update Constraints passes (and crash)
+        // whenever the inspector was open in a window narrower than about 1,100 points.
         NavigationSplitView {
             Sidebar(model: model)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 256, max: 360)
         } detail: {
             // Pages give way to one another the way the welcome page gives way to a transcript.
             ZStack {
