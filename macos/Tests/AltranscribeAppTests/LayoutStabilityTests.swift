@@ -117,9 +117,19 @@ import AltranscribeCore
             model.destination = destination
             settle(0.6)
         }
+        // Home menus appear and disappear as the chosen engine and text processing change.
+        model.settings.translate = false; model.settings.speechProvider = .nemotron
+        settle(0.6)
+        model.settings.translate = true; model.settings.speechProvider = .compatible
+        settle(0.6)
         // The Files page hands its drop zone over to the queue and back.
         model.addFiles([root.appendingPathComponent("lecture.m4a")])
         settle(0.6)
+        model.queue[0].recordID = UUID()
+        for status: QueueStatus in [.processing, .completed, .failed] {
+            model.queue[0].status = status
+            settle(0.6)
+        }
         model.queue.map(\.id).forEach(model.removeQueued)
         settle(0.6)
         let faults = try invalidSizeReports(since: start)

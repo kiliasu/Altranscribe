@@ -1,6 +1,8 @@
 # macOS 本地验证
 
-最近验证：2026-10-25。迁移基线：`origin/dev` / `e90c412`。本地分支：`codex/native-macos`。
+最近验证：2026-10-26。迁移基线：`origin/dev` / `e90c412`。本地分支：`codex/native-macos`。
+
+最新审阅见 [近期提交审阅与修复](REVIEW_2026-10-26.md)：修复设置窗口的钥匙串阻塞、Gemini 迟到末句、换线中的发送竞态，以及文本模型配置串用。下文保留各轮验证历史；旧版按五秒静默确认 Gemini 噪声活动的策略已被本轮替换。
 
 环境：macOS 27.0.1、Xcode 27.0、Swift 6.4、Apple M3 Pro。部署目标 macOS 26.0，交付包为 arm64。
 
