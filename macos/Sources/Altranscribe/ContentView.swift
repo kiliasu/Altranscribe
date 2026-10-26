@@ -4,6 +4,11 @@ import AltranscribeCore
 struct ContentView: View {
     @Bindable var model: AppModel
     @AppStorage("showInspector") private var showInspector = true
+    /// When Settings last hid the inspector. Hiding finishes after a short animation and SwiftUI then reports the
+    /// inspector as closed; if the person has left Settings by then, that report is not their choice, and the
+    /// inspector opens again instead (closed for one update, then open).
+    @State private var settingsHidInspector = Date.distantPast
+    @State private var reopeningInspector = false
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
@@ -20,8 +25,13 @@ struct ContentView: View {
                     .transition(.page)
             }
             .animation(Motion.content, value: model.destination)
-            .inspector(isPresented: Binding(get: { showInspector && model.destination != .settings },
-                                            set: { if model.destination != .settings { showInspector = $0 } })) {
+            .inspector(isPresented: Binding(get: {
+                showInspector && model.destination != .settings && !reopeningInspector
+            }, set: { shown in
+                guard model.destination != .settings, !reopeningInspector else { return }
+                if !shown && Date.now.timeIntervalSince(settingsHidInspector) < 1 { reopeningInspector = true; return }
+                showInspector = shown
+            })) {
                 inspector
                     .inspectorColumnWidth(min: 250, ideal: 280, max: 360)
             }
@@ -37,6 +47,12 @@ struct ContentView: View {
                             presenting: model.pendingDeletion) { id in
             Button(L("Delete"), role: .destructive) { model.deleteRecord(id) }
         } message: { _ in Text(L("The original media file will be kept.")) }
+        .onChange(of: model.destination) { _, destination in
+            if destination == .settings { settingsHidInspector = .now }
+        }
+        .onChange(of: reopeningInspector) { _, reopening in
+            if reopening { reopeningInspector = false }
+        }
         .onChange(of: model.settings) { _, _ in model.saveSettings() }
         .task(id: model.settings.appleSpeechLocale + model.settings.speechProvider.rawValue) {
             if model.settings.speechProvider == .appleSpeech { await model.refreshAppleSpeech() }
