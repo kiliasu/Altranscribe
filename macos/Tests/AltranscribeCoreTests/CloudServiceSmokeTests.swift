@@ -54,7 +54,7 @@ final class CloudServiceSmokeTests: XCTestCase, @unchecked Sendable {
                 var settings = AppSettings(); settings.speechProvider = provider; settings.sourceLanguage = "en"
                 settings.translate = direct; settings.targetLanguage = "zh"
                 let result = LiveResult()
-                let renewal = provider == .gemini && !direct && ProcessInfo.processInfo.environment["ALTRANSCRIBE_CLOUD_NO_RENEW"] != "1"
+                let renewal = provider == .gemini && ProcessInfo.processInfo.environment["ALTRANSCRIBE_CLOUD_NO_RENEW"] != "1"
                 let speech = CloudSpeechSession(settings: settings, key: keys[provider == .gemini ? "gemini" : "openai"]!,
                                                renewAfter: renewal ? .seconds(15) : nil, renewBy: renewal ? .seconds(22) : nil,
                                                onUpdate: { await result.accept($0) })

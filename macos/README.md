@@ -32,7 +32,7 @@ Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large 
 | 系统声音 | ScreenCaptureKit；只读取音频，不保存画面，排除本应用的声音 |
 | 实时转写 | Nemotron 持续流式更新，保留上下文，停顿后定稿；其他引擎约 8 秒分段；暂停、继续、停止并保存、丢弃 |
 | 文件队列 | 原生文件选择与拖放，依次处理，20 秒分块增量解码，停止时保留部分记录 |
-| 语音 API | OpenAI 音频转录预选及模型 / 地址 override、Gemini `generateContent` 音频输入 |
+| 语音 API | OpenAI / Gemini 文件转录、实时转录、直接语音翻译；OpenAI 文件模型 / 地址 override |
 | 翻译和摘要 | 本机 Ollama 的 OpenAI 兼容接口、在线兼容服务、OpenAI、Gemini、Anthropic |
 | 双语悬浮字幕 | 可移动、可调整大小的原生 NSPanel，字号和只显示翻译选项 |
 | 记录 | 侧栏按日期分组，搜索原文/翻译/摘要；复制、导出、原位重命名、删除、在访达中显示源文件 |
@@ -48,7 +48,7 @@ Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large 
    本地 ad-hoc 签名会随重新构建改变。如果开关已开启但仍提示权限拒绝，退出应用，在上述系统设置中移除旧的 Altranscribe 条目，再用「+」添加当前构建的 `.app` 并重开；只切换旧条目的开关可能无效。
    如果重新构建后麦克风停在启动阶段，可退出应用，在「隐私与安全性 → 麦克风」中关闭再打开已有的 Altranscribe 授权，然后重开应用。
 3. 文件转写使用 ⌘O 或拖入媒体文件。支持 macOS 可解码的 WAV、M4A、MP3、AAC、AIFF、MP4、MOV 等；实际支持取决于文件编码。MKV、WebM、OGG、WMA 等可能需要先转换。
-4. 翻译/摘要默认关闭。开启前在设置中配置文本模型。Ollama 默认地址是 `http://127.0.0.1:11434/v1`；应填写已安装的模型名称或获取模型列表。
+4. 翻译/摘要默认关闭。OpenAI / Gemini 的实时直接翻译只需语音服务密钥；文件翻译、先转录再翻译及摘要需要配置文本模型。Ollama 默认地址是 `http://127.0.0.1:11434/v1`；应填写已安装的模型名称或获取模型列表。
 5. 「停止并保存」会等待最后一段语音与文本处理完成。「停止处理」立即取消剩余任务并保留已保存文本。在侧栏选择记录后，可在工具栏复制、导出，或在「更多」菜单中重新翻译、生成摘要；双击标题可直接重命名。
 
 Nemotron 英语版固定识别英语；多语言版使用右侧的语言选择。模型使用 dev 分支相同的固定 ONNX 导出和 SHA-256 值，四个文件全部校验后才安装，取消或失败不激活不完整模型。实时采集每 320 ms 送入一次音频，模型采用 560 ms 分块；这两个数字均不是最终字幕延迟。临时文本原位更新并保存，定稿后才送入可选翻译服务，停止和文件结尾会排空模型尾段。Nemotron 暂不提供词汇提示或 GPU 加速。
@@ -65,13 +65,21 @@ Apple SpeechTranscriber 默认英语（美国），在语音设置里从系统�
 
 其他可适配 macOS 的转写模型及接入取舍见 [模型备选调研](MODEL_OPTIONS.md)。
 
-语音 API 使用分段请求，不接入原项目的云端实时 WebSocket、直接翻译或语音回复。API 转写时间戳标为约值。付费推理失败不自动重试。
+语音 API 沿用 Flutter 的协议区分：导入文件使用专用转录接口，最多十分钟一段（16 kHz PCM16 WAV 约 19.2 MB）；实时采集以 100 ms 音频帧发送 WebSocket。语音设置中可选「直接从音频翻译」，在开启翻译时同时返回原文与译文，不要求文本模型密钥；文件翻译与摘要仍使用文本服务。生成的语音始终丢弃，不播放声音。时间戳标为约值，付费推理失败不自动重试或重放音频。
 
-OpenAI 音频转录提供原生模型预选，默认 `gpt-transcribe`，并保留模型名称与服务地址 override。预选仅包含 `/audio/transcriptions` 支持的文件模型；`gpt-live-transcribe`、`gpt-realtime-whisper` 需要 Realtime 协议，不能通过更换模型名称来使用。自定义地址必须实现音频转录接口，只有聊天兼容接口的服务不适用。
+实时默认模型为 OpenAI `gpt-live-transcribe` / `gpt-realtime-translate`，Gemini `gemini-3.5-transcribe-live` / `gemini-3.5-live-translate-preview`。Gemini 文件转录默认 `gemini-3.5-transcribe`，旧版默认的通用 Gemini 2.5 配置自动映射到专用文件模型，使用 Files + Interactions；上传结束后删除临时文件，取消或失败也执行清理。
+
+Gemini 实时连接约十分钟到期：九分钟准备下一连接，在静音处切换，最迟九分三十秒切换；旧连接只接收尾句，每个采集帧只发送到一条连接。也处理服务端 `goAway` 提前通知。OpenAI Realtime 的官方时限为六十分钟，本应用在五十五分钟准备续接。暂停时间计入连接寿命。停止时 OpenAI ASR 等待所有提交完成，直接翻译发送 `session.close` 并等到 `session.closed`；Gemini 转录使用手动 `activityStart/activityEnd` 分段，翻译发送 `audioStreamEnd`，并等待尾部输出。独立客户端对照实测发现 Gemini 自动 VAD 在句中结束后会漏掉后半段，手动活动边界保留了完整原文。Gemini 翻译预览版可能不发确认事件，等待尾部静音及文本安静后保留结果，并在记录中提示核对末句，不冒充服务端确认。
+
+OpenAI 文件转录提供原生模型预选，默认 `gpt-transcribe`，并保留模型名称与服务地址 override。预选仅包含 `/audio/transcriptions` 支持的文件模型；实时模型由独立的 WebSocket 路径处理。自定义地址必须实现音频转录接口，只有聊天兼容接口的服务不适用；自定义转录地址继续使用分段请求。
 
 按 [2026-10-25 核对的官方文档](https://developers.openai.com/api/docs/guides/speech-to-text)，`gpt-transcribe` 使用 `languages[]` 和逐条 `keywords[]`；旧模型使用 `language`，支持词汇提示时才发送 `prompt`。`gpt-4o-transcribe-diarize` 不发送提示词，使用 `chunking_strategy=auto` 和 JSON 文本结果，本应用不展示其说话人标记。旧模型 `whisper-1`、GPT-4o Transcribe / Mini / Diarize 仍列为兼容选项，界面注明官方计划于 **2027-02-26** 停用。Override 若匹配已知模型，也会采用对应参数；未知名称不发送词汇提示。
 
 翻译与摘要共用一个文本模型选择器，包含按服务划分的预选及独立名称 override。2026-10-25 核对的预选为 [OpenAI](https://developers.openai.com/api/docs/models) 的 GPT-6 Luna / GPT-6.1 Sol / GPT-6 Astra、[Gemini](https://ai.google.dev/gemini-api/docs/models) 的 3.5 Flash-Lite / 3.8 Flash / 4 Argon，以及 [Anthropic](https://platform.claude.com/docs/en/models/overview) 的 Haiku / Sonnet / Opus 5.5。Ollama 和其他自定义端点从「获取模型」列出该服务提供的名称，也可直接 override；不会把 OpenAI 预选套到本机服务。可用性仍取决于服务和账户权限。
+
+新选择在线服务时分别默认 GPT-6.1 Sol、Gemini 3.8 Flash、Claude Sonnet 5.5。官方 OpenAI 使用 Responses，Gemini 使用 Interactions，Anthropic 使用 Messages；本机及其他兼容服务保留 Chat Completions。推理参数按模型能力设置：例如 Sonnet 5.5 使用 `between_tools`，不能用 `disabled`；Gemini 3.8 Flash 使用 `low`，不发送不支持的 `minimal`。Anthropic 使用 Bearer、`anthropic-version: 2026-10-21`，并支持未绑定工作区的个人密钥填写 workspace ID。Responses / Interactions 设置 `store: false`，只解析最终文本，不把推理或截断输出当成完整结果。
+
+协议依据：[OpenAI 实时转录](https://developers.openai.com/api/docs/guides/realtime-transcription)、[实时翻译及收尾](https://developers.openai.com/api/docs/guides/realtime-translation)、[Realtime 时限](https://developers.openai.com/api/docs/guides/realtime-conversations)、[Gemini 专用转录](https://ai.google.dev/gemini-api/docs/transcribe)、[实时转录](https://ai.google.dev/gemini-api/docs/live-api/live-transcribe)、[实时翻译](https://ai.google.dev/gemini-api/docs/live-api/live-translate)、[会话管理](https://ai.google.dev/gemini-api/docs/live-api/session-management)、[Interactions](https://ai.google.dev/gemini-api/docs/interactions-overview)、[Anthropic 认证](https://platform.claude.com/docs/en/manage-claude/authentication)、[按模型配置 thinking](https://platform.claude.com/docs/en/build-with-claude/thinking)。
 
 快捷键：导入 ⌘O；开始 ⇧⌘R；暂停/继续 ⇧⌘P；停止保存 ⇧⌘S；悬浮字幕 ⇧⌘C；实时 / 文件转写 ⌘1 / ⌘2；文字放大 / 缩小 / 默认大小 ⌘+ / ⌘− / ⌘0；转写选项 ⌃⌘I；删除所选记录 ⌫。
 
@@ -94,6 +102,8 @@ macOS 记录格式版本 2 保存可随界面语言切换的应用错误及摘�
 实时音频不落盘，不启动监听端口。使用本地语音引擎和本机文本服务时，不向在线推理服务发送内容。下载模型与显式选择在线 API 需要网络。在线 API 只允许 HTTPS；明文 HTTP 限定 `localhost`、`127.0.0.1` 和 `::1`。携带密钥的请求不跟随重定向；错误中不显示服务响应正文。
 
 ## 验证
+
+OpenAI、Gemini、Anthropic 的真实云端验证、协议依据、十分钟边界及服务可用性限制见 [云服务验证记录](CLOUD_VALIDATION.md)。真实云端测试默认跳过，必须显式提供本地凭据与公开音频才运行。
 
 FluidAudio / Apple 只新增一项真实引擎组合测试，覆盖 8 秒采集分块与停止尾段、取消、文件队列和持久保存；旧设置兼容与 i18n 复用已有测试。只读取公开英语文件，不播放到扬声器，也不采集麦克风：
 
