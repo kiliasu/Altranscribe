@@ -41,10 +41,6 @@ final class URLSessionSpeechSocket: CloudSpeechSocket, @unchecked Sendable {
 struct CloudSpeechTuning: Sendable {
     /// Paced trailing silence that releases Gemini's buffered final words before a stream ends.
     var trailingSilenceFrames = 30
-    /// How long a Gemini transcription drain keeps listening for text that may still answer recent speech.
-    var settle: Duration = .seconds(3)
-    /// How long a final activity with voice energy but no text may stay unanswered before it counts as noise.
-    var noiseSettle: Duration = .seconds(5)
     /// How long a direct translation drain waits after the last text before keeping the result.
     var directSettle: Duration = .seconds(2)
     /// Quiet time after which a direct translation line is finished and the next sentence starts a new one.
@@ -424,15 +420,19 @@ public actor CloudSpeechSession {
                     }
                     return state.generationComplete
                 }
-            } else if !state.awaitingOutput {
-                if !state.mayOweText || max(ended, state.lastText).duration(to: .now) >= tuning.settle { return true }
-            } else if !state.turnHasText && max(ended, state.lastEvent).duration(to: .now) >= tuning.noiseSettle {
-                // The service answers only activities in which it heard speech; one that stays silent after
-                // the final activity ended was noise. Text already arriving means its completion is still due.
+            } else if !state.awaitingOutput && !state.mayOweText {
                 return true
             }
             guard ContinuousClock.now < deadline else {
-                throw AppError("Cloud speech ended before all audio was confirmed. The received text was retained.")
+                let incomplete = AppError("Cloud speech ended before all audio was confirmed. The received text was retained.")
+                if settings.speechProvider == .gemini && !settings.usesDirectSpeechTranslation &&
+                    !state.turnHasText && connection.delivering == 0 {
+                    // No reply can mean noise or delayed speech. Keep listening for the entire drain
+                    // budget, then retain the received text without claiming the service confirmed it.
+                    warning = incomplete
+                    return false
+                }
+                throw incomplete
             }
             try await Task.sleep(for: .milliseconds(100))
         }

@@ -72,15 +72,15 @@ struct CloudSpeechState {
     var expiringIn: Double?
     var first: Double?, end = 0.0, windowStart = 0.0, windowDuration = 0.0, quiet = 0.0
     var hasVoice = false, windowHasVoice = false, awaitingOutput = false, turnHasText = false
-    var unansweredRuns = 0, lastVoice = 0.0, pending = 0, sequence = 0
-    var lastText = ContinuousClock.now, lastAudio = ContinuousClock.now, lastEvent = ContinuousClock.now
+    var unansweredActivities = 0, pending = 0, sequence = 0
+    var lastText = ContinuousClock.now, lastAudio = ContinuousClock.now
     var commits: [(Double, Double)] = []
     var ranges: [String: (Double, Double)] = [:]
     var lines: [String: TranscriptSegment] = [:]
     var completed: Set<String> = [], eventIDs: Set<String> = []
 
     var quietBoundary: Bool { quiet >= Self.quietBoundarySeconds || !hasVoice || lastAudio.duration(to: .now) >= .milliseconds(600) }
-    var mayOweText: Bool { provider == .gemini && !direct && unansweredRuns > 0 && end - lastVoice < 10 }
+    var mayOweText: Bool { provider == .gemini && !direct && unansweredActivities > 0 }
     var windowShouldCommit: Bool { windowDuration >= Self.maxWindowSeconds || (windowHasVoice && quiet >= Self.quietBoundarySeconds) }
     var activityShouldEnd: Bool { windowHasVoice && (quiet >= Self.quietBoundarySeconds || windowDuration >= Self.maxActivitySeconds) }
     /// Direct translation has no turn events, so lines are cut where both streams paused after a sentence.
@@ -91,8 +91,8 @@ struct CloudSpeechState {
         end = chunk.start + chunk.duration; lastAudio = .now
         let voice = !chunk.samples.isEmpty && sqrt(chunk.samples.reduce(Float.zero) { $0 + $1 * $1 } / Float(chunk.samples.count)) >= 0.002
         if voice {
-            if !hasVoice || quiet >= 0.3 { unansweredRuns += 1 }
-            hasVoice = true; windowHasVoice = true; awaitingOutput = true; lastVoice = end
+            if !windowHasVoice { unansweredActivities += 1 }
+            hasVoice = true; windowHasVoice = true; awaitingOutput = true
         }
         quiet = voice ? 0 : quiet + chunk.duration
         windowDuration += chunk.duration
@@ -104,8 +104,7 @@ struct CloudSpeechState {
         if pending > 8 { failure = AppError("Cloud transcription could not keep up. The received text was retained.") }
     }
 
-    /// Gemini answers an activity only when it heard speech in it; a noise-only activity gets no event
-    /// at all, so activities are not counted. awaitingOutput and turnHasText carry what a stop needs.
+    /// Silent activities need no response. Voice energy may be speech or noise; only a response can confirm it.
     mutating func endActivity() {
         windowHasVoice = false; windowDuration = 0
     }
@@ -126,7 +125,6 @@ struct CloudSpeechState {
             guard eventIDs.insert(id).inserted else { return [] }
             if eventIDs.count > 4096 { eventIDs = [id] }
         }
-        lastEvent = .now
         if event["type"] as? String == "error" || (event["error"] != nil && !(event["error"] is NSNull)) {
             let code = (event["error"] as? [String: Any])?["code"]
             let rateLimited = ["rate_limit_exceeded", "insufficient_quota", "429"].contains(String(describing: code ?? ""))
@@ -200,8 +198,8 @@ struct CloudSpeechState {
         }
         if content["generationComplete"] as? Bool == true || content["turnComplete"] as? Bool == true {
             awaitingOutput = false; generationComplete = true
-            // A turn's text answers one voice run; a second signal for the same turn does not.
-            if turnHasText { unansweredRuns = max(0, unansweredRuns - 1) }
+            // A turn's text answers one activity; a second signal for the same turn does not.
+            if turnHasText { unansweredActivities = max(0, unansweredActivities - 1) }
             turnHasText = false
         }
         if content["interrupted"] as? Bool == true { failure = AppError("Cloud speech ended before all audio was confirmed. The received text was retained.") }

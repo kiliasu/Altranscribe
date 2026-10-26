@@ -13,6 +13,7 @@ private final class FakeSpeechServer: @unchecked Sendable {
         /// no event at all for them, not even a completion.
         var noiseTurns: Set<Int> = []
         var allNoise = false
+        var responseDelay: Duration = .zero
         /// Connections that receive a GoAway with this timeLeft once their first audio frame arrives.
         var goAwayAfterAudio: [Int: String] = [:]
     }
@@ -47,9 +48,16 @@ private final class FakeSpeechServer: @unchecked Sendable {
             guard !options.silentConnections.contains(socket.index) else { return }
             let turn = socket.nextTurn()
             guard !options.allNoise, !options.noiseTurns.contains(turn) else { return }
-            socket.push(["serverContent": ["interimInputTranscription": ["text": "turn \(turn)"]]])
-            socket.push(["serverContent": ["inputTranscription": ["text": "turn \(turn) on \(socket.index)"]]])
-            socket.push(["serverContent": ["generationComplete": true]])
+            let respond = {
+                socket.push(["serverContent": ["interimInputTranscription": ["text": "turn \(turn)"]]])
+                socket.push(["serverContent": ["inputTranscription": ["text": "turn \(turn) on \(socket.index)"]]])
+                socket.push(["serverContent": ["generationComplete": true]])
+            }
+            if options.responseDelay == .zero { respond() }
+            else {
+                let delay = options.responseDelay
+                Task { try await Task.sleep(for: delay); respond() }
+            }
         }
     }
 }
@@ -129,7 +137,7 @@ final class CloudSessionTests: XCTestCase {
                          renewAfter: Duration = .seconds(600), renewBy: Duration = .seconds(630),
                          drainTimeout: Duration = .seconds(5)) -> CloudSpeechSession {
         var tuning = CloudSpeechTuning()
-        tuning.trailingSilenceFrames = 1; tuning.settle = .milliseconds(200); tuning.noiseSettle = .milliseconds(200)
+        tuning.trailingSilenceFrames = 1
         tuning.directSettle = .milliseconds(200); tuning.directSegmentGap = .milliseconds(50)
         return CloudSpeechSession(settings: gemini(), key: "test-key", renewAfter: renewAfter, renewBy: renewBy,
                                   drainTimeout: drainTimeout, tuning: tuning, session: nil, makeSocket: server.factory,
@@ -153,13 +161,16 @@ final class CloudSessionTests: XCTestCase {
         }
     }
 
-    func testNoiseOnlyActivitiesAreNotCountedAgainstTheStop() {
+    func testCompletionCannotConfirmAnUnansweredActivity() {
         var state = CloudSpeechState(provider: .gemini, direct: false)
         let voice = AudioChunk(samples: Array(repeating: 0.1, count: 1600), start: 0)
         state.accept(voice); state.endActivity() // Noise: the service never answers this activity.
         XCTAssertEqual(state.pending, 0)
         XCTAssertTrue(state.awaitingOutput); XCTAssertFalse(state.turnHasText)
-        state.accept(voice); state.endActivity() // Speech.
+        state.accept(voice) // A short pause inside one activity must not count as another activity.
+        state.accept(AudioChunk(samples: Array(repeating: 0, count: 6400), start: 0.1))
+        state.accept(voice); state.endActivity()
+        XCTAssertEqual(state.unansweredActivities, 2)
         _ = state.receive(["serverContent": ["interimInputTranscription": ["text": "hel"]]])
         XCTAssertTrue(state.turnHasText)
         _ = state.receive(["serverContent": ["inputTranscription": ["text": "hello"]]])
@@ -167,11 +178,22 @@ final class CloudSessionTests: XCTestCase {
         _ = state.receive(["serverContent": ["turnComplete": true]]) // The same turn's second signal.
         XCTAssertFalse(state.awaitingOutput); XCTAssertFalse(state.turnHasText)
         XCTAssertEqual(state.pending, 0)
+        XCTAssertTrue(state.mayOweText, "The speech completion cannot confirm the unanswered activity")
     }
 
-    func testNoiseOnlyTurnsStillLetTheStopConfirm() async throws {
+    func testDelayedFinalSpeechIsNotMistakenForNoise() async throws {
+        let server = FakeSpeechServer(.init(responseDelay: .milliseconds(700))), capture = Capture()
+        let speech = session(server, capture: capture, drainTimeout: .seconds(2))
+        try await speech.start()
+        try await feed(speech, seconds: 1, voice: true, from: 0)
+        let confirmed = try await speech.finish()
+        XCTAssertTrue(confirmed)
+        XCTAssertEqual(capture.text, "turn 1 on 1", "A delayed final result must arrive before Stop reports success")
+    }
+
+    func testUnansweredActivitiesStopWithAnUnconfirmedWarning() async throws {
         let server = FakeSpeechServer(.init(allNoise: true)), capture = Capture()
-        let speech = session(server, capture: capture, drainTimeout: .seconds(3))
+        let speech = session(server, capture: capture, drainTimeout: .milliseconds(400))
         try await speech.start()
         var at = 0.0
         for _ in 0..<3 {
@@ -181,16 +203,18 @@ final class CloudSessionTests: XCTestCase {
         XCTAssertEqual(server.socket(1).count("activityEnd"), 3)
         let began = ContinuousClock.now
         let confirmed = try await speech.finish()
-        XCTAssertTrue(confirmed)
-        XCTAssertLessThan(began.duration(to: .now), .seconds(2), "Stop must not run into the drain timeout after noise-only turns")
+        XCTAssertFalse(confirmed)
+        let warning = await speech.warning
+        XCTAssertNotNil(warning)
+        XCTAssertLessThan(began.duration(to: .now), .seconds(2), "Unanswered activities must still have a bounded stop")
         XCTAssertEqual(capture.failureCount, 0)
     }
 
-    func testSpeechAroundNoiseTurnsConfirmsWithItsOwnCompletion() async throws {
+    func testSpeechAroundUnansweredActivitiesIsRetained() async throws {
         // The first and the last spoken activity are noise the service never answers, as is the
         // silence-only activity the stop closes; only the speech between them is answered.
         let server = FakeSpeechServer(.init(noiseTurns: [1, 3, 4])), capture = Capture()
-        let speech = session(server, capture: capture, drainTimeout: .seconds(3))
+        let speech = session(server, capture: capture, drainTimeout: .milliseconds(400))
         try await speech.start()
         var at = 0.0
         for _ in 0..<3 {
@@ -199,7 +223,7 @@ final class CloudSessionTests: XCTestCase {
         }
         let began = ContinuousClock.now
         let confirmed = try await speech.finish()
-        XCTAssertTrue(confirmed)
+        XCTAssertFalse(confirmed)
         XCTAssertLessThan(began.duration(to: .now), .seconds(2))
         XCTAssertEqual(capture.text, "turn 2 on 1")
         XCTAssertEqual(capture.failureCount, 0)
