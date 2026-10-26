@@ -142,7 +142,7 @@ struct QueuedFile: Identifiable {
         case .fluidAudio: speechModel = configuration.fluidAudioModel.id
         case .appleSpeech: speechModel = "Apple SpeechTranscriber · " + configuration.appleSpeechLocale
         case .gemini: speechModel = configuration.geminiSpeechModel
-        case .compatible: speechModel = configuration.speechModel
+        case .compatible: speechModel = configuration.effectiveSpeechModel
         }
         var record = TranscriptRecord(title: title, source: source, language: configuration.recognitionLanguage, speechModel: speechModel)
         record.sourcePath = file?.path

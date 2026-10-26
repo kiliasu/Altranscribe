@@ -30,7 +30,7 @@ public enum SpeechProvider: String, Codable, CaseIterable, Identifiable, Sendabl
         case .nemotron: L("Nemotron · On Device")
         case .fluidAudio: L("FluidAudio · On Device")
         case .appleSpeech: "Apple SpeechTranscriber"
-        case .compatible: L("OpenAI / OpenAI Compatible")
+        case .compatible: L("OpenAI Transcription")
         case .gemini: "Google Gemini"
         }
     }
@@ -59,7 +59,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var appleSpeechLocaleID: String?
     public var useGPU = true
     public var speechBaseURL = "https://api.openai.com/v1"
-    public var speechModel = "gpt-4o-mini-transcribe"
+    public var speechModel = "gpt-transcribe"
+    public var speechModelOverride: String?
     public var geminiSpeechModel = "gemini-2.5-flash"
     public var textProvider: TextProvider = .compatible
     public var textBaseURL = "http://127.0.0.1:11434/v1"
@@ -86,7 +87,17 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
     public var fluidAudioModel: FluidAudioModel { FluidAudioModel(rawValue: fluidAudioModelID ?? "") ?? .english }
     public var appleSpeechLocale: String { appleSpeechLocaleID ?? "en-US" }
-    public var supportsVocabulary: Bool { speechProvider != .nemotron && speechProvider != .fluidAudio }
+    public var effectiveSpeechModel: String {
+        (speechModelOverride ?? speechModel).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    public var openAITranscriptionModel: OpenAITranscriptionModel? { OpenAITranscriptionModel(rawValue: effectiveSpeechModel) }
+    public var supportsVocabulary: Bool {
+        switch speechProvider {
+        case .nemotron, .fluidAudio: false
+        case .compatible: openAITranscriptionModel?.supportsVocabulary ?? false
+        default: true
+        }
+    }
 
     public var effectiveModelPath: String { modelPath }
 

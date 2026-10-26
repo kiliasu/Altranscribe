@@ -4,6 +4,13 @@
 
 环境：macOS 27.0.1、Xcode 27.0、Swift 6.4、Apple M3 Pro。部署目标 macOS 26.0，交付包为 arm64。
 
+## OpenAI 转录模型预选（2026-10-25）
+
+- 核对 [官方文件转录指南](https://developers.openai.com/api/docs/guides/speech-to-text) 和 [接口参数](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)，并参照 Flutter `cloud_file_engine.dart` 的 `gpt-transcribe` / `languages[]` 用法。文件模型与 Realtime 模型分开，保留分段请求方式。
+- 增加 6 个文件转录预选、独立模型名称 override 与服务地址覆盖入口。保留旧设置的 provider 编码与自定义地址；新设置默认 `gpt-transcribe`。界面按实际模型控制词汇输入，旧模型注明官方停用日期。
+- 扩展原有 **1 项 API 请求回归**，覆盖 6 个官方预选和未知本机模型 override：验证模型名称、语言字段、关键词 / prompt 的发送或省略、diarize 分块参数及结果时间戳；无效模型或词汇在请求发出前拒绝。另复用 1 项本地化检查，均通过。所有 API 响应均为 URLProtocol 替身，没有真实付费推理。
+- 日志：`.build/model-presets-2026-10-25/speech-api-tests.log`。最终界面和分发包将在文本模型预选完成后统一检查。
+
 ## 模型按需下载（2026-10-25）
 
 - 移除 Tiny 内置打包入口及旧包资源残留，运行时不再自动回退到包内模型。本机原有 Tiny 经 SHA-256 校验后保留到应用支持目录的 `Models/ggml-tiny.bin`。

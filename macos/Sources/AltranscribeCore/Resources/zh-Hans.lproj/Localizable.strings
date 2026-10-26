@@ -43,6 +43,8 @@
 "Could not update the API key." = "无法更新 API 密钥。";
 "Creating summary…" = "正在生成摘要…";
 "Current Model" = "当前模型";
+"Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio." = "自定义服务必须支持 audio/transcriptions；仅支持聊天的服务无法转录音频。";
+"Custom Model Name" = "自定义模型名称";
 "Dark" = "深色";
 "Data & Privacy" = "数据与隐私";
 "Delete" = "删除";
@@ -60,6 +62,7 @@
 "Download or select a Whisper model in Settings first." = "请先在设置中下载或选择 Whisper 模型。";
 "Download the selected Nemotron model in Settings first." = "请先在设置中下载所选 Nemotron 模型。";
 "Drop audio or video here, or choose files from your Mac. Files are processed in order." = "拖入音频或视频，或从 Mac 中选择文件。多个文件将依次处理。";
+"Endpoint Override" = "覆盖服务地址";
 "Engine" = "引擎";
 "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline." = "默认采用英语版。字幕随讲话更新，停顿后定稿；停止时会补齐最后一句。识别过程无需联网。";
 "English · Default" = "英语版 · 默认";
@@ -135,7 +138,8 @@
 "Open Transcript" = "打开记录";
 "Open in Finder" = "在访达中打开";
 "OpenAI / Ollama / Compatible" = "OpenAI / Ollama / 兼容服务";
-"OpenAI / OpenAI Compatible" = "OpenAI / OpenAI 兼容服务";
+"OpenAI Transcription" = "OpenAI 音频转录";
+"Override Model Name" = "覆盖模型名称（Override）";
 "Pause" = "暂停";
 "Pause / Resume" = "暂停 / 继续";
 "Paused" = "已暂停";
@@ -199,7 +203,6 @@
 "The API did not return a complete text result." = "API 未返回完整的文本结果。";
 "The API returned an invalid response." = "API 返回了无法识别的响应。";
 "The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation." = "英语版只识别英语；中文等语言请选择 3.5 多语言版。四个文件全部通过 SHA-256 校验后才安装。";
-"The base URL usually ends in /v1. The service must support audio/transcriptions." = "地址通常以 /v1 结尾，服务需支持 audio/transcriptions。";
 "The local model is not loaded." = "本地模型尚未加载。";
 "The model output was truncated. Use a larger output limit or shorter input." = "文本模型输出被截断，请使用更大的输出限制或更短的内容。";
 "The original media file will be kept." = "原始媒体文件会保留。";
@@ -207,6 +210,9 @@
 "The selected model is not downloaded yet." = "所选模型尚未下载。";
 "This deletes the transcript from this recording." = "此操作会删除本次转写文本。";
 "This file has no readable audio track." = "文件中没有可读取的音轨。";
+"This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe." = "此旧版 OpenAI 模型计划于 2027 年 2 月 26 日停用。新任务建议选择 gpt-transcribe。";
+"This model does not accept vocabulary hints. This app uses its text output without speaker labels." = "此模型不支持词汇提示。本应用使用其文本结果，不显示说话人标签。";
+"This model requires Realtime transcription. Choose a file transcription model instead." = "此模型需要 Realtime 转录连接，请选择文件转录模型。";
 "This timestamp is estimated" = "此时间为片段估计时间";
 "Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster." = "模型单独下载并通过 SHA-256 校验。Large v3 为完整版，Turbo 体积更小、速度更快。";
 "Title" = "标题";
@@ -230,9 +236,11 @@
 "Translation or summary is enabled. Configure a text model in Settings first." = "已开启翻译或摘要，请先在设置中填写文本模型。";
 "Turn sound into words" = "让声音成为文字";
 "Unreadable record files: %@. The files were retained." = "有 %@ 个记录文件无法读取，原文件已保留。";
+"Use OpenAI Endpoint" = "使用 OpenAI 地址";
 "Use" = "使用";
 "Use Metal GPU Acceleration" = "使用 Metal GPU 加速";
 "View" = "查看";
+"Vocabulary hints for this model cannot contain < or >." = "此模型的词汇提示不能包含 < 或 >。";
 "Vocabulary" = "词汇提示";
 "Waiting" = "等待处理";
 "Web page (HTML)" = "网页 (HTML)";

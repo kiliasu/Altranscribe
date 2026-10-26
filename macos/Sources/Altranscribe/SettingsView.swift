@@ -244,9 +244,22 @@ struct SettingsView: View {
             } else {
                 Section(L("Service")) {
                     if model.settings.speechProvider == .compatible {
-                        TextField(L("API Base URL"), text: $model.settings.speechBaseURL)
-                        TextField(L("Model"), text: $model.settings.speechModel)
-                        Text(L("The base URL usually ends in /v1. The service must support audio/transcriptions.")).font(.caption).foregroundStyle(.secondary)
+                        ModelNamePicker(presets: OpenAITranscriptionModel.allCases.map(\.rawValue),
+                                        selection: $model.settings.speechModel, overrideName: $model.settings.speechModelOverride)
+                        if model.settings.openAITranscriptionModel?.isDeprecated == true {
+                            Text(L("This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if model.settings.openAITranscriptionModel == .diarize {
+                            Text(L("This model does not accept vocabulary hints. This app uses its text output without speaker labels."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        DisclosureGroup(L("Endpoint Override")) {
+                            TextField(L("API Base URL"), text: $model.settings.speechBaseURL)
+                            Button(L("Use OpenAI Endpoint")) { model.settings.speechBaseURL = "https://api.openai.com/v1" }
+                            Text(L("Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     } else {
                         TextField(L("Model"), text: $model.settings.geminiSpeechModel)
                     }
@@ -359,6 +372,27 @@ struct SettingsView: View {
                 models = fetched
                 connectionStatus = LocalizedText("Models found: %@", String(models.count))
             } catch { model.error = LocalizedText(error: error) }
+        }
+    }
+}
+
+private struct ModelNamePicker: View {
+    let presets: [String]
+    @Binding var selection: String
+    @Binding var overrideName: String?
+
+    var body: some View {
+        Picker(L("Model"), selection: $selection) {
+            if !presets.contains(selection) {
+                Text(selection.isEmpty ? L("Select Model") : selection).tag(selection)
+            }
+            ForEach(presets, id: \.self) { Text($0).tag($0) }
+        }.disabled(overrideName != nil)
+        Toggle(L("Override Model Name"), isOn: Binding(get: { overrideName != nil }, set: {
+            overrideName = $0 ? selection : nil
+        }))
+        if overrideName != nil {
+            TextField(L("Custom Model Name"), text: Binding(get: { overrideName ?? "" }, set: { overrideName = $0 }))
         }
     }
 }

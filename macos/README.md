@@ -32,7 +32,7 @@ Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large 
 | 系统声音 | ScreenCaptureKit；只读取音频，不保存画面，排除本应用的声音 |
 | 实时转写 | Nemotron 持续流式更新，保留上下文，停顿后定稿；其他引擎约 8 秒分段；暂停、继续、停止并保存、丢弃 |
 | 文件队列 | 原生文件选择与拖放，依次处理，20 秒分块增量解码，停止时保留部分记录 |
-| 语音 API | OpenAI / OpenAI-compatible `audio/transcriptions`、Gemini `generateContent` 音频输入 |
+| 语音 API | OpenAI 音频转录预选及模型 / 地址 override、Gemini `generateContent` 音频输入 |
 | 翻译和摘要 | 本机 Ollama 的 OpenAI 兼容接口、在线兼容服务、OpenAI、Gemini、Anthropic |
 | 双语悬浮字幕 | 可移动、可调整大小的原生 NSPanel，字号和只显示翻译选项 |
 | 记录 | 侧栏按日期分组，搜索原文/翻译/摘要；复制、导出、原位重命名、删除、在访达中显示源文件 |
@@ -65,7 +65,11 @@ Apple SpeechTranscriber 默认英语（美国），在语音设置里从系统�
 
 其他可适配 macOS 的转写模型及接入取舍见 [模型备选调研](MODEL_OPTIONS.md)。
 
-语音 API 使用分段请求，不接入原项目的云端实时 WebSocket、直接翻译或语音回复。API 转写时间戳标为约值。API 名称可编辑，实际可用性取决于账户权限。付费推理失败不自动重试。
+语音 API 使用分段请求，不接入原项目的云端实时 WebSocket、直接翻译或语音回复。API 转写时间戳标为约值。付费推理失败不自动重试。
+
+OpenAI 音频转录提供原生模型预选，默认 `gpt-transcribe`，并保留模型名称与服务地址 override。预选仅包含 `/audio/transcriptions` 支持的文件模型；`gpt-live-transcribe`、`gpt-realtime-whisper` 需要 Realtime 协议，不能通过更换模型名称来使用。自定义地址必须实现音频转录接口，只有聊天兼容接口的服务不适用。
+
+按 [2026-10-25 核对的官方文档](https://developers.openai.com/api/docs/guides/speech-to-text)，`gpt-transcribe` 使用 `languages[]` 和逐条 `keywords[]`；旧模型使用 `language`，支持词汇提示时才发送 `prompt`。`gpt-4o-transcribe-diarize` 不发送提示词，使用 `chunking_strategy=auto` 和 JSON 文本结果，本应用不展示其说话人标记。旧模型 `whisper-1`、GPT-4o Transcribe / Mini / Diarize 仍列为兼容选项，界面注明官方计划于 **2027-02-26** 停用。Override 若匹配已知模型，也会采用对应参数；未知名称不发送词汇提示。
 
 快捷键：导入 ⌘O；开始 ⇧⌘R；暂停/继续 ⇧⌘P；停止保存 ⇧⌘S；悬浮字幕 ⇧⌘C；实时 / 文件转写 ⌘1 / ⌘2；文字放大 / 缩小 / 默认大小 ⌘+ / ⌘− / ⌘0；转写选项 ⌃⌘I；删除所选记录 ⌫。
 

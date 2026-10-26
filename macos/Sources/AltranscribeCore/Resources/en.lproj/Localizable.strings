@@ -43,6 +43,8 @@
 "Could not update the API key." = "Could not update the API key.";
 "Creating summary…" = "Creating summary…";
 "Current Model" = "Current Model";
+"Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio." = "Custom endpoints must implement audio/transcriptions; chat-only services cannot transcribe audio.";
+"Custom Model Name" = "Custom Model Name";
 "Dark" = "Dark";
 "Data & Privacy" = "Data & Privacy";
 "Delete" = "Delete";
@@ -60,6 +62,7 @@
 "Download or select a Whisper model in Settings first." = "Download or select a Whisper model in Settings first.";
 "Download the selected Nemotron model in Settings first." = "Download the selected Nemotron model in Settings first.";
 "Drop audio or video here, or choose files from your Mac. Files are processed in order." = "Drop audio or video here, or choose files from your Mac. Files are processed in order.";
+"Endpoint Override" = "Endpoint Override";
 "Engine" = "Engine";
 "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline." = "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline.";
 "English · Default" = "English · Default";
@@ -135,7 +138,8 @@
 "Open Transcript" = "Open Transcript";
 "Open in Finder" = "Open in Finder";
 "OpenAI / Ollama / Compatible" = "OpenAI / Ollama / Compatible";
-"OpenAI / OpenAI Compatible" = "OpenAI / OpenAI Compatible";
+"OpenAI Transcription" = "OpenAI Transcription";
+"Override Model Name" = "Override Model Name";
 "Pause" = "Pause";
 "Pause / Resume" = "Pause / Resume";
 "Paused" = "Paused";
@@ -199,7 +203,6 @@
 "The API did not return a complete text result." = "The API did not return a complete text result.";
 "The API returned an invalid response." = "The API returned an invalid response.";
 "The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation." = "The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation.";
-"The base URL usually ends in /v1. The service must support audio/transcriptions." = "The base URL usually ends in /v1. The service must support audio/transcriptions.";
 "The local model is not loaded." = "The local model is not loaded.";
 "The model output was truncated. Use a larger output limit or shorter input." = "The model output was truncated. Use a larger output limit or shorter input.";
 "The original media file will be kept." = "The original media file will be kept.";
@@ -207,6 +210,9 @@
 "The selected model is not downloaded yet." = "The selected model is not downloaded yet.";
 "This deletes the transcript from this recording." = "This deletes the transcript from this recording.";
 "This file has no readable audio track." = "This file has no readable audio track.";
+"This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe." = "This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe.";
+"This model does not accept vocabulary hints. This app uses its text output without speaker labels." = "This model does not accept vocabulary hints. This app uses its text output without speaker labels.";
+"This model requires Realtime transcription. Choose a file transcription model instead." = "This model requires Realtime transcription. Choose a file transcription model instead.";
 "This timestamp is estimated" = "This timestamp is estimated";
 "Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster." = "Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster.";
 "Title" = "Title";
@@ -230,9 +236,11 @@
 "Translation or summary is enabled. Configure a text model in Settings first." = "Translation or summary is enabled. Configure a text model in Settings first.";
 "Turn sound into words" = "Turn sound into words";
 "Unreadable record files: %@. The files were retained." = "Unreadable record files: %@. The files were retained.";
+"Use OpenAI Endpoint" = "Use OpenAI Endpoint";
 "Use" = "Use";
 "Use Metal GPU Acceleration" = "Use Metal GPU Acceleration";
 "View" = "View";
+"Vocabulary hints for this model cannot contain < or >." = "Vocabulary hints for this model cannot contain < or >.";
 "Vocabulary" = "Vocabulary";
 "Waiting" = "Waiting";
 "Web page (HTML)" = "Web page (HTML)";

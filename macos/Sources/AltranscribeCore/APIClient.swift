@@ -100,15 +100,33 @@ public final class APIClient: Sendable {
                                                 auth: "google", body: JSONSerialization.data(withJSONObject: body)))
             text = try Self.geminiText(result)
         } else {
+            let model = settings.effectiveSpeechModel
+            guard !model.isEmpty else { throw AppError("Invalid model name.") }
+            guard !["gpt-live-transcribe", "gpt-realtime-whisper"].contains(model) else {
+                throw AppError("This model requires Realtime transcription. Choose a file transcription model instead.")
+            }
             let boundary = "Altranscribe-\(UUID())"
             var body = Data()
             func field(_ name: String, _ value: String) {
                 body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
             }
-            field("model", settings.speechModel)
+            field("model", model)
             field("response_format", "json")
-            if settings.sourceLanguage != "auto" { field("language", settings.sourceLanguage) }
-            if !settings.vocabulary.isEmpty { field("prompt", settings.vocabulary) }
+            if settings.sourceLanguage != "auto" {
+                field(settings.openAITranscriptionModel == .transcribe ? "languages[]" : "language", settings.sourceLanguage)
+            }
+            if settings.supportsVocabulary && !settings.vocabulary.isEmpty {
+                if settings.openAITranscriptionModel == .transcribe {
+                    for term in settings.vocabulary.components(separatedBy: CharacterSet(charactersIn: ",，\r\n")) {
+                        let keyword = term.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !keyword.contains("<"), !keyword.contains(">") else {
+                            throw AppError("Vocabulary hints for this model cannot contain < or >.")
+                        }
+                        if !keyword.isEmpty { field("keywords[]", keyword) }
+                    }
+                } else { field("prompt", settings.vocabulary) }
+            }
+            if settings.openAITranscriptionModel == .diarize { field("chunking_strategy", "auto") }
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
             body.append(wave)
             body.append(Data("\r\n--\(boundary)--\r\n".utf8))

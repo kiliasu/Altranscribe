@@ -96,6 +96,18 @@ private final class StubProtocol: URLProtocol, @unchecked Sendable {
 }
 
 final class APITests: XCTestCase, @unchecked Sendable {
+    private func requestBody(_ request: URLRequest) throws -> Data {
+        if let body = request.httpBody { return body }
+        let stream = try XCTUnwrap(request.httpBodyStream)
+        stream.open(); defer { stream.close() }
+        var body = Data(), buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count <= 0 { break }
+            body.append(contentsOf: buffer.prefix(count))
+        }
+        return body
+    }
     private func client() -> APIClient {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
@@ -111,18 +123,46 @@ final class APITests: XCTestCase, @unchecked Sendable {
         XCTAssertNil(google.value(forHTTPHeaderField: "Authorization"))
     }
     func testOpenAITranscriptionRequestAndEstimatedTimes() async throws {
-        StubProtocol.handler = { request in
-            XCTAssertEqual(request.url?.path, "/v1/audio/transcriptions")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
-            XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true)
-            return (200, Data(#"{"text":"Hello world."}"#.utf8))
+        let names = OpenAITranscriptionModel.allCases.map(\.rawValue) + ["local-whisper"]
+        for name in names {
+            var settings = AppSettings(); settings.speechProvider = .compatible
+            settings.speechModelOverride = " \(name) "
+            settings.sourceLanguage = "en"; settings.vocabulary = "Codex，Altranscribe\nSwift"
+            StubProtocol.handler = { request in
+                XCTAssertEqual(request.url?.path, "/v1/audio/transcriptions")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true)
+                let body = String(decoding: try self.requestBody(request), as: UTF8.self)
+                XCTAssertTrue(body.contains("name=\"model\"\r\n\r\n\(name)\r\n"))
+                XCTAssertTrue(body.contains("name=\"response_format\"\r\n\r\njson\r\n"))
+                XCTAssertEqual(body.contains("name=\"languages[]\""), name == "gpt-transcribe")
+                XCTAssertEqual(body.contains("name=\"language\""), name != "gpt-transcribe")
+                XCTAssertEqual(body.contains("name=\"keywords[]\""), name == "gpt-transcribe")
+                let hasPrompt = name != "gpt-transcribe" && name != "gpt-4o-transcribe-diarize" && name != "local-whisper"
+                XCTAssertEqual(body.contains("name=\"prompt\""), hasPrompt)
+                XCTAssertEqual(body.contains("name=\"chunking_strategy\"\r\n\r\nauto\r\n"), name == "gpt-4o-transcribe-diarize")
+                if name == "gpt-transcribe" {
+                    for keyword in ["Codex", "Altranscribe", "Swift"] {
+                        XCTAssertTrue(body.contains("name=\"keywords[]\"\r\n\r\n\(keyword)\r\n"))
+                    }
+                }
+                return (200, Data(#"{"text":"Hello world."}"#.utf8))
+            }
+            let output = try await client().transcribe(AudioChunk(samples: [Float](repeating: 0, count: 16_000), start: 8), settings: settings, key: "test-key")
+            XCTAssertEqual(output.first?.text, "Hello world.")
+            XCTAssertEqual(output.first?.start, 8)
+            XCTAssertEqual(output.first?.end, 9)
+            XCTAssertEqual(output.first?.estimated, true)
         }
-        var settings = AppSettings(); settings.speechProvider = .compatible
-        let output = try await client().transcribe(AudioChunk(samples: [Float](repeating: 0, count: 16_000), start: 8), settings: settings, key: "test-key")
-        XCTAssertEqual(output.first?.text, "Hello world.")
-        XCTAssertEqual(output.first?.start, 8)
-        XCTAssertEqual(output.first?.end, 9)
-        XCTAssertEqual(output.first?.estimated, true)
+        StubProtocol.handler = { _ in XCTFail("Invalid settings must not send a paid request"); return (200, Data()) }
+        for name in ["", "gpt-live-transcribe", "gpt-realtime-whisper", "gpt-transcribe"] {
+            var settings = AppSettings(); settings.speechProvider = .compatible
+            settings.speechModelOverride = name; settings.vocabulary = "<invalid>"
+            do {
+                _ = try await client().transcribe(AudioChunk(samples: [0], start: 0), settings: settings, key: "test-key")
+                XCTFail("Expected unsupported model or invalid vocabulary")
+            } catch { XCTAssertTrue(error is AppError) }
+        }
     }
     func testGeminiRejectsTruncatedResultsAndExcludesThoughts() async throws {
         var settings = AppSettings(); settings.textProvider = .gemini; settings.textModel = "gemini-2.5-flash"
