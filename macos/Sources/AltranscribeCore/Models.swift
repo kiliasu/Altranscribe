@@ -209,7 +209,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     private func isLoopback(_ url: String) -> Bool { (try? APIEndpoint(url).isLoopback) == true }
 
     var textModelKey: String {
-        textProvider == .compatible ? "compatible:" + (URL(string: textBaseURL)?.host?.lowercased() ?? "") : textProvider.rawValue
+        textProvider == .compatible ? "compatible:" + ((try? APIEndpoint(textBaseURL).base.absoluteString) ?? textBaseURL) : textProvider.rawValue
     }
     /// Change the text service or its address, keeping the model chosen for the service being left and
     /// restoring the one chosen earlier for the service being entered, or its first preset.

@@ -101,6 +101,15 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(settings.textModel, "", "A local service has no presets until its list is fetched")
         XCTAssertEqual(settings.textServiceTitle, L("Local Service") + " · 127.0.0.1")
 
+        settings.textModel = "ollama-model"
+        settings.switchTextService(baseURL: "http://127.0.0.1:1234/v1")
+        XCTAssertEqual(settings.textModel, "", "Different ports are different services")
+        settings.textModel = "studio-model"
+        settings.switchTextService(baseURL: "http://127.0.0.1:11434/v1/")
+        XCTAssertEqual(settings.textModel, "ollama-model", "Normalize a trailing slash without mixing ports")
+        settings.switchTextService(baseURL: "http://127.0.0.1:11434/another-api")
+        XCTAssertEqual(settings.textModel, "", "Different API paths must not inherit one another's model")
+
         settings.translate = true
         XCTAssertTrue(settings.textModelMissing(live: true)); XCTAssertTrue(settings.textModelMissing(live: false))
         settings.speechProvider = .gemini
