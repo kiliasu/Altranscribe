@@ -390,7 +390,7 @@ struct SettingsView: View {
                         if let connectionStatus {
                             Text(connectionStatus.text).font(.caption).foregroundStyle(.secondary).transition(.opacity)
                         }
-                        if loadingModels { ProgressView().controlSize(.small).transition(.pop) }
+                        if loadingModels { ProgressView().controlSize(.small).transition(.opacity) }
                         Button(L("Fetch Models")) { fetchModels() }.disabled(loadingModels)
                     }
                     .animation(Motion.quick, value: loadingModels)

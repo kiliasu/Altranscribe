@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import OSLog
 @testable import Altranscribe
 import AltranscribeCore
 
@@ -83,6 +84,55 @@ import AltranscribeCore
             }
             XCTAssertTrue(window.isVisible, "files at \(size)")
         }
+    }
+
+    /// Changing pages animates. A transition that scales a page also resizes every AppKit control on it (text
+    /// fields, segmented pickers, switches, progress indicators) on each frame, and SwiftUI reports those sizes as
+    /// invalid. In the app's own window that resizing, with the inspector moving beside it, kept the layout from
+    /// settling until AppKit stopped the app. The loop itself needs the app's scene window, so this checks for its
+    /// cause: no control may be resized while the window moves between pages.
+    func testChangingPagesNeverResizesAppKitControls() throws {
+        let start = Date()
+        let previous = UserDefaults.standard.object(forKey: "showInspector")
+        UserDefaults.standard.set(true, forKey: "showInspector")
+        defer { UserDefaults.standard.set(previous, forKey: "showInspector") }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = AppModel(paths: AppPaths(root: root))
+        // The configuration of the crash. The default local text service also makes the Text page load its model
+        // list, which shows a progress indicator.
+        model.settings.speechProvider = .compatible
+        model.settings.speechBaseURL = "https://api.openai.com/v1"
+        model.settings.translate = true
+        model.settings.cloudDirectTranslation = false
+        let window = NSWindow(contentViewController: NSHostingController(rootView: ContentView(model: model)))
+        window.styleMask.insert(.fullSizeContentView)
+        window.setContentSize(NSSize(width: 1316, height: 855))
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        settle(0.5)
+        for (destination, page) in [(Destination.settings, SettingsPage.speech), (.live, nil), (.settings, .text),
+                                    (.files, nil), (.settings, .general), (.live, nil)] {
+            if let page { model.settingsPage = page }
+            model.destination = destination
+            settle(0.6)
+        }
+        // The Files page hands its drop zone over to the queue and back.
+        model.addFiles([root.appendingPathComponent("lecture.m4a")])
+        settle(0.6)
+        model.queue.map(\.id).forEach(model.removeQueued)
+        settle(0.6)
+        let faults = try invalidSizeReports(since: start)
+        XCTAssertTrue(faults.isEmpty, "SwiftUI reported \(faults.count) invalid control sizes while changing pages, such as: \(faults.prefix(2))")
+    }
+
+    /// SwiftUI's reports, in this process's log, of AppKit controls given a size outside their own limits.
+    private func invalidSizeReports(since start: Date) throws -> [String] {
+        let store = try OSLogStore(scope: .currentProcessIdentifier)
+        let filter = NSPredicate(format: "subsystem == %@ AND category == %@", "com.apple.SwiftUI", "Invalid Configuration")
+        return try store.getEntries(at: store.position(date: start), matching: filter)
+            .compactMap { ($0 as? OSLogEntryLog)?.composedMessage }
+            .filter { $0.contains("doesn't satisfy") }
     }
 
     private func settle(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }

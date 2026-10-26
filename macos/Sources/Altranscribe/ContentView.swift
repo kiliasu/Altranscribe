@@ -153,7 +153,7 @@ private struct FilesRow: View {
                         .progressViewStyle(.circular)
                         .controlSize(.mini)
                         .animation(Motion.content, value: current.progress)
-                        .transition(.pop)
+                        .transition(.opacity)
                 }
             }
         } icon: {

@@ -5,9 +5,13 @@ import SwiftUI
 /// - New content entering the flow (a line, a translation, a card, a row) rises into place and fades in;
 ///   when it leaves it fades as it lifts away, so time always reads from bottom to top.
 /// - Something changing state in place (a label, a count, a symbol) cross-fades, rolls or replaces its symbol.
-/// - A whole view giving way to another (a welcome page and its transcript) blurs across.
-/// - Small marks and accessories (a timer, a dot, a chip) pop in and out.
+/// - A whole view giving way to another (a welcome page and its transcript) blurs across at its own size.
+/// - Small marks and accessories that SwiftUI draws (a timer, a dot, a chip) pop in and out.
 /// - Finished work draws its checkmark; failed work shakes its mark once.
+///
+/// Nothing that holds a control AppKit draws (a text field, a segmented picker, a switch, a progress indicator)
+/// ever scales. A scale resizes those controls on every frame, SwiftUI rejects the fractional sizes, and in the
+/// main window that resizing kept the layout from settling until AppKit stopped the app. They cross-fade instead.
 ///
 /// With Reduce Motion the movement, scaling and blur fall away and every transition becomes a cross-fade.
 enum Motion {
@@ -53,7 +57,7 @@ private struct MotionPhase: ViewModifier {
         content
             .opacity(phase.isIdentity ? 1 : 0)
             .offset(y: moving && style == .rise ? (phase == .willAppear ? 10 : -6) : 0)
-            .scaleEffect(moving ? (style == .pop ? 0.82 : style == .page ? 0.985 : 1) : 1)
+            .scaleEffect(moving && style == .pop ? 0.82 : 1)
             .blur(radius: moving && style == .page ? 6 : 0)
     }
 }
