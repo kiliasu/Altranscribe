@@ -87,6 +87,7 @@ struct MicrophoneDevice: Identifiable, Equatable {
 struct MicrophonePicker: View {
     @Binding var selection: String?
     @State private var microphones = MicrophoneList()
+    @Environment(\.isEnabled) private var isEnabled
 
     private var defaultTitle: String {
         if let device = microphones.devices.first(where: { $0.audioID == microphones.defaultID }) {
@@ -101,11 +102,12 @@ struct MicrophonePicker: View {
     var body: some View {
         MicrophonePopup(selection: $selection, devices: microphones.devices, defaultTitle: defaultTitle,
                         help: L("Microphone: %@", title))
-            .frame(width: 180)
+            .frame(width: 180, height: 28)
+            .glassEffect(.regular.interactive(isEnabled), in: .capsule)
     }
 }
 
-private struct MicrophonePopup: NSViewRepresentable {
+struct MicrophonePopup: NSViewRepresentable {
     @Binding var selection: String?
     let devices: [MicrophoneDevice]
     let defaultTitle: String
@@ -114,7 +116,10 @@ private struct MicrophonePopup: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(selection: $selection) }
     func makeNSView(context: Context) -> NSPopUpButton {
         let control = NSPopUpButton(frame: .zero, pullsDown: false)
+        control.cell = MicrophonePopupCell(textCell: "", pullsDown: false)
         control.controlSize = .large
+        control.isBordered = false
+        control.wantsLayer = true
         control.cell?.lineBreakMode = .byTruncatingMiddle
         control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         control.target = context.coordinator
@@ -123,9 +128,15 @@ private struct MicrophonePopup: NSViewRepresentable {
     }
     func updateNSView(_ control: NSPopUpButton, context: Context) {
         context.coordinator.selection = $selection
+        context.coordinator.reduceMotion = context.environment.accessibilityReduceMotion
         var items = [("", defaultTitle)] + devices.map { ($0.id, $0.name) }
         let missing = selection != nil && !devices.contains { $0.id == selection }
         if let selection, missing { items.append((selection, L("Unavailable Microphone"))) }
+        let index = items.firstIndex { $0.0 == (selection ?? "") } ?? 0
+        if control.numberOfItems > 0,
+           control.selectedItem?.representedObject as? String != items[index].0 || control.title != items[index].1 {
+            context.coordinator.fadeSelection(control)
+        }
         if control.itemArray.map(\.title) != items.map(\.1) ||
             control.itemArray.map({ $0.representedObject as? String }) != items.map({ Optional($0.0) }) {
             control.removeAllItems()
@@ -137,7 +148,7 @@ private struct MicrophonePopup: NSViewRepresentable {
             control.menu?.autoenablesItems = false
         }
         for item in control.itemArray { item.isEnabled = !(missing && item.representedObject as? String == selection) }
-        control.selectItem(at: items.firstIndex { $0.0 == (selection ?? "") } ?? 0)
+        control.selectItem(at: index)
         control.isEnabled = context.environment.isEnabled
         control.toolTip = help
         control.setAccessibilityLabel(help)
@@ -145,10 +156,29 @@ private struct MicrophonePopup: NSViewRepresentable {
 
     @MainActor final class Coordinator: NSObject {
         var selection: Binding<String?>
+        var reduceMotion = false
         init(selection: Binding<String?>) { self.selection = selection }
         @objc func selectMicrophone(_ control: NSPopUpButton) {
             guard let uid = control.selectedItem?.representedObject as? String else { return }
-            selection.wrappedValue = uid.isEmpty ? nil : uid
+            let selected = uid.isEmpty ? nil : uid
+            guard selected != selection.wrappedValue else { return }
+            fadeSelection(control)
+            selection.wrappedValue = selected
         }
+
+        func fadeSelection(_ control: NSPopUpButton) {
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = reduceMotion ? 0.1 : 0.24
+            transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            control.layer?.add(transition, forKey: kCATransition)
+        }
+    }
+}
+
+/// Keep the glass margins inside the native control's clickable bounds.
+private final class MicrophonePopupCell: NSPopUpButtonCell {
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        super.draw(withFrame: cellFrame.insetBy(dx: 12, dy: 6), in: controlView)
     }
 }

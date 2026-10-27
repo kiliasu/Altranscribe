@@ -15,7 +15,11 @@ import AltranscribeCore
                        settings.microphoneDeviceUID)
         XCTAssertThrowsError(try MicrophoneDevice.resolve(settings.microphoneDeviceUID), "A missing selection must never fall back to the default microphone")
 
-        let picker = NSHostingController(rootView: MicrophonePicker(selection: .constant(nil)))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = AppModel(paths: AppPaths(root: root))
+        let selection = Binding(get: { model.settings.microphoneDeviceUID }, set: { model.settings.microphoneDeviceUID = $0 })
+        let picker = NSHostingController(rootView: MicrophonePicker(selection: selection).disabled(false))
         let window = NSWindow(contentViewController: picker)
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
@@ -27,10 +31,34 @@ import AltranscribeCore
         let control = try XCTUnwrap(popup(in: picker.view), "Use the native microphone popup, including its title and keyboard support")
         XCTAssertFalse(control.title.isEmpty)
         XCTAssertGreaterThan(control.numberOfItems, 0)
+        XCTAssertFalse(control.isBordered, "The system glass effect must be the only background")
+        let frame = control.frame
+        XCTAssertEqual(frame.height, 28, "The entire large glass button must be clickable, including its vertical margins")
+        XCTAssertTrue(window.makeFirstResponder(control))
+        let responder = window.firstResponder
+        let coordinator = try XCTUnwrap(control.target as? MicrophonePopup.Coordinator)
+        for reduceMotion in [false, true] where control.numberOfItems > 1 {
+            for index in [1, 0] {
+                coordinator.reduceMotion = reduceMotion
+                control.selectItem(at: index)
+                control.sendAction(control.action, to: control.target)
+                let uid = try XCTUnwrap(control.selectedItem?.representedObject as? String)
+                XCTAssertEqual(model.settings.microphoneDeviceUID, uid.isEmpty ? nil : uid)
+                let fade = try XCTUnwrap(control.layer?.animation(forKey: kCATransition) as? CATransition)
+                XCTAssertEqual(fade.type, .fade)
+                XCTAssertEqual(fade.duration, reduceMotion ? 0.1 : 0.24)
+                RunLoop.main.run(until: Date().addingTimeInterval(0.04))
+                XCTAssertTrue(popup(in: picker.view) === control, "Selection changes must retain the native control")
+                XCTAssertTrue(window.firstResponder === responder)
+                XCTAssertEqual(control.frame, frame, "Fade the contents without resizing the native control")
+            }
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertNil(control.layer?.animation(forKey: kCATransition))
+        picker.rootView = MicrophonePicker(selection: selection).disabled(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertFalse(control.isEnabled)
 
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let model = AppModel(paths: AppPaths(root: root))
         let view = NSHostingController(rootView: TransportBar(model: model).padding(.horizontal, 20))
         for source in [AudioSource.microphone, .system] {
             model.source = source

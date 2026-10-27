@@ -236,6 +236,7 @@ private struct SetupNotice: View {
 /// A bottom accessory bar. The system owns the controls' materials and interaction effects.
 struct TransportBar: View {
     @Bindable var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var levels = [Float](repeating: 0, count: 26)
     @State private var confirmDiscard = false
     @State private var acknowledgedSave: Date?
@@ -327,6 +328,7 @@ struct TransportBar: View {
                 if model.source == .microphone {
                     MicrophonePicker(selection: $model.settings.microphoneDeviceUID)
                         .disabled(model.busy)
+                        .transition(.opacity)
                 }
                 Button(L("Start Transcription"), systemImage: "record.circle.fill") { model.startLive() }
                     .buttonStyle(.glassProminent)
@@ -334,6 +336,7 @@ struct TransportBar: View {
                     .disabled(model.busy || !model.canStart(live: true))
                     .help(L("Start Transcription") + " ⇧⌘R")
             }
+            .animation(reduceMotion ? .easeInOut(duration: 0.1) : Motion.quick, value: model.source)
         case .preparing, .finishing:
             Button(L("Cancel")) { model.cancel() }
         case .capturing:
