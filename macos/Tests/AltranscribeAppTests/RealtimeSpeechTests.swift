@@ -124,4 +124,47 @@ private actor LiveProbe {
         await engine.unload()
     }
 
+    func testLongNemotronSessionReleasesOldStreamsWithoutLosingSpeech() async throws {
+        guard ProcessInfo.processInfo.environment["ALTRANSCRIBE_LONG_AUDIO"] == "1",
+              let file = ProcessInfo.processInfo.environment["ALTRANSCRIBE_TEST_AUDIO"],
+              let models = ProcessInfo.processInfo.environment["ALTRANSCRIBE_REALTIME_MODELS"] else {
+            throw XCTSkip("Opt in to a ten-minute equivalent local speech stress check; no playback.")
+        }
+        let decoder = MediaDecoder(); _ = try await decoder.open(URL(fileURLWithPath: file))
+        var source: [Float] = []
+        while let chunk = try await decoder.next() { source += chunk.samples }
+        await decoder.cancel()
+        source += [Float](repeating: 0, count: 48_000)
+        let engine = NativeNemotron(), model = AppSettings().nemotronModel
+        try await engine.load(model: model, directory: model.directory(in: URL(fileURLWithPath: models)), language: "en", live: true)
+        var lines: [UUID: TranscriptSegment] = [:], memory: [Double] = []
+        for repetition in 0..<40 {
+            for offset in stride(from: 0, to: source.count, by: 5_120) {
+                let end = min(source.count, offset + 5_120)
+                let chunk = AudioChunk(samples: Array(source[offset..<end]), start: Double(repetition * source.count + offset) / 16_000)
+                for line in try await engine.accept(chunk).finalized { lines[line.id] = line }
+            }
+            if repetition % 10 == 9 {
+                var info = task_vm_info_data_t()
+                var count = mach_msg_type_number_t(MemoryLayout.size(ofValue: info) / MemoryLayout<integer_t>.size)
+                let status = withUnsafeMutablePointer(to: &info) { pointer in
+                    pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                        task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+                    }
+                }
+                XCTAssertEqual(status, KERN_SUCCESS)
+                memory.append(Double(info.phys_footprint) / 1_048_576)
+            }
+        }
+        for line in try await engine.finish().finalized { lines[line.id] = line }
+        let ordered = lines.values.sorted { $0.start < $1.start }
+        let text = ordered.map(\.text).joined(separator: " ").lowercased()
+        XCTAssertEqual(text.components(separatedBy: "americans").count - 1, 40, "Every opening must survive stream renewal")
+        XCTAssertEqual(text.components(separatedBy: "ask not").count - 1, 40)
+        XCTAssertGreaterThan(ordered.last?.end ?? 0, 550)
+        XCTAssertLessThan((memory.last ?? 0) - (memory.first ?? 0), 128, "Memory must settle after model warmup")
+        print("LONG_NEMOTRON audio_seconds=\(Double(source.count * 40) / 16_000) rows=\(lines.count) footprint_MB=\(memory)")
+        await engine.unload()
+    }
+
 }

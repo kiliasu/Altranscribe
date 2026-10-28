@@ -40,6 +40,18 @@ struct QueuedFile: Identifiable {
     var recordID: UUID?
 }
 
+/// Serialize snapshots off the UI actor; a late interim save cannot replace a newer final save.
+private actor RecordWriter {
+    let store: RecordStore
+    private var revisions: [UUID: UInt64] = [:]
+    init(store: RecordStore) { self.store = store }
+    func save(_ record: TranscriptRecord, revision: UInt64) throws {
+        guard revision > revisions[record.id, default: 0] else { return }
+        try store.save(record)
+        revisions[record.id] = revision
+    }
+}
+
 @MainActor @Observable final class AppModel {
     var settings = AppSettings()
     var destination: Destination? = .live
@@ -72,6 +84,8 @@ struct QueuedFile: Identifiable {
 
     let paths: AppPaths
     let store: RecordStore
+    private let writer: RecordWriter
+    private var saveRevision: UInt64 = 0
     private let whisper = NativeWhisper()
     private let nemotron = NativeNemotron()
     private let fluidAudio = NativeFluidAudio()
@@ -98,6 +112,7 @@ struct QueuedFile: Identifiable {
     init(paths: AppPaths = AppPaths(), api: APIClient = APIClient()) {
         self.api = api
         self.paths = paths; store = RecordStore(paths: paths)
+        writer = RecordWriter(store: store)
         do { settings = try store.loadSettings() }
         catch { self.error = LocalizedText("Settings could not be read. Defaults are in use; the original settings file was retained.") }
         do {
@@ -338,9 +353,9 @@ struct QueuedFile: Identifiable {
                 try await finishRecord(id, configuration: configuration, textKey: keys.textKey, summaryLanguage: summaryLanguage)
                 saved = true
             } catch is CancellationError {
-                if let recordID { finishInterrupted(recordID) }
+                if let recordID { await finishInterrupted(recordID) }
             } catch {
-                if let recordID { failRecord(recordID, error: error) }
+                if let recordID { await failRecord(recordID, error: error) }
                 self.error = LocalizedText(error: error)
             }
             await capture.stop()
@@ -413,16 +428,16 @@ struct QueuedFile: Identifiable {
             partialID = nil; draftTranslation?.cancel()
         }
         if let partial { partialID = partial.id }
-        var changed = false
+        var changed = false, needsSort = false
         for segment in segments + (partial.map { [$0] } ?? []) {
             if segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 (segment.translation ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                if let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) {
+                if let line = records[index].segments.lastIndex(where: { $0.id == segment.id }) {
                     records[index].segments.remove(at: line); changed = true
                 }
                 continue
             }
-            if let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) {
+            if let line = records[index].segments.lastIndex(where: { $0.id == segment.id }) {
                 if records[index].segments[line].text != segment.text || records[index].segments[line].end != segment.end {
                     let old = records[index].segments[line]
                     if translationText(old.text) != translationText(segment.text) {
@@ -436,21 +451,24 @@ struct QueuedFile: Identifiable {
                     changed = true
                 }
                 if records[index].segments[line].start != segment.start {
-                    records[index].segments[line].start = segment.start; changed = true
+                    records[index].segments[line].start = segment.start; changed = true; needsSort = true
                 }
                 if let translation = segment.translation, records[index].segments[line].translation != translation {
                     records[index].segments[line].translation = translation; changed = true
                 }
-            } else { records[index].segments.append(segment); changed = true }
+            } else {
+                needsSort = needsSort || (records[index].segments.last.map { $0.start > segment.start } ?? false)
+                records[index].segments.append(segment); changed = true
+            }
         }
         if changed {
-            records[index].segments.sort { $0.start < $1.start }
-            if segments.isEmpty, partial != nil { scheduleSave(recordID) } else { try persistNow(index) }
+            if needsSort { records[index].segments.sort { $0.start < $1.start } }
+            if segments.isEmpty, partial != nil { scheduleSave(recordID) } else { try await persistNow(index) }
         }
         if configuration.translate && !(records[index].source != .file && configuration.usesDirectSpeechTranslation) {
             for segment in segments {
                 try Task.checkCancellation()
-                guard let line = records[index].segments.first(where: { $0.id == segment.id }),
+                guard let line = records[index].segments.last(where: { $0.id == segment.id }),
                       line.translation == nil || line.translationIsProvisional == true,
                       line.translationError == nil else { continue }
                 if records[index].source == .file {
@@ -473,7 +491,7 @@ struct QueuedFile: Identifiable {
             defer { draftTranslation = nil }
             do {
                 try await Task.sleep(for: .seconds(max(0.6, 4 - Date().timeIntervalSince(lastDraftTranslation))))
-                guard partialID == id, let line = records.first(where: { $0.id == recordID })?.segments.first(where: { $0.id == id }),
+                guard partialID == id, let line = records.first(where: { $0.id == recordID })?.segments.last(where: { $0.id == id }),
                       line.text.count >= 16, line.translationSource != line.text,
                       lastDraftRequest?.id != id || lastDraftRequest?.text != line.text else { return }
                 lastDraftTranslation = .now
@@ -497,7 +515,7 @@ struct QueuedFile: Identifiable {
         catch { failure = LocalizedText(error: error) }
         try Task.checkCancellation()
         guard let index = records.firstIndex(where: { $0.id == recordID }),
-              let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) else { return }
+              let line = records[index].segments.lastIndex(where: { $0.id == segment.id }) else { return }
         let current = translationText(records[index].segments[line].text), requested = translationText(segment.text)
         guard current == requested || (provisional && current.hasPrefix(requested)) else { return }
         // A draft failure must not prevent the eventual final translation.
@@ -506,7 +524,7 @@ struct QueuedFile: Identifiable {
         records[index].segments[line].translationError = failure
         records[index].segments[line].translationIsProvisional = provisional ? true : nil
         records[index].segments[line].translationSource = provisional ? segment.text : nil
-        try store.save(records[index])
+        try await writeSnapshot(records[index])
     }
 
     private func enqueueTranslation(_ segment: TranscriptSegment, recordID: UUID, configuration: AppSettings, textKey: String, provisional: Bool = false) throws {
@@ -520,9 +538,9 @@ struct QueuedFile: Identifiable {
         guard translationQueue.count < 8 else {
             if provisional { return }
             if let index = records.firstIndex(where: { $0.id == recordID }),
-               let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) {
+               let line = records[index].segments.lastIndex(where: { $0.id == segment.id }) {
                 records[index].segments[line].translationError = LocalizedText("Translation is falling behind. The original text was saved; translate it later from Library.")
-                try store.save(records[index])
+                scheduleSave(recordID)
             }
             return
         }
@@ -588,24 +606,28 @@ struct QueuedFile: Identifiable {
             catch { records[index].error = LocalizedText(error: error, context: "Summary failed: ") }
         }
         records[index].status = .completed
-        try persistNow(index)
+        try await persistNow(index)
     }
-    private func finishInterrupted(_ id: UUID) {
+    private func finishInterrupted(_ id: UUID) async {
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
         records[index].status = .interrupted
-        persist(index)
+        await persist(index)
     }
-    private func failRecord(_ id: UUID, error: Error) {
+    private func failRecord(_ id: UUID, error: Error) async {
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
         records[index].status = .failed; records[index].error = LocalizedText(error: error)
-        persist(index)
+        await persist(index)
     }
-    private func persist(_ index: Int) {
-        do { try persistNow(index) } catch { self.error = LocalizedText(error: error) }
+    private func persist(_ index: Int) async {
+        do { try await persistNow(index) } catch { self.error = LocalizedText(error: error) }
     }
-    private func persistNow(_ index: Int) throws {
+    private func persistNow(_ index: Int) async throws {
         deferredSave?.cancel(); deferredSave = nil
-        try store.save(records[index])
+        try await writeSnapshot(records[index])
+    }
+    private func writeSnapshot(_ record: TranscriptRecord) async throws {
+        saveRevision += 1
+        try await writer.save(record, revision: saveRevision)
     }
     /// Interim text changes several times a second and is rewritten in place, so it is written at most
     /// once a second. Final text, translations and status changes are written immediately.
@@ -615,7 +637,7 @@ struct QueuedFile: Identifiable {
             try? await Task.sleep(for: .seconds(1))
             guard let self, !Task.isCancelled else { return }
             self.deferredSave = nil
-            if let index = self.records.firstIndex(where: { $0.id == recordID }) { self.persist(index) }
+            if let index = self.records.firstIndex(where: { $0.id == recordID }) { await self.persist(index) }
         }
     }
 
@@ -683,10 +705,10 @@ struct QueuedFile: Identifiable {
                         queue[index].status = .completed; queue[index].progress = 1
                     } catch is CancellationError {
                         queue[index].status = .cancelled
-                        if let recordID { finishInterrupted(recordID) }
+                        if let recordID { await finishInterrupted(recordID) }
                     } catch {
                         queue[index].status = .failed; queue[index].error = LocalizedText(error: error)
-                        if let recordID { failRecord(recordID, error: error) }
+                        if let recordID { await failRecord(recordID, error: error) }
                     }
                     await decoder.cancel()
                 }

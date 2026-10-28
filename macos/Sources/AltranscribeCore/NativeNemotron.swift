@@ -120,6 +120,15 @@ public actor NativeNemotron {
             update.finalized += segment(closing: false)
         }
         update.partial = partial()
+        // The native stream retains features and all decoded tokens. Release it at a real
+        // pause once a minute, after every word has been committed, never on a timed word cut.
+        if live, audioEnd - origin >= 60, committed == tokens.count, prefix == nil,
+           pause.duration >= 1.5, audioEnd - lastTokenUpdate >= 1.25 {
+            let count = min(5_120, chunk.samples.count)
+            let preRoll = AudioChunk(samples: Array(chunk.samples.suffix(count)), start: audioEnd - Double(count) / 16_000)
+            beginStream()
+            leadingSilence = preRoll
+        }
         return update
     }
 

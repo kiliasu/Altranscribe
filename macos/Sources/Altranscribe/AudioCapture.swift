@@ -5,7 +5,7 @@ import AltranscribeCore
 
 /// Audio callbacks and the chunk buffer are confined to this serial queue.
 final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    let queue = DispatchQueue(label: "app.altranscribe.capture", qos: .userInitiated)
+    let queue = DispatchQueue(label: "app.altranscribe.capture", qos: .userInitiated, autoreleaseFrequency: .workItem)
     let stream: AsyncThrowingStream<AudioChunk, Error>
     private let continuation: AsyncThrowingStream<AudioChunk, Error>.Continuation
     private var chunker: LiveAudioChunker

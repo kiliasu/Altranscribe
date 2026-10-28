@@ -25,11 +25,6 @@ struct TranscriptScroll<Header: View>: View {
     @State private var follow = true
     private let bottom = "bottom"
 
-    /// Lines that have received their translation or its error, so arriving translations animate in.
-    private var settledTranslations: Int {
-        record.segments.reduce(0) { $0 + ($1.translation != nil || $1.translationError != nil ? 1 : 0) }
-    }
-
     private struct Metrics: Equatable {
         var offset: CGFloat, distance: CGFloat
         var content: CGFloat, container: CGFloat, insets: EdgeInsets
@@ -45,7 +40,7 @@ struct TranscriptScroll<Header: View>: View {
                             .padding(.bottom, 20)
                             .transition(.rise)
                     }
-                    ForEach(record.segments) { SegmentRow(segment: $0, textSize: textSize, streaming: live != nil).transition(.rise) }
+                    ForEach(record.segments) { SegmentRow(segment: $0, textSize: textSize, streaming: live != nil).equatable().transition(.rise) }
                     if record.segments.isEmpty && live == nil {
                         Text(L("No speech was transcribed."))
                             .font(.system(size: textSize))
@@ -59,7 +54,6 @@ struct TranscriptScroll<Header: View>: View {
                 }
                 // New lines, arriving translations, a new summary and the end of listening all move as content.
                 .animation(Motion.content, value: record.segments.count)
-                .animation(Motion.content, value: settledTranslations)
                 .animation(Motion.content, value: record.summary)
                 .animation(Motion.content, value: live)
                 .frame(maxWidth: 760, alignment: .leading)
@@ -78,12 +72,12 @@ struct TranscriptScroll<Header: View>: View {
                 if new.distance < 40 { follow = true }
                 else if new.content == old.content && new.container == old.container && new.insets == old.insets
                             && new.offset < old.offset - 0.5 { follow = false }
+                if new.content != old.content { followLatest(proxy, Motion.quick) }
             }
             // A new line glides into view; a line that grows keeps pace with a shorter glide.
             .onChange(of: record.segments.count) { _, _ in followLatest(proxy, Motion.content) }
             .onChange(of: record.segments.last?.text) { _, _ in followLatest(proxy, Motion.quick) }
             .onChange(of: record.segments.last?.translation) { _, _ in followLatest(proxy, Motion.quick) }
-            .onChange(of: settledTranslations) { _, _ in followLatest(proxy, Motion.content) }
             .onChange(of: textSize) { _, _ in followLatest(proxy, nil) }
             .onAppear { if live != nil { proxy.scrollTo(bottom, anchor: .bottom) } }
             .overlay(alignment: .bottom) {
@@ -113,7 +107,7 @@ struct TranscriptScroll<Header: View>: View {
     }
 }
 
-struct SegmentRow: View {
+struct SegmentRow: View, Equatable {
     let segment: TranscriptSegment
     let textSize: Double
     var streaming = false
@@ -150,6 +144,7 @@ struct SegmentRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, textSize * 0.55)
+        .animation(Motion.content, value: segment.translation != nil || segment.translationError != nil)
     }
 }
 
