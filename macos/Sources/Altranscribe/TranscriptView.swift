@@ -32,8 +32,8 @@ struct TranscriptScroll<Header: View>: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+            List {
+                Group {
                     header
                     if let summary = record.summary {
                         SummaryCard(summary: summary, textSize: textSize)
@@ -56,12 +56,17 @@ struct TranscriptScroll<Header: View>: View {
                 .animation(Motion.content, value: record.segments.count)
                 .animation(Motion.content, value: record.summary)
                 .animation(Motion.content, value: live)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
                 .frame(maxWidth: 760, alignment: .leading)
                 .padding(.horizontal, 36)
-                .padding(.top, 28)
-                .padding(.bottom, 36)
                 .frame(maxWidth: .infinity)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.top, 28, for: .scrollContent)
+            .contentMargins(.bottom, 36, for: .scrollContent)
             .onScrollGeometryChange(for: Metrics.self) { geometry in
                 Metrics(offset: geometry.contentOffset.y,
                         distance: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY,
