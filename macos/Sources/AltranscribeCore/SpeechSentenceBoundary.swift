@@ -68,8 +68,11 @@ enum SpeechSentenceBoundary {
 
     static func shouldMerge(_ previous: TranscriptSegment, nextStart: Double) -> Bool {
         let gap = nextStart - previous.end
-        return !isComplete(previous.text) && gap >= -0.35 && gap <= 2.0 &&
+        let unfinished = !isComplete(previous.text) || (previous.text.last == "." && isContinuation(previous.text))
+        let short = previous.text.contains(where: \.isWhitespace)
+            ? previous.text.split(whereSeparator: \.isWhitespace).count < 7 : previous.text.count < 24
+        return unfinished && gap >= -0.35 && gap <= 2.0 &&
             nextStart - previous.start < 12 &&
-            (previous.text.split(whereSeparator: \.isWhitespace).count < 7 || isContinuation(previous.text))
+            (short || isContinuation(previous.text))
     }
 }

@@ -110,6 +110,12 @@ struct RecordActions: View {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
             }
         }
+        if record.hasRecording == true {
+            Button(L("Show Recording in Finder"), systemImage: "waveform") {
+                NSWorkspace.shared.activateFileViewerSelecting([model.paths.recording(record.id)])
+            }
+            .disabled(model.busy)
+        }
         Divider()
         Button(L("Delete Transcript…"), systemImage: "trash", role: .destructive) { model.pendingDeletion = record.id }
             .disabled(model.busy)

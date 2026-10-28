@@ -7,6 +7,8 @@ public struct AppPaths: Sendable {
     public let root: URL
     public var records: URL { root.appendingPathComponent("Records", isDirectory: true) }
     public var models: URL { root.appendingPathComponent("Models", isDirectory: true) }
+    public var recordings: URL { root.appendingPathComponent("Recordings", isDirectory: true) }
+    public func recording(_ id: UUID) -> URL { recordings.appendingPathComponent("\(id).m4a") }
     public var settings: URL { root.appendingPathComponent("settings.json") }
     public init(root: URL? = nil) {
         self.root = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -57,6 +59,8 @@ public struct RecordStore: Sendable {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
     public func delete(_ id: UUID) throws {
+        let audio = paths.recording(id)
+        if FileManager.default.fileExists(atPath: audio.path) { try FileManager.default.removeItem(at: audio) }
         try FileManager.default.removeItem(at: paths.records.appendingPathComponent("\(id).json"))
     }
     public func loadSettings() throws -> AppSettings {

@@ -60,6 +60,7 @@ final class LiveAudioTests: XCTestCase {
         XCTAssertEqual(tail.results([ending]).map(\.id), [ending.id])
         let settings = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(AppSettings()))
         XCTAssertNil(settings.liveChunkMode); XCTAssertNil(settings.captionSentenceCount)
+        XCTAssertFalse(settings.saveRecording ?? false)
         XCTAssertEqual(settings.visibleCaptionCount, 3)
         var batch = settings; batch.speechProvider = .whisper
         XCTAssertEqual(batch.liveChunkSeconds, 4)

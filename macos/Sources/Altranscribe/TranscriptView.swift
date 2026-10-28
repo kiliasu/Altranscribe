@@ -244,6 +244,13 @@ struct RecordHeader: View {
                     if record.duration > 0 { Label(durationText(record.duration), systemImage: "clock") }
                 }
                 Label(record.source.title, systemImage: record.source.symbol)
+                if record.hasRecording == true {
+                    Button(L("Show Recording in Finder"), systemImage: "waveform") {
+                        NSWorkspace.shared.activateFileViewerSelecting([model.paths.recording(record.id)])
+                    }
+                    .buttonStyle(.link)
+                    .disabled(model.busy)
+                }
                 Label(languageName(record.language) + (record.targetLanguage.map { " → " + languageName($0) } ?? ""),
                       systemImage: record.targetLanguage == nil ? "globe" : "translate")
                 if !compact { Label(AppSettings.speechModelDisplayName(record.speechModel), systemImage: "cpu") }

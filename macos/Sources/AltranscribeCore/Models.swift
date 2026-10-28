@@ -82,6 +82,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var adaptiveInputGain: Bool?
     public var microphoneVoiceProcessing: Bool?
     public var microphoneDeviceUID: String?
+    public var saveRecording: Bool?
     public var captionSentenceCount: Int?
 
     public var usesBatchLiveAudio: Bool {
@@ -284,6 +285,8 @@ public struct TranscriptRecord: Codable, Equatable, Identifiable, Sendable {
     public var createdAt = Date()
     public var source: AudioSource
     public var sourcePath: String?
+    public var hasRecording: Bool?
+    public var recordingDuration: Double?
     public var language: String
     public var targetLanguage: String?
     public var speechModel: String
@@ -295,7 +298,7 @@ public struct TranscriptRecord: Codable, Equatable, Identifiable, Sendable {
     public init(title: String, source: AudioSource, language: String, speechModel: String) {
         self.title = title; self.source = source; self.language = language; self.speechModel = speechModel
     }
-    public var duration: Double { segments.last?.end ?? 0 }
+    public var duration: Double { max(recordingDuration ?? 0, segments.last?.end ?? 0) }
     public var fullText: String { segments.map(\.text).joined(separator: "\n") }
     public func matches(_ query: String) -> Bool {
         query.isEmpty || ([title, summary ?? ""] + segments.flatMap { [$0.text, $0.translation ?? ""] })

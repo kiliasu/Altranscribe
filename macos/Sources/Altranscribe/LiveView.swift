@@ -287,7 +287,8 @@ struct TransportBar: View {
         }
         .confirmationDialog(L("Discard this recording?"), isPresented: $confirmDiscard) {
             Button(L("Discard"), role: .destructive) { model.cancel(discardRecording: true) }
-        } message: { Text(L("This deletes the transcript from this recording.")) }
+        } message: { Text(L(model.activeRecord?.hasRecording == true
+            ? "This deletes the transcript and its saved audio." : "This deletes the transcript from this recording.")) }
     }
 
     @ViewBuilder private var status: some View {
@@ -297,9 +298,17 @@ struct TransportBar: View {
                 Label(L("Saved"), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                AudioSourcePicker(selection: $model.source)
-                    .fixedSize()
-                    .disabled(model.busy)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        AudioSourcePicker(selection: $model.source).fixedSize()
+                        saveRecording
+                    }
+                    VStack(spacing: 12) {
+                        AudioSourcePicker(selection: $model.source).fixedSize()
+                        saveRecording
+                    }
+                }
+                .disabled(model.busy)
             }
         case .preparing, .finishing:
             HStack(spacing: 8) {
@@ -319,6 +328,15 @@ struct TransportBar: View {
                 }
             }
         }
+    }
+
+    private var saveRecording: some View {
+        Toggle(isOn: Binding(get: { model.settings.saveRecording ?? false }, set: { model.settings.saveRecording = $0 })) {
+            Label(L("Save Recording"), systemImage: "waveform")
+        }
+        .toggleStyle(.button)
+        .help(L("Keep an audio file alongside the transcript. Paused audio is excluded."))
+        .accessibilityIdentifier("saveRecording")
     }
 
     @ViewBuilder private var actions: some View {

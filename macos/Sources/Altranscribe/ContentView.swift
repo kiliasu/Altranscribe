@@ -47,7 +47,8 @@ struct ContentView: View {
                             isPresented: Binding(get: { model.pendingDeletion != nil }, set: { if !$0 { model.pendingDeletion = nil } }),
                             presenting: model.pendingDeletion) { id in
             Button(L("Delete"), role: .destructive) { model.deleteRecord(id) }
-        } message: { _ in Text(L("The original media file will be kept.")) }
+        } message: { id in Text(L(model.records.first(where: { $0.id == id })?.hasRecording == true
+            ? "This deletes the transcript and its saved audio." : "The original media file will be kept.")) }
         .onChange(of: model.destination) { _, destination in
             if destination == .settings { settingsHidInspector = .now }
         }

@@ -96,21 +96,25 @@ public struct AdaptiveInputGain: Sendable {
     }
 }
 
-/// Re-decode a short Stop/Pause tail with its preceding audio, replacing the earlier result.
-/// Very short standalone windows otherwise invite hallucinations or lose the last word.
+/// Revise a bounded live audio window as slices arrive, retaining acoustic context across cuts.
+/// A real pause starts a new window; a short Stop/Pause tail still repairs its preceding result.
 struct LiveBatchTail: Sendable {
     private var previous: AudioChunk?
     private var previousSegments: [TranscriptSegment] = []
     private var replacing = false
+    private var pause = SpeechPauseDetector()
     mutating func input(_ chunk: AudioChunk) -> AudioChunk {
         replacing = false
         var input = chunk
-        if let previous, chunk.duration < 1.2, previous.duration + chunk.duration <= 10,
+        if let previous, previous.containsSpeech,
+           (chunk.duration < 1.2 || (chunk.containsSpeech && pause.duration < 0.7)),
+           previous.duration + chunk.duration <= 12,
            abs(previous.start + previous.duration - chunk.start) < 0.01 {
             input = AudioChunk(samples: previous.samples + chunk.samples, start: previous.start,
                                containsSpeech: previous.containsSpeech || chunk.containsSpeech)
             replacing = true
         }
+        pause.accept(chunk.samples[...])
         if !replacing { previousSegments = [] }
         previous = input
         return input

@@ -14,12 +14,17 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
     private var paused = false
     private var finished = false
     private var converter: AVAudioConverter?
+    private let recordingURL: URL?
+    private var recording: AVAudioFile?
+    private var recordingFrames: AVAudioFramePosition = 0
+    private var recordedDuration: Double?
     private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
     let meter: @Sendable (Float, Double) -> Void
 
-    init(chunkSeconds: Double = 8, automaticChunks: Bool = false, adaptiveGain: Bool = false, meter: @escaping @Sendable (Float, Double) -> Void) {
+    init(chunkSeconds: Double = 8, automaticChunks: Bool = false, adaptiveGain: Bool = false, recordingURL: URL? = nil, meter: @escaping @Sendable (Float, Double) -> Void) {
         chunker = LiveAudioChunker(seconds: chunkSeconds, automatic: automaticChunks)
         self.adaptiveGain = adaptiveGain
+        self.recordingURL = recordingURL
         // Keep the same 64-second audio budget for both streaming and batch engines.
         let capacity = max(1, Int(ceil(64 / (automaticChunks ? min(1, chunkSeconds) : chunkSeconds))))
         let pair = AsyncThrowingStream<AudioChunk, Error>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
@@ -46,6 +51,24 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
 
     private func consume(_ input: AVAudioPCMBuffer) {
         guard !paused, !finished else { return }
+        if let recordingURL {
+            do {
+                if recording == nil {
+                    try FileManager.default.createDirectory(at: recordingURL.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                            attributes: [.posixPermissions: 0o700])
+                    recording = try AVAudioFile(forWriting: recordingURL,
+                        settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: input.format.sampleRate,
+                                   AVNumberOfChannelsKey: input.format.channelCount,
+                                   AVEncoderBitRateKey: (input.format.sampleRate < 24_000 ? 32_000 : 64_000) * Int(input.format.channelCount)],
+                        commonFormat: input.format.commonFormat, interleaved: input.format.isInterleaved)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: recordingURL.path)
+                }
+                try recording?.write(from: input)
+                recordingFrames += AVAudioFramePosition(input.frameLength)
+            } catch {
+                fail(AppError("Could not save the recording. Capture stopped; the transcript and any recorded audio were retained.")); return
+            }
+        }
         if converter?.inputFormat != input.format { converter = AVAudioConverter(from: input.format, to: target) }
         guard let converter else { fail(AppError("Could not convert the input audio format.")); return }
         var offset: AVAudioFrameCount = 0
@@ -94,7 +117,14 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
             fail(AppError("Transcription could not keep up. Capture stopped and text was retained. Try a smaller model."))
         }
     }
-    private func fail(_ error: Error) { finished = true; continuation.finish(throwing: error) }
+    private func closeRecording() {
+        if let recording {
+            recordedDuration = Double(recordingFrames) / recording.processingFormat.sampleRate
+            recording.close()
+            self.recording = nil
+        }
+    }
+    private func fail(_ error: Error) { closeRecording(); finished = true; continuation.finish(throwing: error) }
     func microphoneChanged() {
         queue.async { self.fail(AppError("The microphone changed or disconnected. Select a microphone and start a new recording.")) }
     }
@@ -107,16 +137,17 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
             self.paused = value
         }
     }
-    func finish() async {
+    @discardableResult func finish() async -> Double? {
         await withCheckedContinuation { done in
             queue.async {
                 if !self.finished {
                     self.flushConverter()
                     if let tail = self.chunker.flush() { self.emit(tail) }
+                    self.closeRecording()
                     self.finished = true
                     self.continuation.finish()
                 }
-                done.resume()
+                done.resume(returning: self.recordedDuration)
             }
         }
     }
@@ -145,9 +176,12 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
     private var screenStream: SCStream?
     private var sink: CaptureSink?
     private var microphoneObserver: NSObjectProtocol?
+    private var stopping: Task<Double?, Never>?
+    private(set) var recordedDuration: Double?
 
-    func start(source: AudioSource, chunkSeconds: Double = 8, automaticChunks: Bool = false, adaptiveGain: Bool = false, voiceProcessing: Bool = false, microphoneUID: String? = nil, meter: @escaping @Sendable (Float, Double) -> Void) async throws -> AsyncThrowingStream<AudioChunk, Error> {
-        let sink = CaptureSink(chunkSeconds: chunkSeconds, automaticChunks: automaticChunks, adaptiveGain: adaptiveGain && !(source == .microphone && voiceProcessing), meter: meter)
+    func start(source: AudioSource, chunkSeconds: Double = 8, automaticChunks: Bool = false, adaptiveGain: Bool = false, voiceProcessing: Bool = false, microphoneUID: String? = nil, recordingURL: URL? = nil, meter: @escaping @Sendable (Float, Double) -> Void) async throws -> AsyncThrowingStream<AudioChunk, Error> {
+        recordedDuration = nil
+        let sink = CaptureSink(chunkSeconds: chunkSeconds, automaticChunks: automaticChunks, adaptiveGain: adaptiveGain && !(source == .microphone && voiceProcessing), recordingURL: recordingURL, meter: meter)
         self.sink = sink
         do {
             if source == .microphone {
@@ -235,12 +269,19 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
         catch { sink.microphoneChanged() }
     }
     func stop() async {
+        if let stopping { recordedDuration = await stopping.value; return }
         if let microphoneObserver { NotificationCenter.default.removeObserver(microphoneObserver); self.microphoneObserver = nil }
         if let engine { engine.inputNode.removeTap(onBus: 0); engine.stop(); self.engine = nil }
         let screen = screenStream
         let currentSink = sink
         screenStream = nil; sink = nil
-        if let screen { try? await screen.stopCapture() }
-        await currentSink?.finish()
+        guard currentSink != nil || screen != nil else { return }
+        let task = Task {
+            if let screen { try? await screen.stopCapture() }
+            return await currentSink?.finish()
+        }
+        stopping = task
+        recordedDuration = await task.value
+        stopping = nil
     }
 }

@@ -473,6 +473,11 @@
 "Provisional translation" = "Provisional translation";
 
 "Starting audio capture…" = "Starting audio capture…";
+"Save Recording" = "Save Recording";
+"Keep an audio file alongside the transcript. Paused audio is excluded." = "Keep an audio file alongside the transcript. Paused audio is excluded.";
+"Show Recording in Finder" = "Show Recording in Finder";
+"This deletes the transcript and its saved audio." = "This deletes the transcript and its saved audio.";
+"Could not save the recording. Capture stopped; the transcript and any recorded audio were retained." = "Could not save the recording. Capture stopped; the transcript and any recorded audio were retained.";
 "System Default" = "System Default";
 "System Default · %@" = "System Default · %@";
 "Unavailable Microphone" = "Unavailable Microphone";

@@ -115,13 +115,14 @@ private final class ResponseGate: @unchecked Sendable {
     }
 
     func testStreamingPartialTranslationRemainsProvisionalUntilFinal() async throws {
-        for provider in [SpeechProvider.appleSpeech, .nemotron] {
+        for provider in SpeechProvider.allCases {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root); WorkflowProtocol.handler = nil }
         let app = app(at: root)
         let record = TranscriptRecord(title: "Draft", source: .microphone, language: "en", speechModel: "Apple SpeechTranscriber")
         app.records = [record]
         var settings = AppSettings(); settings.speechProvider = provider; settings.translate = true; settings.textModel = "test-model"
+        settings.cloudDirectTranslation = false
         WorkflowProtocol.handler = { $0.reply("初步译文") }
         var line = TranscriptSegment(start: 0, end: 2, text: "This is an early phrase")
         try await app.saveSegments([], partial: line, recordID: record.id, configuration: settings, textKey: "")
@@ -135,6 +136,32 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertEqual(app.records[0].segments[0].translation, "完整译文")
         XCTAssertNil(app.records[0].segments[0].translationIsProvisional)
         XCTAssertEqual(try app.store.load().records.first?.segments.first?.translation, "完整译文")
+        if provider != .nemotron {
+            let opening = TranscriptSegment(start: 8, end: 10, text: "The maximum number of.")
+            let ending = TranscriptSegment(start: 10.2, end: 12, text: "packets in flight determines the window size.")
+            try await app.saveSegments([opening], recordID: record.id, configuration: settings, textKey: "")
+            try await app.saveSegments([], partial: ending, recordID: record.id, configuration: settings, textKey: "")
+            XCTAssertEqual(app.records[0].segments.count, 2, "A batch or streaming boundary must not become an incomplete short sentence")
+            XCTAssertEqual(app.records[0].segments.last?.text, "The maximum number of packets in flight determines the window size.")
+            try await app.saveSegments([ending], recordID: record.id, configuration: settings, textKey: "")
+            try await app.finishRecord(record.id, configuration: settings, textKey: "")
+            XCTAssertEqual(app.records[0].segments.last?.translation, "完整译文")
+            var correction = opening; correction.text = "The maximum permitted number of"
+            try await app.saveSegments([correction], recordID: record.id, configuration: settings, textKey: "")
+            try await app.finishRecord(record.id, configuration: settings, textKey: "")
+            XCTAssertEqual(app.records[0].segments.count, 2)
+            XCTAssertEqual(app.records[0].segments.last?.text, "The maximum permitted number of packets in flight determines the window size.")
+            if provider == .compatible || provider == .gemini {
+                settings.cloudDirectTranslation = true
+                var direct = TranscriptSegment(start: 20, end: 21, text: "A direct sentence")
+                direct.translation = "直译草稿"
+                try await app.saveSegments([], partial: direct, recordID: record.id, configuration: settings, textKey: "")
+                direct.text += "."; direct.translation = "直译定稿"
+                try await app.saveSegments([direct], recordID: record.id, configuration: settings, textKey: "")
+                XCTAssertNil(app.records[0].segments.last?.translationIsProvisional)
+                XCTAssertEqual(try app.store.load().records.first?.segments.last?.translation, "直译定稿")
+            }
+        }
         }
     }
 

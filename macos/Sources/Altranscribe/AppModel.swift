@@ -104,6 +104,8 @@ private actor RecordWriter {
     private var partialID: UUID?
     private var lastDraftTranslation = Date.distantPast
     private var lastDraftRequest: (id: UUID, text: String)?
+    private var liveSentences = LiveSentenceAssembler()
+    private var sentenceRecordID: UUID?
     private var discard = false
     private var deferredSave: Task<Void, Never>?
     private var activity: NSObjectProtocol?
@@ -282,6 +284,7 @@ private actor RecordWriter {
         } }
         var record = TranscriptRecord(title: title, source: source, language: configuration.recognitionLanguage, speechModel: speechModel)
         record.sourcePath = file?.path
+        record.hasRecording = source != .file && configuration.saveRecording == true ? true : nil
         record.targetLanguage = configuration.translate ? configuration.targetLanguage : nil
         try store.save(record)
         records.insert(record, at: 0)
@@ -330,7 +333,8 @@ private actor RecordWriter {
                 let chunks = try await capture.start(source: source, chunkSeconds: configuration.liveChunkSeconds,
                     automaticChunks: configuration.usesBatchLiveAudio && (configuration.liveChunkMode ?? .automatic) == .automatic,
                     adaptiveGain: configuration.adaptiveInputGain ?? true, voiceProcessing: configuration.microphoneVoiceProcessing ?? false,
-                    microphoneUID: configuration.microphoneDeviceUID) { [weak self] level, duration in
+                    microphoneUID: configuration.microphoneDeviceUID,
+                    recordingURL: configuration.saveRecording == true ? paths.recording(id) : nil) { [weak self] level, duration in
                     Task { @MainActor in
                         guard let self, self.phase == .recording else { return }
                         self.meter = level; self.elapsed = duration
@@ -359,8 +363,14 @@ private actor RecordWriter {
                 self.error = LocalizedText(error: error)
             }
             await capture.stop()
+            if let recordID, let index = records.firstIndex(where: { $0.id == recordID }), records[index].hasRecording == true {
+                records[index].hasRecording = FileManager.default.fileExists(atPath: paths.recording(recordID).path) ? true : nil
+                records[index].recordingDuration = capture.recordedDuration
+                await persist(index)
+            }
             await cloudSpeech?.cancel(); cloudSpeech = nil
             await drainTranslations(cancel: true)
+            liveSentences = LiveSentenceAssembler(); sentenceRecordID = nil
             if let recordID, let index = records.firstIndex(where: { $0.id == recordID }) {
                 for line in records[index].segments.indices where records[index].segments[line].translationIsProvisional == true {
                     records[index].segments[line].translation = nil
@@ -424,12 +434,22 @@ private actor RecordWriter {
                               recordID: UUID, configuration: AppSettings, textKey: String) async throws {
         try Task.checkCancellation()
         guard let index = records.firstIndex(where: { $0.id == recordID }) else { return }
+        var segments = segments, partial = partial
+        if records[index].source != .file && configuration.speechProvider != .nemotron {
+            if sentenceRecordID != recordID { liveSentences = LiveSentenceAssembler(); sentenceRecordID = recordID }
+            (segments, partial) = liveSentences.update(segments, partial: partial)
+        }
         if segments.contains(where: { $0.id == partialID }) {
             partialID = nil; draftTranslation?.cancel()
         }
         if let partial { partialID = partial.id }
         var changed = false, needsSort = false
         for segment in segments + (partial.map { [$0] } ?? []) {
+            var segment = segment
+            if configuration.usesDirectSpeechTranslation, records[index].source != .file, segment.translation != nil {
+                segment.translationIsProvisional = partial?.id == segment.id ? true : nil
+                segment.translationSource = partial?.id == segment.id ? segment.text : nil
+            }
             if segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 (segment.translation ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 if let line = records[index].segments.lastIndex(where: { $0.id == segment.id }) {
@@ -455,6 +475,11 @@ private actor RecordWriter {
                 }
                 if let translation = segment.translation, records[index].segments[line].translation != translation {
                     records[index].segments[line].translation = translation; changed = true
+                }
+                if configuration.usesDirectSpeechTranslation, records[index].source != .file, segment.translation != nil {
+                    records[index].segments[line].translationIsProvisional = partial?.id == segment.id ? true : nil
+                    records[index].segments[line].translationSource = partial?.id == segment.id ? segment.text : nil
+                    changed = true
                 }
             } else {
                 needsSort = needsSort || (records[index].segments.last.map { $0.start > segment.start } ?? false)

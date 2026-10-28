@@ -473,6 +473,11 @@
 "Provisional translation" = "暂定译文";
 
 "Starting audio capture…" = "正在启动音频采集…";
+"Save Recording" = "保存录音";
+"Keep an audio file alongside the transcript. Paused audio is excluded." = "随文稿保留音频文件，暂停期间的声音不会录入。";
+"Show Recording in Finder" = "在访达中显示录音";
+"This deletes the transcript and its saved audio." = "这会删除文稿及其保存的录音。";
+"Could not save the recording. Capture stopped; the transcript and any recorded audio were retained." = "无法保存录音，已停止采集。文稿和已录下的音频已保留。";
 "System Default" = "跟随系统";
 "System Default · %@" = "跟随系统 · %@";
 "Unavailable Microphone" = "麦克风不可用";
