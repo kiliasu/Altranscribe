@@ -2,6 +2,27 @@ import XCTest
 @testable import AltranscribeCore
 
 final class LiveAudioTests: XCTestCase {
+    func testSentenceBoundariesKeepThoughtsAndMergeShortContinuations() {
+        let words = ["So", " we're", " gonna", " use", " these", " to", " do", " more", " control."]
+        let times = words.indices.map { Double($0) * 0.7 }
+        XCTAssertNil(SpeechSentenceBoundary.cut(tokens: words.prefix(6), times: times.prefix(6), quiet: 0, closing: false),
+                     "Three seconds of transport must not finalize an unfinished sentence")
+        XCTAssertNil(SpeechSentenceBoundary.cut(tokens: words.prefix(6), times: times.prefix(6), quiet: 1.5, closing: false),
+                     "A hesitation after 'to' is not a sentence boundary")
+        XCTAssertEqual(SpeechSentenceBoundary.cut(tokens: words[...], times: times[...], quiet: 0.5, closing: false), words.count)
+        let combined = words + [" The", " destination", " tells", " the", " source"]
+        XCTAssertEqual(SpeechSentenceBoundary.cut(tokens: combined[...], times: combined.indices.map(Double.init)[...], quiet: 0, closing: false), words.count)
+        let fragment = TranscriptSegment(start: 0, end: 2, text: "the maximum number of")
+        XCTAssertTrue(SpeechSentenceBoundary.shouldMerge(fragment, nextStart: 2.3))
+        XCTAssertFalse(SpeechSentenceBoundary.shouldMerge(fragment, nextStart: 7))
+        XCTAssertFalse(SpeechSentenceBoundary.shouldMerge(TranscriptSegment(start: 0, end: 2, text: "That is correct."), nextStart: 2.3))
+        XCTAssertFalse(SpeechSentenceBoundary.isComplete("Ask Dr."))
+        let continuous = ["We"] + Array(repeating: " continue", count: 70)
+        let cut = SpeechSentenceBoundary.cut(tokens: continuous[...], times: continuous.indices.map { Double($0) * 0.3 }[...], quiet: 0, closing: false)
+        XCTAssertEqual(cut, continuous.count - 1, "Bound an unpunctuated passage while retaining its last word as a hypothesis")
+        XCTAssertEqual(SpeechSentenceBoundary.cut(tokens: words.prefix(3), times: times.prefix(3), quiet: 0, closing: true), 3)
+    }
+
     func testChunkBoundariesGainAndLegacySettings() throws {
         let voice = (0..<24_000).map { Float(sin(Double($0) * 0.1)) * 0.003 }
         let samples = voice + voice + [Float](repeating: 0, count: 8_000) + voice

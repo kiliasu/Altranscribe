@@ -31,6 +31,8 @@ public actor NativeNemotron {
     private var committed = 0
     private var segmentID = UUID()
     private var previous: TranscriptSegment?
+    private var prefix: TranscriptSegment?
+    private var pause = SpeechPauseDetector()
     public init() {}
 
     public func load(model: NemotronModel, directory: URL, language: String, live: Bool = false) throws {
@@ -67,8 +69,9 @@ public actor NativeNemotron {
 
     public func beginStream() {
         handle?.closeStream()
-        tokens = []; times = []; committed = 0; previous = nil
+        tokens = []; times = []; committed = 0; previous = nil; prefix = nil
         segmentID = UUID(); origin = 0; audioEnd = 0; lastTokenUpdate = 0; leadingSilence = nil
+        pause = SpeechPauseDetector()
     }
 
     public func accept(_ chunk: AudioChunk) throws -> NemotronUpdate {
@@ -108,6 +111,7 @@ public actor NativeNemotron {
         for start in stride(from: 0, to: chunk.samples.count, by: 5120) {
             try Task.checkCancellation()
             let count = min(5120, chunk.samples.count - start)
+            pause.accept(chunk.samples[start..<(start + count)])
             chunk.samples.withUnsafeBufferPointer {
                 SherpaOnnxOnlineStreamAcceptWaveform(stream, 16_000, $0.baseAddress!.advanced(by: start), Int32(count))
             }
@@ -150,9 +154,11 @@ public actor NativeNemotron {
 
     private func piece(_ range: Range<Int>) -> TranscriptSegment? {
         guard !range.isEmpty else { return nil }
-        let text = tokens[range].joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = tokens[range].joined()
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        var result = TranscriptSegment(start: min(audioEnd, origin + times[range.lowerBound]),
+        if let prefix { text = prefix.text + raw }
+        var result = TranscriptSegment(start: prefix?.start ?? min(audioEnd, origin + times[range.lowerBound]),
             end: min(audioEnd, origin + times[range.upperBound - 1] + 0.3), text: text)
         result.id = segmentID
         return result
@@ -170,21 +176,26 @@ public actor NativeNemotron {
             result.append(last)
         }
         while committed < tokens.count {
+            if live, prefix == nil, let previous,
+               tokens[committed].first?.isWhitespace != true || SpeechSentenceBoundary.shouldMerge(previous, nextStart: origin + times[committed]) {
+                prefix = previous; segmentID = previous.id
+            }
             let first = times[committed], last = times[tokens.count - 1]
-            let gap = live ? audioEnd - lastTokenUpdate : audioEnd - origin - last
-            let pause = live ? 2.6 : (tokens.count - committed < 8 ? 2.6 : 1.5)
+            let gap = live ? min(audioEnd - lastTokenUpdate, pause.duration) : audioEnd - origin - last
             var cut = tokens.count
-            if !closing, gap < pause {
-                guard last - first >= (live ? 3 : 15) else { break }
+            if live {
+                guard let boundary = SpeechSentenceBoundary.cut(tokens: tokens[committed...], times: times[committed...],
+                                                                 quiet: gap, closing: closing) else { break }
+                cut = boundary
+            } else if !closing, gap < (tokens.count - committed < 8 ? 2.6 : 1.5) {
+                guard last - first >= 15 else { break }
                 var widest = 0.0
-                for i in (committed + 1)..<tokens.count where times[i] - first >= (live ? 1 : 8) {
-                    if live && (tokens[i].first?.isWhitespace != true || last - times[i] < 0.25) { continue }
+                for i in (committed + 1)..<tokens.count where times[i] - first >= 8 {
                     if times[i] - times[i - 1] >= widest { widest = times[i] - times[i - 1]; cut = i }
                 }
-                if live && cut == tokens.count { break } // Retain an unfinished word until the next word arrives.
             }
             if let line = piece(committed..<cut) { result.append(line); previous = line }
-            committed = cut; segmentID = UUID()
+            committed = cut; segmentID = UUID(); prefix = nil
         }
         return result
     }

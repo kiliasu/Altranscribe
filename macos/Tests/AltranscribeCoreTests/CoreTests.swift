@@ -193,6 +193,22 @@ private final class StubProtocol: URLProtocol, @unchecked Sendable {
 }
 
 final class APITests: XCTestCase, @unchecked Sendable {
+    func testAppleTranslationUsesLectureContextWithoutRepeatingIt() async throws {
+        guard ProcessInfo.processInfo.environment["ALTRANSCRIBE_APPLE_SENTENCE_SMOKE"] == "1" else {
+            throw XCTSkip("Opt in to two real on-device translation requests.")
+        }
+        var settings = AppSettings(); settings.textProvider = .apple; settings.targetLanguage = "zh"
+        let context = "We want the destination to tell the source to slow down. The destination receives a packet."
+        let passages = ["I need to reserve room in a packet.", "We want the destination to tell the source when it is ready to accept more packets."]
+        for passage in passages {
+            let result = try await client().translate(passage, sourceLanguage: "en", context: context, settings: settings, key: "")
+            XCTAssertTrue(result.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) })
+            XCTAssertFalse(result.contains("房间"), "Packet space must use the lecture's networking context")
+            XCTAssertFalse(result.contains("减慢"), "Do not repeat the preceding sentence")
+            print("LECTURE_TRANSLATION \(passage) => \(result)")
+        }
+    }
+
     func testAppleTextNeverFallsBackToHTTP() async throws {
         StubProtocol.handler = { _ in XCTFail("The Apple provider must not use HTTP"); return (500, Data()) }
         let api = client()

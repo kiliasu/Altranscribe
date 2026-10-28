@@ -114,13 +114,14 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertEqual(try app.store.load().records.first?.segments, app.records.first?.segments)
     }
 
-    func testApplePartialTranslationRemainsProvisionalUntilFinal() async throws {
+    func testStreamingPartialTranslationRemainsProvisionalUntilFinal() async throws {
+        for provider in [SpeechProvider.appleSpeech, .nemotron] {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root); WorkflowProtocol.handler = nil }
         let app = app(at: root)
         let record = TranscriptRecord(title: "Draft", source: .microphone, language: "en", speechModel: "Apple SpeechTranscriber")
         app.records = [record]
-        var settings = AppSettings(); settings.speechProvider = .appleSpeech; settings.translate = true; settings.textModel = "test-model"
+        var settings = AppSettings(); settings.speechProvider = provider; settings.translate = true; settings.textModel = "test-model"
         WorkflowProtocol.handler = { $0.reply("初步译文") }
         var line = TranscriptSegment(start: 0, end: 2, text: "This is an early phrase")
         try await app.saveSegments([], partial: line, recordID: record.id, configuration: settings, textKey: "")
@@ -129,10 +130,12 @@ private final class ResponseGate: @unchecked Sendable {
         WorkflowProtocol.handler = { $0.reply("完整译文") }
         line.text += " followed by the final words."
         try await app.saveSegments([line], recordID: record.id, configuration: settings, textKey: "")
+        XCTAssertEqual(app.records[0].segments[0].translation, "初步译文", "Keep the provisional translation visible during revision")
         try await app.finishRecord(record.id, configuration: settings, textKey: "")
         XCTAssertEqual(app.records[0].segments[0].translation, "完整译文")
         XCTAssertNil(app.records[0].segments[0].translationIsProvisional)
         XCTAssertEqual(try app.store.load().records.first?.segments.first?.translation, "完整译文")
+        }
     }
 
     func testRevisedLiveTextCannotReceiveAnOlderTranslation() async throws {

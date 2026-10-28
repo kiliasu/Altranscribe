@@ -89,6 +89,7 @@ struct QueuedFile: Identifiable {
     private var draftTranslation: Task<Void, Never>?
     private var partialID: UUID?
     private var lastDraftTranslation = Date.distantPast
+    private var lastDraftRequest: (id: UUID, text: String)?
     private var discard = false
     private var deferredSave: Task<Void, Never>?
     private var activity: NSObjectProtocol?
@@ -281,7 +282,7 @@ struct QueuedFile: Identifiable {
         let source = source
         phase = .preparing; status = LocalizedText("Preparing…")
         elapsed = 0; meter = 0; discard = false
-        lastDraftTranslation = .distantPast; partialID = nil
+        lastDraftTranslation = .distantPast; lastDraftRequest = nil; partialID = nil
         beginActivity(live: true)
         work = Task(priority: .userInitiated) { [self] in
             var recordID: UUID?
@@ -408,10 +409,10 @@ struct QueuedFile: Identifiable {
                               recordID: UUID, configuration: AppSettings, textKey: String) async throws {
         try Task.checkCancellation()
         guard let index = records.firstIndex(where: { $0.id == recordID }) else { return }
-        if let partial { partialID = partial.id }
         if segments.contains(where: { $0.id == partialID }) {
             partialID = nil; draftTranslation?.cancel()
         }
+        if let partial { partialID = partial.id }
         var changed = false
         for segment in segments + (partial.map { [$0] } ?? []) {
             if segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
@@ -424,12 +425,11 @@ struct QueuedFile: Identifiable {
             if let line = records[index].segments.firstIndex(where: { $0.id == segment.id }) {
                 if records[index].segments[line].text != segment.text || records[index].segments[line].end != segment.end {
                     let old = records[index].segments[line]
-                    if translationText(old.text) != translationText(segment.text),
-                       old.translationIsProvisional != true || !translationText(segment.text).hasPrefix(translationText(old.translationSource ?? old.text)) {
-                        records[index].segments[line].translation = nil
+                    if translationText(old.text) != translationText(segment.text) {
                         records[index].segments[line].translationError = nil
-                        records[index].segments[line].translationIsProvisional = nil
-                        records[index].segments[line].translationSource = nil
+                        // Keep feedback while the growing sentence is translated again.
+                        records[index].segments[line].translationIsProvisional = old.translation == nil ? nil : true
+                        records[index].segments[line].translationSource = old.translation == nil ? nil : (old.translationSource ?? old.text)
                     }
                     records[index].segments[line].text = segment.text
                     records[index].segments[line].end = segment.end
@@ -460,7 +460,7 @@ struct QueuedFile: Identifiable {
                     try enqueueTranslation(line, recordID: recordID, configuration: configuration, textKey: textKey)
                 }
             }
-            if let partial, records[index].source != .file, configuration.speechProvider == .appleSpeech,
+            if let partial, records[index].source != .file,
                configuration.textProvider != .gemini {
                 scheduleDraftTranslation(partial.id, recordID: recordID, configuration: configuration, textKey: textKey)
             }
@@ -474,8 +474,10 @@ struct QueuedFile: Identifiable {
             do {
                 try await Task.sleep(for: .seconds(max(0.6, 4 - Date().timeIntervalSince(lastDraftTranslation))))
                 guard partialID == id, let line = records.first(where: { $0.id == recordID })?.segments.first(where: { $0.id == id }),
-                      line.text.count >= 8, line.translationSource != line.text else { return }
+                      line.text.count >= 16, line.translationSource != line.text,
+                      lastDraftRequest?.id != id || lastDraftRequest?.text != line.text else { return }
                 lastDraftTranslation = .now
+                lastDraftRequest = (id, line.text)
                 try enqueueTranslation(line, recordID: recordID, configuration: configuration, textKey: textKey, provisional: true)
             } catch is CancellationError { }
             catch { self.error = LocalizedText(error: error) }
@@ -483,12 +485,14 @@ struct QueuedFile: Identifiable {
     }
 
     private func translateSegment(_ segment: TranscriptSegment, recordID: UUID, configuration: AppSettings, textKey: String, provisional: Bool = false) async throws {
-        guard let record = records.first(where: { $0.id == recordID }) else { return }
-        let context = record.segments.filter { $0.start < segment.start }.suffix(3).map(\.text).joined(separator: "\n")
+        guard let recordIndex = records.firstIndex(where: { $0.id == recordID }),
+              let segmentIndex = records[recordIndex].segments.lastIndex(where: { $0.id == segment.id }) else { return }
+        let language = records[recordIndex].language
+        let context = records[recordIndex].segments[..<segmentIndex].suffix(3).map(\.text).joined(separator: "\n")
         var translation: String?
         var failure: LocalizedText?
         do {
-            translation = try await api.translate(segment.text, sourceLanguage: record.language, context: context, settings: configuration, key: textKey)
+            translation = try await api.translate(segment.text, sourceLanguage: language, context: context, settings: configuration, key: textKey)
         } catch is CancellationError { throw CancellationError() }
         catch { failure = LocalizedText(error: error) }
         try Task.checkCancellation()
@@ -511,6 +515,8 @@ struct QueuedFile: Identifiable {
             return
         }
         // Text-service latency must not fill the audio queue or stop recognition.
+        if !provisional, translationQueue.count >= 8,
+           let draft = translationQueue.firstIndex(where: \.provisional) { translationQueue.remove(at: draft) }
         guard translationQueue.count < 8 else {
             if provisional { return }
             if let index = records.firstIndex(where: { $0.id == recordID }),
@@ -521,7 +527,7 @@ struct QueuedFile: Identifiable {
             return
         }
         translationQueue.append(TranslationJob(segment: segment, provisional: provisional))
-        pendingTranslations += 1
+        pendingTranslations = translationQueue.count + translationTasks.count
         startTranslations(recordID: recordID, configuration: configuration, textKey: textKey)
     }
 
@@ -529,7 +535,8 @@ struct QueuedFile: Identifiable {
         // Keep Gemini and the shared on-device model serial; other text services get two bounded lanes.
         let limit = [.apple, .gemini].contains(configuration.textProvider) ? 1 : 2
         while translationTasks.count < limit,
-              let index = translationQueue.firstIndex(where: { translationTasks[$0.segment.id] == nil }) {
+              let index = translationQueue.firstIndex(where: { !$0.provisional && translationTasks[$0.segment.id] == nil }) ??
+                translationQueue.firstIndex(where: { translationTasks[$0.segment.id] == nil }) {
             let next = translationQueue.remove(at: index)
             translationTasks[next.segment.id] = Task(priority: .userInitiated) {
                 defer {

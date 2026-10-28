@@ -78,9 +78,9 @@ private actor LiveProbe {
             let text = lines.map(\.text).joined(separator: " ").lowercased()
             let first = await probe.firstFinal ?? .infinity
             print("LIVE \(provider.rawValue): firstFinal=\(first), partial=\(await probe.firstPartial ?? -1), text=\(text)")
-            if provider == .appleSpeech {
+            if [.nemotron, .appleSpeech].contains(provider) {
                 let partial = await probe.firstPartial ?? .infinity
-                XCTAssertLessThan(partial, 4, "Apple must display incremental text before waiting for the final sentence")
+                XCTAssertLessThan(partial, 4, "Streaming must display text without forcing a premature sentence boundary")
             } else { XCTAssertLessThan(first, 8, "A first stable phrase must arrive before the previous 8-second batch") }
             XCTAssertTrue(text.contains("ask not"), text)
             if provider == .nemotron { XCTAssertTrue(text.contains("americans"), "Do not split word pieces across captions: " + text) }
