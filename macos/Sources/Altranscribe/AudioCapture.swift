@@ -26,7 +26,7 @@ final class CaptureSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked 
         self.adaptiveGain = adaptiveGain
         self.recordingURL = recordingURL
         // Keep the same 64-second audio budget for both streaming and batch engines.
-        let capacity = max(1, Int(ceil(64 / (automaticChunks ? min(1, chunkSeconds) : chunkSeconds))))
+        let capacity = max(1, Int(64 / chunkSeconds))
         let pair = AsyncThrowingStream<AudioChunk, Error>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
         stream = pair.stream; continuation = pair.continuation; self.meter = meter
     }

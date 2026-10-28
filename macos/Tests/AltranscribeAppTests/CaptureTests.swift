@@ -51,14 +51,16 @@ final class CaptureTests: XCTestCase, @unchecked Sendable {
     }
 
     func testBackpressureFailsInsteadOfSilentlyDroppingAudio() async throws {
-        let sink = CaptureSink { _, _ in }
-        sink.microphone(buffer(seconds: 72))
-        await sink.finish()
-        var delivered = 0
-        do {
-            for try await _ in sink.stream { delivered += 1 }
-            XCTFail("An overrun must be reported")
-        } catch { XCTAssertTrue(error is AppError) }
-        XCTAssertEqual(delivered, 8)
+        for (seconds, automatic, expected) in [(8.0, false, 8), (4.0, true, 16)] {
+            let sink = CaptureSink(chunkSeconds: seconds, automaticChunks: automatic) { _, _ in }
+            sink.microphone(buffer(seconds: 72))
+            await sink.finish()
+            var delivered = 0
+            do {
+                for try await _ in sink.stream { delivered += 1 }
+                XCTFail("An overrun must be reported")
+            } catch { XCTAssertTrue(error is AppError) }
+            XCTAssertEqual(delivered, expected, "Automatic slicing must keep the same 64-second buffering limit")
+        }
     }
 }
