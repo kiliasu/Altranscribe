@@ -46,9 +46,19 @@ enum SpeechSentenceBoundary {
         if quiet >= pause { return tokens.endIndex }
         // Unpunctuated continuous speech still needs bounded captions and translation requests.
         // Retain the last word as a hypothesis; never split a subword token across rows.
-        if last - first >= 18,
-           let boundary = tokens.indices.dropFirst().last(where: { tokens[$0].first?.isWhitespace == true }) {
-            return boundary
+        if last - first >= 18 {
+            let words = NLTokenizer(unit: .word)
+            words.string = text
+            var lastWordStart = 0
+            words.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+                lastWordStart = text[..<range.lowerBound].utf8.count
+                return true
+            }
+            var bytes = 0
+            for index in tokens.indices {
+                bytes += tokens[index].utf8.count
+                if bytes > lastWordStart { return index > tokens.startIndex ? index : nil }
+            }
         }
         return nil
     }
@@ -58,6 +68,21 @@ enum SpeechSentenceBoundary {
         guard let last = text.last, ".!?。！？".contains(last) else { return false }
         let word = text.split(whereSeparator: \.isWhitespace).last?.lowercased() ?? ""
         return !["mr.", "mrs.", "ms.", "dr.", "prof.", "e.g.", "i.e.", "vs.", "u.s."].contains(word)
+    }
+
+    static func continuesWord(_ previous: String, token: String) -> Bool {
+        guard !token.isEmpty, token.first?.isWhitespace != true else { return false }
+        let tail = String(previous.suffix(64))
+        let text = tail + token
+        let boundary = text.utf8.index(text.utf8.startIndex, offsetBy: tail.utf8.count)
+        let words = NLTokenizer(unit: .word)
+        words.string = text
+        var continues = false
+        words.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            continues = range.lowerBound < boundary && range.upperBound > boundary
+            return !continues && range.lowerBound < boundary
+        }
+        return continues
     }
 
     static func isContinuation(_ text: String) -> Bool {

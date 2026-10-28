@@ -186,7 +186,8 @@ public actor NativeNemotron {
         }
         while committed < tokens.count {
             if live, prefix == nil, let previous,
-               tokens[committed].first?.isWhitespace != true || SpeechSentenceBoundary.shouldMerge(previous, nextStart: origin + times[committed]) {
+               SpeechSentenceBoundary.continuesWord(previous.text, token: tokens[committed]) ||
+                SpeechSentenceBoundary.shouldMerge(previous, nextStart: origin + times[committed]) {
                 prefix = previous; segmentID = previous.id
             }
             let first = times[committed], last = times[tokens.count - 1]

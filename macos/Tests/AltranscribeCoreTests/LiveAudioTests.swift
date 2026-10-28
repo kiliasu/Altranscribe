@@ -20,6 +20,14 @@ final class LiveAudioTests: XCTestCase {
         let continuous = ["We"] + Array(repeating: " continue", count: 70)
         let cut = SpeechSentenceBoundary.cut(tokens: continuous[...], times: continuous.indices.map { Double($0) * 0.3 }[...], quiet: 0, closing: false)
         XCTAssertEqual(cut, continuous.count - 1, "Bound an unpunctuated passage while retaining its last word as a hypothesis")
+        let chinese = Array(String(repeating: "我们继续讨论网络协议", count: 8)).map(String.init)
+        let chineseCut = SpeechSentenceBoundary.cut(tokens: chinese[...], times: chinese.indices.map { Double($0) * 0.3 }[...], quiet: 0, closing: false)
+        XCTAssertNotNil(chineseCut, "Continuous speech without spaces must also have a bounded caption")
+        if let chineseCut { XCTAssertLessThan(chineseCut, chinese.count) }
+        XCTAssertTrue(SpeechSentenceBoundary.continuesWord("My fellow Americ", token: "ans"))
+        XCTAssertTrue(SpeechSentenceBoundary.continuesWord("我们讨论网", token: "络"))
+        XCTAssertFalse(SpeechSentenceBoundary.continuesWord("我们讨论网络协议", token: "我们"))
+        XCTAssertFalse(SpeechSentenceBoundary.continuesWord("这是第一句。", token: "下一句"), "No-space scripts must not rejoin complete sentences")
         XCTAssertEqual(SpeechSentenceBoundary.cut(tokens: words.prefix(3), times: times.prefix(3), quiet: 0, closing: true), 3)
     }
 
