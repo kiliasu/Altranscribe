@@ -173,10 +173,10 @@ private final class ResponseGate: @unchecked Sendable {
         app.records = [record]
         var settings = AppSettings(); settings.translate = true; settings.textModel = "test-model"
         let gate = ResponseGate(); WorkflowProtocol.handler = { gate.receive($0) }
-        var line = TranscriptSegment(start: 0, end: 2, text: "The first draft")
+        var line = TranscriptSegment(start: 0, end: 2, text: "The rate is 1.5")
         try await app.saveSegments([line], recordID: record.id, configuration: settings, textKey: "")
         try await waitUntil { gate.count == 1 }
-        line.text = "The corrected final sentence"
+        line.text = "The rate is 15"
         try await app.saveSegments([line], recordID: record.id, configuration: settings, textKey: "")
         gate.reply("旧译文")
         try await waitUntil { gate.count == 2 }
@@ -184,6 +184,18 @@ private final class ResponseGate: @unchecked Sendable {
         gate.reply("修正后的译文", index: 1)
         try await app.finishRecord(record.id, configuration: settings, textKey: "")
         XCTAssertEqual(app.records[0].segments[0].translation, "修正后的译文")
+        for (before, after) in [("Set it to -10", "Set it to 10"), ("Use C++", "Use C"), ("It is now here", "It is nowhere")] {
+            var revised = TranscriptSegment(start: 4, end: 6, text: before)
+            WorkflowProtocol.handler = { $0.reply("原译文") }
+            try await app.saveSegments([revised], recordID: record.id, configuration: settings, textKey: "")
+            try await waitUntil { app.records[0].segments.last?.translation == "原译文" }
+            WorkflowProtocol.handler = { $0.reply("更新后的译文") }
+            revised.text = after
+            try await app.saveSegments([revised], recordID: record.id, configuration: settings, textKey: "")
+            try await app.finishRecord(record.id, configuration: settings, textKey: "")
+            XCTAssertEqual(app.records[0].segments.last?.translation, "更新后的译文", "A meaningful symbol or word boundary change must invalidate the old translation")
+            XCTAssertEqual(try app.store.load().records.first?.segments.last?.translation, "更新后的译文")
+        }
     }
 
     func testRetranslationIsAtomicAndUsesRecordedLanguage() async throws {

@@ -595,7 +595,10 @@ private actor RecordWriter {
     }
 
     private func translationText(_ text: String) -> String {
-        text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
+        var value = text.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+        // A delayed sentence-ending period is harmless; signs, decimals and word boundaries are not.
+        while let last = value.last, last == "." || last == "。" { value.removeLast() }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func drainTranslations(cancel: Bool = false) async {
