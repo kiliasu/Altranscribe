@@ -7,21 +7,40 @@ struct StreamingText: View {
     var active = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var stableCharacters = Int.max
+    @State private var changedAt: Date?
 
     init(_ text: String, active: Bool = true) { self.text = text; self.active = active }
 
     var body: some View {
-        let animate = active && !reduceMotion
-        Self.content(text, stableCharacters: stableCharacters)
-            .keyframeAnimator(initialValue: CGFloat(1), trigger: text) { content, progress in
-                content.textRenderer(StreamingTextRenderer(progress: animate ? progress : 1))
-            } keyframes: { _ in
-                MoveKeyframe(0)
-                CubicKeyframe(1, duration: 0.18)
+        Group {
+            if active && !reduceMotion {
+                TimelineView(.animation(minimumInterval: 1 / 60, paused: changedAt == nil)) { timeline in
+                    let progress = changedAt.map { min(1, max(0, timeline.date.timeIntervalSince($0) / 0.18)) } ?? 1
+                    Self.content(text, stableCharacters: stableCharacters)
+                        .textRenderer(StreamingTextRenderer(progress: progress))
+                }
+            } else {
+                Text(verbatim: text)
             }
-            .onChange(of: text) { old, new in
+        }
+        .onChange(of: text) { old, new in
+            if active && !reduceMotion {
                 stableCharacters = Self.commonPrefix(old, new)
+                changedAt = .now
             }
+        }
+        .task(id: changedAt) {
+            guard changedAt != nil else { return }
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            settle()
+        }
+        .onDisappear { settle() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in settle() }
+    }
+
+    private func settle() {
+        changedAt = nil
+        stableCharacters = Int.max
     }
 
     static func commonPrefix(_ old: String, _ new: String) -> Int {
@@ -33,6 +52,19 @@ struct StreamingText: View {
         let prefix = Text(verbatim: String(text[..<boundary]))
         let suffix = Text(verbatim: String(text[boundary...])).customAttribute(StreamingSuffix())
         return Text("\(prefix)\(suffix)")
+    }
+}
+
+/// Keep layout at its full reading size while the previous sentence gently recedes.
+struct SentenceEmphasis: ViewModifier {
+    let current: Bool?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(current == false && !reduceMotion ? 0.96 : 1, anchor: .leading)
+            .opacity(current == false ? 0.72 : 1)
+            .animation(reduceMotion ? .easeInOut(duration: 0.12) : .smooth(duration: 0.55), value: current)
     }
 }
 

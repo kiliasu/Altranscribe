@@ -5,13 +5,16 @@ import AltranscribeCore
 
 @MainActor private final class StreamingFixture: ObservableObject {
     @Published var text = "Stable "
+    @Published var visible = true
 }
 
 private struct StreamingFixtureView: View {
     @ObservedObject var fixture: StreamingFixture
     let animated: Bool
     var body: some View {
-        StreamingText(fixture.text, active: animated)
+        Group {
+            if fixture.visible { StreamingText(fixture.text, active: animated) }
+        }
             .font(.system(size: 24, design: .monospaced))
             .foregroundStyle(.black)
             .frame(width: 420, height: 100, alignment: .topLeading)
@@ -61,6 +64,25 @@ private struct StreamingFixtureView: View {
             let latest = try snapshot(host)
             wait(0.25)
             XCTAssertEqual(try pixels(latest), try pixels(snapshot(host)), "An older update must not reappear")
+
+            // A window may stop rendering while hidden. Returning must not replay an old suffix.
+            fixture.text = "Stable background words"
+            wait(0.03)
+            window.orderOut(nil)
+            wait(0.3)
+            window.orderFront(nil)
+            NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+            wait(0.02)
+            let returned = try snapshot(host)
+            wait(0.22)
+            XCTAssertEqual(try pixels(returned), try pixels(snapshot(host)), "Returning from the background must show settled text")
+            fixture.visible = false
+            wait(0.03)
+            fixture.visible = true
+            wait(0.02)
+            let reappeared = try snapshot(host)
+            wait(0.22)
+            XCTAssertEqual(try pixels(reappeared), try pixels(snapshot(host)), "Recycled transcript rows must not replay their entrance")
         }
     }
 

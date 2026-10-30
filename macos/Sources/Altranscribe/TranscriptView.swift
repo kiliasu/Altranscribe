@@ -22,7 +22,9 @@ struct TranscriptScroll<Header: View>: View {
     @ViewBuilder var header: Header
     @AppStorage("transcriptTextSize") private var textSize = 15.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.appearsActive) private var appearsActive
     @State private var follow = true
+    @State private var scrollRevision = 0
     private let bottom = "bottom"
 
     private struct Metrics: Equatable {
@@ -40,7 +42,11 @@ struct TranscriptScroll<Header: View>: View {
                             .padding(.bottom, 20)
                             .transition(.rise)
                     }
-                    ForEach(record.segments) { SegmentRow(segment: $0, textSize: textSize, streaming: live != nil).equatable().transition(.rise) }
+                    ForEach(record.segments) { segment in
+                        SegmentRow(segment: segment, textSize: textSize,
+                                   streaming: live != nil && appearsActive && segment.id == record.segments.last?.id,
+                                   current: live == nil || !follow ? nil : segment.id == record.segments.last?.id).equatable()
+                    }
                     if record.segments.isEmpty && live == nil {
                         Text(L("No speech was transcribed."))
                             .font(.system(size: textSize))
@@ -53,7 +59,7 @@ struct TranscriptScroll<Header: View>: View {
                     Color.clear.frame(height: 1).id(bottom)
                 }
                 // New lines, arriving translations, a new summary and the end of listening all move as content.
-                .animation(Motion.content, value: record.segments.count)
+                .animation(live == nil ? nil : Motion.content, value: record.segments.count)
                 .animation(Motion.content, value: record.summary)
                 .animation(Motion.content, value: live)
                 .listRowSeparator(.hidden)
@@ -64,9 +70,13 @@ struct TranscriptScroll<Header: View>: View {
                 .frame(maxWidth: .infinity)
             }
             .listStyle(.plain)
+            .defaultScrollAnchor(.top, for: .sizeChanges)
             .scrollContentBackground(.hidden)
             .contentMargins(.top, 28, for: .scrollContent)
             .contentMargins(.bottom, 36, for: .scrollContent)
+            .transaction { transaction in
+                if !appearsActive { transaction.animation = nil; transaction.disablesAnimations = true }
+            }
             .onScrollGeometryChange(for: Metrics.self) { geometry in
                 Metrics(offset: geometry.contentOffset.y,
                         distance: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY,
@@ -77,13 +87,15 @@ struct TranscriptScroll<Header: View>: View {
                 if new.distance < 40 { follow = true }
                 else if new.content == old.content && new.container == old.container && new.insets == old.insets
                             && new.offset < old.offset - 0.5 { follow = false }
-                if new.content != old.content { followLatest(proxy, Motion.quick) }
+                if new.content != old.content || new.container != old.container { scrollRevision += 1 }
             }
-            // A new line glides into view; a line that grows keeps pace with a shorter glide.
-            .onChange(of: record.segments.count) { _, _ in followLatest(proxy, Motion.content) }
-            .onChange(of: record.segments.last?.text) { _, _ in followLatest(proxy, Motion.quick) }
-            .onChange(of: record.segments.last?.translation) { _, _ in followLatest(proxy, Motion.quick) }
-            .onChange(of: textSize) { _, _ in followLatest(proxy, nil) }
+            // Follow the measured layout once, after wrapping and translation have settled.
+            // Per-token scroll requests otherwise restart the same movement before layout.
+            .task(id: scrollRevision) {
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                followLatest(proxy, .smooth(duration: 0.55))
+            }
             .onAppear { if live != nil { proxy.scrollTo(bottom, anchor: .bottom) } }
             .overlay(alignment: .bottom) {
                 if live != nil && !follow {
@@ -107,7 +119,7 @@ struct TranscriptScroll<Header: View>: View {
         scroll(proxy, animation)
     }
     private func scroll(_ proxy: ScrollViewProxy, _ animation: Animation?) {
-        if let animation, !reduceMotion { withAnimation(animation) { proxy.scrollTo(bottom, anchor: .bottom) } }
+        if let animation, !reduceMotion, appearsActive { withAnimation(animation) { proxy.scrollTo(bottom, anchor: .bottom) } }
         else { proxy.scrollTo(bottom, anchor: .bottom) }
     }
 }
@@ -116,6 +128,7 @@ struct SegmentRow: View, Equatable {
     let segment: TranscriptSegment
     let textSize: Double
     var streaming = false
+    var current: Bool?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 18) {
@@ -136,7 +149,6 @@ struct SegmentRow: View, Equatable {
                         .font(.system(size: textSize))
                         .lineSpacing(textSize * 0.3)
                         .foregroundStyle(.secondary)
-                        .transition(.rise)
                 }
                 if let error = segment.translationError {
                     Label(error.text, systemImage: "exclamationmark.triangle.fill")
@@ -147,6 +159,7 @@ struct SegmentRow: View, Equatable {
             }
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(SentenceEmphasis(current: current))
         }
         .padding(.vertical, textSize * 0.55)
         .animation(Motion.content, value: segment.translation != nil || segment.translationError != nil)

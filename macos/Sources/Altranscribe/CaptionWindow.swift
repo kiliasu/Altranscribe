@@ -68,6 +68,7 @@ private struct CaptionView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
     @State private var showingOptions = false
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -104,27 +105,35 @@ private struct CaptionView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: model.settings.captionSize * 0.55) {
-                            ForEach(model.captionSegments) { segment in captions(segment).transition(.rise) }
-                            Color.clear.frame(height: 1).id("caption-bottom")
+                            ForEach(model.captionSegments) { segment in
+                                captions(segment)
+                                    .transition(.asymmetric(insertion: reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)),
+                                                            removal: .opacity.animation(.easeOut(duration: 0.1))))
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .animation(Motion.content, value: model.captionSegments.map(\.id))
+                        .id("caption-bottom")
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+                        .animation(reduceMotion ? .easeInOut(duration: 0.12) : .smooth(duration: 0.55), value: model.captionSegments.map(\.id))
                     }
                     .defaultScrollAnchor(.bottom)
+                    .defaultScrollAnchor(.top, for: .sizeChanges)
+                    .defaultScrollAnchor(.top, for: .alignment)
                     .scrollIndicators(.never)
-                    .onChange(of: model.captionSegments) { _, _ in
-                        if reduceMotion { proxy.scrollTo("caption-bottom", anchor: .bottom) }
-                        else { withAnimation(Motion.quick) { proxy.scrollTo("caption-bottom", anchor: .bottom) } }
+                    .task(id: contentHeight) {
+                        await Task.yield()
+                        guard !Task.isCancelled else { return }
+                        withAnimation(reduceMotion ? nil : .smooth(duration: 0.55)) {
+                            proxy.scrollTo("caption-bottom", anchor: .bottom)
+                        }
                     }
                 }
-                .transition(.page)
             } else {
                 Text(L("Captions appear here when transcription starts."))
                     .font(.system(size: model.settings.captionSize * 0.8))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.page)
             }
         }
         .animation(Motion.content, value: model.currentCaption == nil)
@@ -143,22 +152,21 @@ private struct CaptionView: View {
     @ViewBuilder private func captions(_ segment: TranscriptSegment) -> some View {
         let size = model.settings.captionSize
         let translationOnly = model.settings.captionTranslationOnly
+        let current = segment.id == model.currentCaption?.id
         VStack(alignment: .leading, spacing: size * 0.25) {
             if !translationOnly || segment.translation == nil {
-                StreamingText(segment.text)
+                StreamingText(segment.text, active: current)
                     .font(.system(size: size, weight: .semibold))
                     .textSelection(.enabled)
-                    .transition(.rise)
             }
             if let translation = segment.translation {
                 if segment.translationIsProvisional == true {
                     Text(L("Provisional translation")).font(.caption).foregroundStyle(.tertiary).transition(.opacity)
                 }
-                StreamingText(translation)
+                StreamingText(translation, active: current)
                     .font(.system(size: translationOnly ? size : size * 0.92, weight: translationOnly ? .semibold : .regular))
                     .foregroundStyle(translationOnly ? .primary : .secondary)
                     .textSelection(.enabled)
-                    .transition(.rise)
             } else if model.isTranslationPending(segment.id) {
                 Text(L("Translating…")).font(.caption).foregroundStyle(.secondary).transition(.opacity)
             } else if let error = segment.translationError {
@@ -168,6 +176,7 @@ private struct CaptionView: View {
         .animation(Motion.content, value: segment.translation != nil)
         .animation(Motion.quick, value: segment.translationIsProvisional)
         .animation(Motion.quick, value: translationOnly)
+        .modifier(SentenceEmphasis(current: current))
     }
 
     /// Standard circular buttons on the glass panel, so the system draws their fill, press state and focus.
