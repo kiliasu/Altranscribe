@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:altranscribe/shared/platform/mobile_platform.dart';
 
@@ -32,10 +33,14 @@ class RecordStore {
         : {};
   }
 
-  Future<void> saveSettings(Map<String, Object?> value) =>
-      _write('settings.json', value);
+  Future<void> saveSettings(Map<String, Object?> value) => _write(
+    'settings.json',
+    Future.value(
+      utf8.encode(const JsonEncoder.withIndent('  ').convert(value)),
+    ),
+  );
   Future<void> save(TranscriptRecord record) =>
-      _write('${record.id}.json', record.toJson());
+      _write('${record.id}.json', _encodeRecord(record));
   Future<void> delete(String id) {
     if (!RegExp(r'^session-\d+$').hasMatch(id)) {
       throw ArgumentError.value(id, 'id', 'Invalid record ID');
@@ -51,37 +56,49 @@ class RecordStore {
     return deletion;
   }
 
-  Future<void> _write(String name, Object value) {
-    final snapshot = const JsonEncoder.withIndent('  ').convert(value);
+  Future<void> _write(String name, Future<List<int>> snapshot) {
     // ASR and translation finish independently. Serialize snapshots so their
     // temporary files cannot collide or overwrite newer results out of order.
-    final write = _writes
-        .catchError((Object _) {})
-        .then((_) => _writeSnapshot(name, snapshot));
+    // Observe encoding failures immediately, even while an earlier write is
+    // pending. Disk replacement still follows the order save() was called.
+    final write = Future.wait<Object?>([
+      _writes.catchError((Object _) {}),
+      snapshot,
+    ]).then((values) => _writeSnapshot(name, values[1] as List<int>));
     _writes = write;
     return write;
   }
 
-  Future<void> _writeSnapshot(String name, String snapshot) async {
+  Future<void> _writeSnapshot(String name, List<int> snapshot) async {
     final file = File('${directory.path}/$name.tmp');
-    await file.writeAsString(snapshot, flush: true);
+    await file.writeAsBytes(snapshot, flush: true);
     // A completed snapshot replaces the preceding one; readers never see partial JSON.
     await file.rename('${directory.path}/$name');
   }
 
-  Future<List<TranscriptRecord>> loadRecords() async {
-    final records = <TranscriptRecord>[];
-    await for (final file in directory.list()) {
-      if (file is File &&
-          RegExp(r'[/\\]session-\d+\.json$').hasMatch(file.path)) {
-        records.add(
-          TranscriptRecord.fromJson(
-            jsonDecode(await file.readAsString()) as Map<String, dynamic>,
-          ),
-        );
-      }
-    }
-    records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return records;
-  }
+  Future<List<TranscriptRecord>> loadRecords() => _loadRecords(directory.path);
 }
+
+// Only the record crosses the isolate boundary, never the store/write queue.
+// The isolate gets a call-time copy before recognition can mutate the next row.
+Future<List<int>> _encodeRecord(TranscriptRecord record) => Isolate.run(
+  () =>
+      utf8.encode(const JsonEncoder.withIndent('  ').convert(record.toJson())),
+);
+
+Future<List<TranscriptRecord>> _loadRecords(String path) =>
+    Isolate.run(() async {
+      final records = <TranscriptRecord>[];
+      await for (final file in Directory(path).list()) {
+        if (file is File &&
+            RegExp(r'[/\\]session-\d+\.json$').hasMatch(file.path)) {
+          records.add(
+            TranscriptRecord.fromJson(
+              jsonDecode(await file.readAsString()) as Map<String, dynamic>,
+            ),
+          );
+        }
+      }
+      records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return records;
+    });

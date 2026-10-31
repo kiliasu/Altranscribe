@@ -162,6 +162,49 @@ class TranscriptRecord {
   String? error;
   bool get needsSummary => summary?.trim().isNotEmpty != true;
 
+  // Live and imported lines stay chronological. Equal timestamps keep their
+  // arrival order, including independent sources and estimated sentence times.
+  void insertLine(TranscriptLine line) {
+    if (lines.isEmpty || lines.last.startMs <= line.startMs) {
+      lines.add(line);
+      return;
+    }
+    lines.insert(_lineOffset(line.startMs, after: true), line);
+  }
+
+  int _lineOffset(int startMs, {bool after = false}) {
+    var low = 0, high = lines.length;
+    while (low < high) {
+      final middle = low + ((high - low) >> 1);
+      final time = lines[middle].startMs;
+      if (time < startMs || (after && time == startMs)) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low;
+  }
+
+  int indexOfLine(TranscriptLine line) {
+    if (lines.isNotEmpty && identical(lines.last, line)) {
+      return lines.length - 1;
+    }
+    for (
+      var i = _lineOffset(line.startMs);
+      i < lines.length && lines[i].startMs == line.startMs;
+      i++
+    ) {
+      if (identical(lines[i], line)) return i;
+    }
+    return -1;
+  }
+
+  void removeLine(TranscriptLine line) {
+    final index = indexOfLine(line);
+    if (index >= 0) lines.removeAt(index);
+  }
+
   // Edit a saved snapshot without changing the visible record before disk succeeds.
   TranscriptRecord copy() => TranscriptRecord(
     id: id,

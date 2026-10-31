@@ -1350,12 +1350,15 @@ class RealtimeController extends ChangeNotifier {
 
   void _events(List<Map<String, Object?>> events) {
     if (events.isEmpty || _discarding) return;
+    var changed = false;
     for (final event in events) {
       final source = event['source'] as String;
       switch (event['type']) {
         case 'ready':
+          changed = true;
           readySources.add(source);
         case 'level':
+          changed = true;
           levels[source] = (event['level'] as num).toDouble();
           if (phase == SessionPhase.listening) {
             final history = [...?levelHistory[source], levels[source]!];
@@ -1370,12 +1373,15 @@ class RealtimeController extends ChangeNotifier {
             );
           }
         case 'gap':
+          changed = true;
           warning = 'audioGap';
         case 'error':
+          changed = true;
           AppLog.instance.warn('audio', '$source: ${event['message']}');
           error = '$source: ${event['message']}';
           if (phase != SessionPhase.loading) unawaited(stop());
         case 'chunk':
+          changed = true;
           // New snapshots supersede older queued previews, never final audio.
           _queue.removeWhere(
             (pending) =>
@@ -1422,7 +1428,9 @@ class RealtimeController extends ChangeNotifier {
           }
       }
     }
-    _notify();
+    // Raw streaming audio has no visible state. Its text callbacks and the
+    // native level events notify when there is something new to display.
+    if (changed) _notify();
   }
 
   void _cloudText(CloudLiveText update) {
@@ -1456,7 +1464,7 @@ class RealtimeController extends ChangeNotifier {
           : old?.translationStatus ?? 'none',
       translationError: old?.translationError,
     );
-    if (old != null) current.lines.remove(old);
+    if (old != null) current.removeLine(old);
     _cloudLines[update.id] = line;
     var completedLines = <TranscriptLine>[line];
     if (update.finalized && !_directForSession) {
@@ -1470,16 +1478,15 @@ class RealtimeController extends ChangeNotifier {
       );
       _finalLines[update.id] = completedLines;
     } else if (line.text.isNotEmpty || line.translation?.isNotEmpty == true) {
-      current.lines.add(line);
+      current.insertLine(line);
     }
-    current.lines.sort((a, b) => a.startMs.compareTo(b.startMs));
     if (update.finalized && !alreadyFinal) {
       _cloudFinalized.add(update.id);
       if (!_directForSession &&
           current.targetLanguage != null &&
           line.text.isNotEmpty) {
         _translationQueue.removeWhere(
-          (item) => item.$2.every((line) => !item.$1.lines.contains(line)),
+          (item) => item.$2.every((line) => item.$1.indexOfLine(line) < 0),
         );
         _queueTranslations(current, completedLines);
         if (_translationQueue.isNotEmpty) {
@@ -1516,7 +1523,7 @@ class RealtimeController extends ChangeNotifier {
     if (current == null || _disposed || _discarding) return;
     TranscriptLine? line;
     for (final candidate in (_finalLines[id] ?? const []).reversed) {
-      if (current.lines.contains(candidate)) {
+      if (current.indexOfLine(candidate) >= 0) {
         line = candidate;
         break;
       }
@@ -1562,7 +1569,7 @@ class RealtimeController extends ChangeNotifier {
         );
         // A joined tail replaces the old row. Its pending translation is obsolete.
         _translationQueue.removeWhere(
-          (item) => item.$2.every((line) => !item.$1.lines.contains(line)),
+          (item) => item.$2.every((line) => item.$1.indexOfLine(line) < 0),
         );
         if (!partial) {
           _queueTranslations(current, lines);
@@ -1660,7 +1667,7 @@ class RealtimeController extends ChangeNotifier {
   ) async {
     final queued = _queuedAt.remove(line);
     // A joined tail replaced this row while it waited.
-    if (_discarding || !current.lines.contains(line)) return;
+    if (_discarding || current.indexOfLine(line) < 0) return;
     _notify();
     if (queued != null) {
       _translationWaits.add(
@@ -1677,20 +1684,20 @@ class RealtimeController extends ChangeNotifier {
         rules: current.translationRules,
         terms: current.translationTerms,
       );
-      if (!_discarding && current.lines.contains(line)) {
+      if (!_discarding && current.indexOfLine(line) >= 0) {
         line.translation = translation;
         line.translationStatus = 'done';
       }
       lastTranslationSeconds = clock.elapsedMilliseconds / 1000;
       _translationTimes.add(lastTranslationSeconds);
     } catch (e) {
-      if (!_discarding && current.lines.contains(line)) {
+      if (!_discarding && current.indexOfLine(line) >= 0) {
         line.translationStatus = 'failed';
         line.translationError = e.toString();
         warning = 'translationFailed';
       }
     }
-    if (!_discarding && current.lines.contains(line)) _saveSoon(current);
+    if (!_discarding && current.indexOfLine(line) >= 0) _saveSoon(current);
     transcriptRevision++;
     _notify();
   }

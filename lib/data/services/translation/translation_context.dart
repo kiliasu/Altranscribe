@@ -27,50 +27,47 @@ class TranslationContextPolicy {
     TranscriptRecord record,
     TranscriptLine current,
   ) {
-    final earlier = record.lines
-        .takeWhile((line) => line != current)
-        .where(
-          (line) =>
-              line.source == current.source &&
-              line.endMs <= current.startMs &&
-              line.transcriptionStatus == 'done' &&
-              line.displayText.trim().isNotEmpty,
-        )
-        .toList();
-    final eligible = earlier.where(
-      (line) => !automatic || current.startMs - line.endMs <= 90000,
-    );
-    final recent = eligible
-        .toList()
-        .reversed
-        .take(automatic ? 6 : count.clamp(0, 20))
-        .toList()
-        .reversed
-        .toList();
+    final limit = automatic ? 6 : count.clamp(0, 20);
+    if (limit == 0) return const [];
+    final recent = <TranscriptLine>[];
     // An earlier line outside that window that names the same person, place
     // or term shows how it was translated, which keeps the name consistent
     // without another model call.
     final references = <TranscriptLine>[];
-    final names = automatic || count > 0
-        ? nameTokens(current.displayText)
-        : const <String>{};
-    for (final line in earlier.reversed) {
-      if (names.isEmpty || references.length == 2) break;
+    final names = nameTokens(current.displayText).map(_namePattern).toList();
+    final index = record.indexOfLine(current);
+    for (var i = (index < 0 ? record.lines.length : index) - 1; i >= 0; i--) {
+      if (recent.length == limit && (names.isEmpty || references.length == 2)) {
+        break;
+      }
+      final line = record.lines[i];
+      if (line.source != current.source ||
+          line.endMs > current.startMs ||
+          line.transcriptionStatus != 'done' ||
+          line.displayText.trim().isEmpty) {
+        continue;
+      }
+      if (recent.length < limit &&
+          (!automatic || current.startMs - line.endMs <= 90000)) {
+        recent.add(line);
+        continue;
+      }
       final translation = line.displayTranslation;
-      if (recent.contains(line) ||
+      if (names.isEmpty ||
+          references.length == 2 ||
           line.translationStatus != 'done' ||
           translation == null ||
           translation.trim().isEmpty) {
         continue;
       }
-      if (names.any((name) => mentions(line.displayText, name))) {
+      if (names.any((pattern) => pattern.hasMatch(line.displayText))) {
         references.add(line);
       }
     }
     return bound([
       for (final line in references.reversed)
         TranslationContext(line.displayText, line.displayTranslation),
-      for (final line in recent)
+      for (final line in recent.reversed)
         TranslationContext(
           line.displayText,
           line.translationStatus == 'done' ? line.displayTranslation : null,
@@ -121,11 +118,12 @@ class TranslationContextPolicy {
     return tokens;
   }
 
-  static bool mentions(String text, String name) =>
-      RegExp(r'[A-Za-z]').hasMatch(name)
+  static RegExp _namePattern(String name) => RegExp(r'[A-Za-z]').hasMatch(name)
       ? RegExp('(?<![A-Za-z0-9])${RegExp.escape(name)}(?![A-Za-z0-9])')
-            .hasMatch(text)
-      : text.contains(name);
+      : RegExp(RegExp.escape(name));
+
+  static bool mentions(String text, String name) =>
+      _namePattern(name).hasMatch(text);
 
   // Bound every provider's prompt, including a single long cloud/file segment.
   static List<TranslationContext> bound(List<TranslationContext> items) {

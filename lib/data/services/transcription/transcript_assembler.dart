@@ -98,7 +98,7 @@ class TranscriptAssembler {
     // A temporarily empty hypothesis should not flicker the previous preview.
     if (partial && text.trim().isEmpty) return const [];
     for (final old in _previews.remove(key) ?? <TranscriptLine>[]) {
-      record.lines.remove(old);
+      record.removeLine(old);
     }
     final parts = transcriptSentences(text);
     final lines = <TranscriptLine>[];
@@ -121,7 +121,7 @@ class TranscriptAssembler {
     if (!partial) {
       final tail = _tails.remove(source);
       if (tail != null &&
-          record.lines.contains(tail) &&
+          record.indexOfLine(tail) >= 0 &&
           lines.isNotEmpty &&
           startMs >= tail.endMs &&
           startMs - tail.endMs <= 1200 &&
@@ -130,7 +130,7 @@ class TranscriptAssembler {
               (_cjk.hasMatch(tail.text + lines.first.text) ? 100 : 240)) {
         final first = lines.first;
         final separator = joinSeparator(tail.text, first.text);
-        record.lines.remove(tail);
+        record.removeLine(tail);
         lines[0] = TranscriptLine(
           source: source,
           startMs: tail.startMs,
@@ -143,8 +143,9 @@ class TranscriptAssembler {
     } else {
       _previews[key] = lines;
     }
-    record.lines.addAll(lines);
-    record.lines.sort((a, b) => a.startMs.compareTo(b.startMs));
+    for (final line in lines) {
+      record.insertLine(line);
+    }
     return lines;
   }
 }
