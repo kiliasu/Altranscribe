@@ -1,6 +1,6 @@
 enum CloudProvider { openAI, gemini, anthropic }
 
-enum SpeechProvider { whisper, nemotron, openAI, gemini }
+enum SpeechProvider { whisper, nemotron, transcribe, openAI, gemini }
 
 extension SpeechProviderInfo on SpeechProvider {
   /// Recognition that leaves the device for a hosted service.
@@ -12,12 +12,14 @@ extension SpeechProviderInfo on SpeechProvider {
   String get label => switch (this) {
     SpeechProvider.whisper => 'Whisper · Local',
     SpeechProvider.nemotron => 'Nemotron · Local',
+    SpeechProvider.transcribe => 'Transcribe · Local',
     SpeechProvider.openAI => 'OpenAI',
     SpeechProvider.gemini => 'Google Gemini',
   };
   String liveModel(bool translate) => switch (this) {
     SpeechProvider.whisper => 'whisper.cpp',
     SpeechProvider.nemotron => 'nemotron',
+    SpeechProvider.transcribe => 'nemotron-transcribe',
     SpeechProvider.openAI =>
       translate ? 'gpt-realtime-translate' : 'gpt-live-transcribe',
     SpeechProvider.gemini =>

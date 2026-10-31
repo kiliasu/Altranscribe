@@ -100,6 +100,21 @@ abstract class TranslationService {
     CleanupOptions options, {
     String language = 'auto',
   });
+
+  /// Frees the GPU memory [model] holds on a local server, for a speech
+  /// model that needs it. Services without such a server do nothing.
+  Future<void> release(
+    String address,
+    String model, {
+    LlmProvider provider = LlmProvider.ollama,
+  }) async {}
+
+  /// About what [model] takes in GPU memory, when a local server says.
+  Future<int?> modelBytes(
+    String address,
+    String model, {
+    LlmProvider provider = LlmProvider.ollama,
+  }) async => null;
   void stop();
 }
 
@@ -107,6 +122,81 @@ abstract class TranslationService {
 class LocalLlmService implements TranslationService {
   LocalLlmService({this.cloudApi, this.warmUp = false});
   final CloudApi? cloudApi;
+
+  /// The size Ollama lists for [model], through its own API beside a
+  /// compatible `/v1` address too; null for other servers.
+  @override
+  Future<int?> modelBytes(
+    String address,
+    String model, {
+    LlmProvider provider = LlmProvider.ollama,
+  }) async {
+    if (provider.isCloud || model.trim().isEmpty) return null;
+    final Uri base;
+    try {
+      base = serviceAddress(address, provider);
+    } on FormatException {
+      return null;
+    }
+    if (isOnline(base)) return null;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+    try {
+      final request = await client.getUrl(base.replace(path: '/api/tags'));
+      final response = await request.close().timeout(
+        const Duration(seconds: 5),
+      );
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        return null;
+      }
+      final listed = jsonDecode(await response.transform(utf8.decoder).join());
+      for (final entry
+          in listed is Map ? listed['models'] as List? ?? [] : []) {
+        if (entry is Map &&
+            (entry['name'] == model.trim() || entry['model'] == model.trim()) &&
+            entry['size'] is int) {
+          return entry['size'] as int;
+        }
+      }
+      return null;
+    } on Object {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Unloads [model] from a local Ollama server, through its own API beside
+  /// a compatible `/v1` address too. Other local servers keep their model.
+  @override
+  Future<void> release(
+    String address,
+    String model, {
+    LlmProvider provider = LlmProvider.ollama,
+  }) async {
+    if (provider.isCloud || model.trim().isEmpty) return;
+    final Uri base;
+    try {
+      base = serviceAddress(address, provider);
+    } on FormatException {
+      return;
+    }
+    if (isOnline(base)) return;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+    try {
+      final request = await client.postUrl(base.replace(path: '/api/generate'));
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({'model': model.trim(), 'keep_alive': 0}));
+      final response = await request.close().timeout(
+        const Duration(seconds: 10),
+      );
+      await response.drain<void>();
+    } on Object {
+      // Not Ollama, or not running: nothing of it is in memory.
+    } finally {
+      client.close(force: true);
+    }
+  }
 
   /// Loads a local model and opens the connection when a session prepares
   /// the service, so the first line does not pay for it.
@@ -240,7 +330,15 @@ class LocalLlmService implements TranslationService {
       key: key,
       timeout: Duration(seconds: isOnline(base) ? 20 : 5),
     );
-    return (data[ollama ? 'models' : 'data'] as List)
+    final items = data[ollama ? 'models' : 'data'] as List;
+    // Online services list newest first, as the cloud providers do.
+    if (!ollama && isOnline(base)) {
+      return newestFirst({
+        for (final item in items)
+          (item as Map)['id'] as String: createdAt(item),
+      });
+    }
+    return items
         .map((item) => (item as Map)[ollama ? 'name' : 'id'] as String)
         .toSet()
         .toList();

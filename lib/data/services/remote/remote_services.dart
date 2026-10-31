@@ -180,6 +180,21 @@ class RemoteTranslationService implements TranslationService {
     return CleanupResult.validate(texts, options, result['edits'] as List);
   }
 
+  /// The host's model lives in the host's memory, not this computer's.
+  @override
+  Future<void> release(
+    String address,
+    String model, {
+    LlmProvider provider = LlmProvider.ollama,
+  }) async {}
+
+  @override
+  Future<int?> modelBytes(
+    String address,
+    String model, {
+    LlmProvider provider = LlmProvider.ollama,
+  }) async => null;
+
   @override
   void stop() => client.close();
 }

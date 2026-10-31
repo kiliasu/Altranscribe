@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:altranscribe/data/services/files/media_paths.dart';
+import 'package:altranscribe/data/services/files/pause_cutter.dart';
 
 const audioFileExtensions = [
   'wav',
@@ -32,7 +33,13 @@ class FileAudioChunk {
 }
 
 abstract class AudioFileDecoder {
-  Stream<FileAudioChunk> decode(String path, {int chunkSeconds = 20});
+  /// The file's audio in pieces of [chunkSeconds], or cut at pauses by
+  /// [cutter] when one is given.
+  Stream<FileAudioChunk> decode(
+    String path, {
+    int chunkSeconds = 20,
+    PauseCutter? cutter,
+  });
   Future<void> cancel();
 }
 
@@ -45,7 +52,15 @@ class FfmpegAudioDecoder implements AudioFileDecoder {
   int _generation = 0;
 
   @override
-  Stream<FileAudioChunk> decode(String path, {int chunkSeconds = 20}) async* {
+  Stream<FileAudioChunk> decode(
+    String path, {
+    int chunkSeconds = 20,
+    PauseCutter? cutter,
+  }) => cutter == null
+      ? _decode(path, chunkSeconds)
+      : cutter.cut(_decode(path, 10));
+
+  Stream<FileAudioChunk> _decode(String path, int chunkSeconds) async* {
     final generation = _generation;
     if (!isSupportedAudioFile(path)) {
       throw const FormatException('unsupportedFile');

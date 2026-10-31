@@ -598,6 +598,75 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
+  testWidgets(
+    'the start panel tells whether the LLM is ready and loads it on request',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 820);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final boundaryKey = GlobalKey();
+      final controller = fakeController();
+      addTearDown(controller.dispose);
+      final translator = controller.translator as FakeTranslator;
+      translator.response = Completer<String>();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundaryKey,
+          child: AltranscribeApp(realtime: controller),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> capture(String name) async {
+        expect(tester.takeException(), isNull, reason: name);
+        final boundary =
+            boundaryKey.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        await tester.runAsync(() async {
+          final image = await boundary.toImage(pixelRatio: 1);
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          final file = File('build/preview/$name.png');
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(bytes!.buffer.asUint8List());
+          image.dispose();
+        });
+      }
+
+      expect(find.text('LLM 尚未准备'), findsOneWidget);
+      await capture('19-llm-unprepared');
+      await tester.tap(find.byKey(const Key('llm-prepare')));
+      await tester.pumpAndSettle();
+      expect(find.text('正在准备 LLM…'), findsOneWidget);
+      expect(find.byKey(const Key('llm-prepare')), findsNothing);
+      await capture('19-llm-checking');
+      translator.response!.complete('你好');
+      await tester.pumpAndSettle();
+      expect(find.text('LLM 已就绪'), findsOneWidget);
+      expect(translator.calls, hasLength(1));
+      await capture('19-llm-ready');
+
+      translator.failure = 'llmUnavailable';
+      await tester.tap(find.text('重新检查'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('LLM 不可用 · 无法连接 LLM'), findsOneWidget);
+      await capture('19-llm-failed');
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      await capture('19-llm-failed-narrow');
+
+      // Without translation or a summary nothing calls the model.
+      await tester.tap(find.byKey(const Key('generate-summary')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('translate')));
+      await tester.tap(find.byKey(const Key('translate')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('llm-status')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
   test('Expressive light and dark text roles meet normal text contrast', () {
     for (final brightness in Brightness.values) {
       final c = altranscribeTheme(brightness).colorScheme;

@@ -605,6 +605,9 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     if (live.speechProvider == SpeechProvider.nemotron) {
       return 'Nemotron · ${ModelCatalog.nemotron(live.nemotronModel)?.shortLabel ?? live.nemotronModel} · CPU';
     }
+    if (live.transcribeSpeech) {
+      return 'Transcribe · NVFP4 · GPU';
+    }
     if (live.cloudSpeech) {
       return '${live.speechProvider.label} · ${fileMode ? live.speechProvider.fileModel : live.speechProvider.liveModel(directTranslation)}';
     }
@@ -624,6 +627,9 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     if (live.speechProvider == SpeechProvider.nemotron) {
       return available[live.nemotronModel] != ModelAvailability.available;
     }
+    if (live.transcribeSpeech) {
+      return available[live.transcribeModel] != ModelAvailability.available;
+    }
     final model = ModelCatalog.models
         .where((item) => live.model == live.catalog.path(item))
         .firstOrNull;
@@ -641,6 +647,8 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
             catalog.receivedBytes == 0);
     final name = model is NemotronModel
         ? 'Nemotron · ${model.shortLabel}'
+        : model is TranscribeModel
+        ? 'Transcribe · NVFP4'
         : 'Whisper · ${model.label}';
     return Column(
       key: const Key('home-model-download'),
@@ -666,6 +674,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   String get llmSummary => live.remoteLlm
       ? 'Remote · ${live.sessionLlmModel.isEmpty ? t('remoteHostLlm') : live.sessionLlmModel}'
       : '${live.llmProvider.label} · ${live.translationModel.isEmpty ? t('translationModelMissing') : live.translationModel}';
+
   String get audioSummary =>
       live.microphoneDevice.isEmpty && live.systemDevice.isEmpty
       ? t('systemDefault')
@@ -892,45 +901,10 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
           child: pageStack([
             startButton(),
-            ListenableBuilder(
-              listenable: live.catalog,
-              builder: (context, _) {
-                final noSource = !fileMode && !microphone && !systemAudio;
-                final missing = !noSource && localModelMissing;
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      noSource || missing
-                          ? AltIcons.error
-                          : AltIcons.checkCircle,
-                      size: 18,
-                      color: noSource || missing
-                          ? colors.error
-                          : colors.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        live.backgroundFinishing
-                            ? t('backgroundFinishingHint')
-                            : noSource
-                            ? t('noSource')
-                            : missing
-                            ? '$modelSummary · ${t('model_missing')}'
-                            : fileMode
-                            ? '${filePaths.length} ${t('filesInQueue')} · ${t('fileQueueHint')}'
-                            : modelSummary,
-                        textAlign: TextAlign.center,
-                        style: text.bodyMedium?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
+            pageStack([
+              speechStatus(),
+              if (llmNeeded && !live.backgroundFinishing) llmStatus(),
+            ], gap: 4),
           ], gap: 12),
         ),
       ], gap: 0),
@@ -1176,6 +1150,179 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
       },
     ),
   );
+
+  /// The speech side of starting: sources, the model and its files.
+  Widget speechStatus() => ListenableBuilder(
+    listenable: live.catalog,
+    builder: (context, _) {
+      final noSource = !fileMode && !microphone && !systemAudio;
+      final missing = !noSource && localModelMissing;
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            noSource || missing ? AltIcons.error : AltIcons.checkCircle,
+            size: 18,
+            color: noSource || missing ? colors.error : colors.primary,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              live.backgroundFinishing
+                  ? t('backgroundFinishingHint')
+                  : noSource
+                  ? t('noSource')
+                  : missing
+                  ? '$modelSummary · ${t('model_missing')}'
+                  : fileMode
+                  ? '${filePaths.length} ${t('filesInQueue')} · ${t('fileQueueHint')}'
+                  : modelSummary,
+              textAlign: TextAlign.center,
+              style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  /// Translation, the title and summary, or file cleanup call the text model.
+  bool get llmNeeded =>
+      live.generateSummary ||
+      (translate && !directTranslation && sourceLanguage != targetLanguage) ||
+      (fileMode && fileOptions.any((v) => v));
+
+  /// One line of the text model's status, with an optional button.
+  Widget llmNote(
+    IconData icon,
+    String message, {
+    Color? tint,
+    Widget? action,
+  }) => ConstrainedBox(
+    key: const Key('llm-status'),
+    constraints: const BoxConstraints(minHeight: 28),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 18, color: tint ?? colors.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+          ),
+        ),
+        if (action != null) ...[const SizedBox(width: 4), action],
+      ],
+    ),
+  );
+
+  /// Whether the text model is loaded, with a way to load it before starting.
+  /// While Transcribe would share the GPU with a local text model, files
+  /// load the model after transcription, and live sessions translate after
+  /// stopping or estimate the GPU memory. Online models need no loading.
+  Widget llmStatus() {
+    if (live.llmSharesGpu) {
+      if (fileMode) return llmNote(AltIcons.schedule, t('llmAfterTranscribe'));
+      if (live.liveLlm == LiveLlm.shared) {
+        return live.sharedGpuFits
+            ? llmNote(
+                AltIcons.memory,
+                t('gpuEstimate')
+                    .replaceFirst('{need}', gigabytes(live.sharedGpuNeed!))
+                    .replaceFirst('{total}', gigabytes(live.gpuTotal!)),
+              )
+            : llmNote(
+                AltIcons.warning,
+                issue(live.sharedGpuWarning),
+                tint: colors.error,
+              );
+      }
+      if (live.liveLlm == LiveLlm.afterStop) {
+        return llmNote(
+          AltIcons.schedule,
+          t('llmTranslateAfterStop'),
+          action: TextButton(
+            key: const Key('set-live-cloud'),
+            style: TextButton.styleFrom(visualDensity: altChipDensity),
+            onPressed: session ? null : translationSettings,
+            child: Text(t('setCloudModel')),
+          ),
+        );
+      }
+    }
+    // An online model needs no loading; the engines name it.
+    if (live.llmOnline) return llmNote(AltIcons.cloud, t('cloudModel'));
+    final check = live.llmCheck;
+    final state = check?.state;
+    final failed = state == LlmCheckState.failed;
+    final ready = state == LlmCheckState.ready;
+    final message = switch (state) {
+      null => t('llmUnchecked'),
+      LlmCheckState.checking => t('llmChecking'),
+      LlmCheckState.ready => t('llmReady'),
+      LlmCheckState.failed =>
+        '${t('llmCheckFailed')} · ${issue(check!.error!)}',
+    };
+    return ConstrainedBox(
+      key: const Key('llm-status'),
+      // As tall as its button (32 less the chip density), so the panel keeps
+      // still while the button is hidden.
+      constraints: const BoxConstraints(minHeight: 28),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (state == LlmCheckState.checking)
+            AltLoading(size: 18, shape: sessionShape)
+          else
+            Icon(
+              failed
+                  ? AltIcons.error
+                  : ready
+                  ? AltIcons.checkCircle
+                  : AltIcons.memory,
+              size: 18,
+              color: failed
+                  ? colors.error
+                  : ready
+                  ? colors.primary
+                  : colors.onSurfaceVariant,
+            ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: text.bodyMedium?.copyWith(
+                color: failed ? colors.error : colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          if (state != LlmCheckState.checking) ...[
+            const SizedBox(width: 4),
+            Tooltip(
+              message: t('llmPrepareHint'),
+              child: TextButton(
+                key: const Key('llm-prepare'),
+                style: TextButton.styleFrom(visualDensity: altChipDensity),
+                onPressed: session || !live.initialized ? null : live.checkLlm,
+                child: Text(
+                  t(
+                    state == null
+                        ? 'llmPrepare'
+                        : failed
+                        ? 'llmRetry'
+                        : 'llmCheckAgain',
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget startButton() => FilledButton.icon(
     key: const Key('start'),

@@ -25,6 +25,28 @@ abstract class SpeechEngine {
   Future<void> stop();
 }
 
+/// A recognized word and where it lies in the request's audio.
+class TimedWord {
+  const TimedWord(this.text, this.startMs, this.endMs);
+  final String text;
+  final int startMs;
+  final int endMs;
+}
+
+class TimedTranscript {
+  const TimedTranscript(this.text, this.words);
+  final String text;
+
+  /// Empty when the engine could not align the text with the audio.
+  final List<TimedWord> words;
+}
+
+/// An engine that also times every word it recognizes, so file lines get
+/// their own start and end instead of a share of the request's.
+abstract class TimedSpeechEngine implements SpeechEngine {
+  Future<TimedTranscript> transcribeTimed(Uint8List wave, String language);
+}
+
 /// Owns one loopback-only whisper.cpp server, with the model loaded once.
 class WhisperService implements SpeechEngine {
   WhisperService(this.audio);
@@ -90,6 +112,47 @@ class WhisperService implements SpeechEngine {
       text.toString().trim(),
       language == 'auto' ? result['language'] as String? ?? 'auto' : language,
     );
+  }
+
+  /// [wave] with its speech raised to a normal level. The server's speech
+  /// detector, strict enough to ignore notification sounds, hears almost
+  /// nothing in a distant lecture recorded far below that level. The level
+  /// is the 90th percentile of 20 ms loudness, so pauses do not count;
+  /// loud audio is left as it is.
+  static Uint8List raiseToSpeechLevel(Uint8List wave) {
+    final data = ByteData.sublistView(wave);
+    var offset = 12;
+    while (offset + 8 <= wave.length &&
+        String.fromCharCodes(wave, offset, offset + 4) != 'data') {
+      offset += 8 + data.getUint32(offset + 4, Endian.little);
+    }
+    final start = offset + 8;
+    final count = (wave.length - start) ~/ 2;
+    if (offset + 8 > wave.length || count < 320) return wave;
+    final levels = <double>[];
+    for (var frame = 0; frame + 320 <= count; frame += 320) {
+      var energy = 0.0;
+      for (var i = frame; i < frame + 320; i++) {
+        final value = data.getInt16(start + 2 * i, Endian.little);
+        energy += value * value;
+      }
+      levels.add(sqrt(energy / 320) / 32768);
+    }
+    levels.sort();
+    final level = levels[levels.length * 9 ~/ 10];
+    if (level <= 0 || level >= 0.1) return wave;
+    final gain = min(40.0, 0.1 / level);
+    final raised = Uint8List.fromList(wave);
+    final output = ByteData.sublistView(raised);
+    for (var i = 0; i < count; i++) {
+      final value = data.getInt16(start + 2 * i, Endian.little) * gain;
+      output.setInt16(
+        start + 2 * i,
+        value.round().clamp(-32768, 32767),
+        Endian.little,
+      );
+    }
+    return raised;
   }
 
   // Loading a CUDA DLL is not proof of GPU inference; this line confirms the
@@ -272,7 +335,7 @@ class WhisperService implements SpeechEngine {
         '--$boundary\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n',
       ),
     );
-    bytes.add(wave);
+    bytes.add(raiseToSpeechLevel(wave));
     bytes.add(utf8.encode('\r\n--$boundary--\r\n'));
     final body = bytes.takeBytes();
     final request = await _client!.postUrl(Uri.parse('$_base/inference'));

@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
+import 'package:altranscribe/data/services/files/pause_cutter.dart';
 
 /// Pulls bounded decoded PCM windows. Android retains only the current decoder
 /// window, and the document stays with its original content provider.
@@ -9,7 +10,15 @@ class AndroidAudioDecoder implements AudioFileDecoder {
   int _generation = 0;
 
   @override
-  Stream<FileAudioChunk> decode(String path, {int chunkSeconds = 20}) async* {
+  Stream<FileAudioChunk> decode(
+    String path, {
+    int chunkSeconds = 20,
+    PauseCutter? cutter,
+  }) => cutter == null
+      ? _decode(path, chunkSeconds)
+      : cutter.cut(_decode(path, 10));
+
+  Stream<FileAudioChunk> _decode(String path, int chunkSeconds) async* {
     final generation = _generation;
     try {
       await channel.invokeMethod<void>('open', {

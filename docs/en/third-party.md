@@ -10,7 +10,7 @@ Roboto Flex uses SIL OFL 1.1; Material Symbols Rounded uses Apache 2.0. Converte
 
 ## Silero VAD
 
-The bundled Silero model detects speech for local Whisper; it is not a transcription model. It uses the [MIT License](../../assets/models/Silero-LICENSE.txt). The pinned source and checksum are in the [model source notes](../../assets/models/README.md).
+The bundled Silero model detects speech for local Whisper and finds the pauses files are cut at; it is not a transcription model. It uses the [MIT License](../../assets/models/Silero-LICENSE.txt). The pinned source and checksum are in the [model source notes](../../assets/models/README.md).
 
 ## RNNoise and SpeexDSP
 
@@ -32,3 +32,6 @@ The Windows host draws pairing QR codes with the [qr](https://pub.dev/packages/q
 
 Nemotron streaming recognition uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) through its Dart package, which bundles [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT). The models themselves are downloaded on request and are not part of the app: the English model under the [NVIDIA Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/) and the 3.5 multilingual model under [OpenMDW 1.1](https://openmdw.ai/license/1-1/), as listed in the [model guide](models.md).
 
+## NeMo-Speech.cpp and Nemotron 3.5 Transcribe
+
+Nemotron 3.5 Transcribe runs in NVIDIA's [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) (Apache 2.0), which is installed separately and started by the app as a local server; it is not part of the app. The model is downloaded on request under [OpenMDW 1.1](https://openmdw.ai/license/1-1/): AtomicChat's GGUF conversion of NVIDIA's checkpoint, as listed in the [model guide](models.md#nemotron-35-transcribe).

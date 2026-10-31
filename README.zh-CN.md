@@ -24,14 +24,14 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 
 ## 开始使用
 
-1. 在「设置 → 模型选择」中选择识别方式：本机 Whisper、本机 CPU 上的 Nemotron 流式模型（手机也能用）、局域网里的 Windows 主机，或 OpenAI / Gemini。
-2. 如需翻译、标题和摘要，在「设置 → 翻译选择」配置文字模型；暂不需要时可以在首页关闭。
+1. 在「设置 → 模型选择」中选择识别方式：本机 Whisper、本机 CPU 上的 Nemotron 流式模型（手机也能用）、RTX 5090 这类 32 GB Blackwell 显卡上的 Nemotron 3.5 Transcribe、局域网里的 Windows 主机，或 OpenAI / Gemini。
+2. 如需翻译、标题和摘要，在「设置 → 翻译选择」配置文字模型；暂不需要时可以在首页关闭。开始前可以在首页点「准备 LLM」，先加载好模型，开头的译文就不会落后。
 3. 选择麦克风、系统音频或两者，设置源语言和目标语言后开始。转录音视频文件时切换到文件入口，可以一次选择多个，按队列处理。
 4. 点击「停止并保存」后，文稿进入「记录」。尾句、译文和摘要会在后台补齐，完成后才能开始下一次任务。
 
 暂停会停止采集新音频，已收到的片段继续处理；「直接遗弃」会删除当前文稿。关闭悬浮字幕只隐藏窗口，不会停止转录。
 
-**Windows 本地模型**：从 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 获取 `whisper-server.exe`，在模型设置中填写路径并选择 CPU 或 GPU。点击模型旁的下载按钮即可下载 Tiny 到 Large v3 Turbo 并自动校验；手动放入模型的方法见 [模型说明](docs/zh-CN/models.md)。翻译和摘要可以用本机运行的 Ollama 或其他 OpenAI 兼容文字服务，也可以填写在线 OpenAI 兼容服务的地址和 API Key，或直接使用 OpenAI、Gemini、Anthropic。
+**Windows 本地模型**：从 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 获取 `whisper-server.exe`，在模型设置中填写路径并选择 CPU 或 GPU。点击模型旁的下载按钮即可下载 Tiny 到 Large v3 Turbo 并自动校验；手动放入模型的方法见 [模型说明](docs/zh-CN/models.md)。Nemotron 3.5 Transcribe 需要 NVIDIA 的 [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp)，模型在同一面板下载，见[相关说明](docs/zh-CN/models.md#nemotron-35-transcribe)。翻译和摘要可以用本机运行的 Ollama 或其他 OpenAI 兼容文字服务，也可以填写在线 OpenAI 兼容服务的地址和 API Key，或直接使用 OpenAI、Gemini、Anthropic。
 
 其他用法见 [云端服务](docs/zh-CN/cloud-providers.md) 和 [连接 Windows 主机](docs/zh-CN/remote-processing.md)，后者能让手机使用电脑上的模型：在电脑上开启共享，用手机扫描它显示的二维码，主机就会出现在手机的「设备」页。手机也可以用 Nemotron 自己转录，只把翻译和摘要交给电脑。
 
@@ -41,6 +41,7 @@ Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声
 | --- | --- | --- |
 | 本地 Whisper（CPU / NVIDIA GPU） | 支持 | 不支持 |
 | 本地 Nemotron 流式（CPU，sherpa-onnx） | 支持 | 支持 |
+| 本地 Nemotron 3.5 Transcribe（32 GB Blackwell 显卡，NeMo-Speech.cpp） | 支持 | 不支持 |
 | 本地 Ollama / OpenAI 兼容文字服务 | 支持 | 通过 Windows 主机使用 |
 | 局域网共享 | 可作为主机或客户端 | 作为客户端 |
 | OpenAI / Gemini（语音与文字）、Anthropic 与在线 OpenAI 兼容服务（文字） | 支持 | 支持 |

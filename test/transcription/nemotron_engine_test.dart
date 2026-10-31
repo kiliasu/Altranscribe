@@ -6,6 +6,7 @@ import 'package:altranscribe/data/services/cloud/cloud_live.dart';
 import 'package:altranscribe/data/services/models/model_catalog.dart';
 import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
+import 'package:altranscribe/data/services/files/pause_cutter.dart';
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/transcription/nemotron_engine.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
@@ -37,7 +38,7 @@ class SpikeCatalog extends FakeModelCatalog {
   SpikeCatalog(this.modelFolder);
   final String modelFolder;
   @override
-  String folder(NemotronModel model) => modelFolder;
+  String folder(FolderModel model) => modelFolder;
 }
 
 /// Feeds a stretch of the clip as 100 ms frames placed at [sessionFrom],
@@ -64,7 +65,11 @@ class ClipDecoder extends AudioFileDecoder {
   final Uint8List pcm;
   bool started = false;
   @override
-  Stream<FileAudioChunk> decode(String path, {int chunkSeconds = 20}) async* {
+  Stream<FileAudioChunk> decode(
+    String path, {
+    int chunkSeconds = 20,
+    PauseCutter? cutter,
+  }) async* {
     started = true;
     yield FileAudioChunk(pcm, 0, pcm.length ~/ 32);
   }

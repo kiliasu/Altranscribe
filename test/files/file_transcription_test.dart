@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
+import 'package:altranscribe/data/services/files/pause_cutter.dart';
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
@@ -22,7 +23,11 @@ class FileDecoderFake extends AudioFileDecoder {
   final paths = <String>[];
   bool cancelled = false;
   @override
-  Stream<FileAudioChunk> decode(String path, {int chunkSeconds = 20}) async* {
+  Stream<FileAudioChunk> decode(
+    String path, {
+    int chunkSeconds = 20,
+    PauseCutter? cutter,
+  }) async* {
     paths.add(path);
     if (path == 'bad.mp3') throw const FormatException('fileNoAudio');
     yield FileAudioChunk(Uint8List(64000), 0, 2000);

@@ -718,6 +718,32 @@ const strings = <String, List<String>>{
     "无法连接 LLM。请先启动本机后端，并在翻译选择中检查地址与模型。",
     "Cannot connect to the LLM. Start your local server and check its address and model in Translation & LLM settings.",
   ],
+  "llmPrepare": ["准备 LLM", "Prepare LLM"],
+  "llmPrepareHint": [
+    "提前加载模型并试译一句，开始后译文不必等待加载。",
+    "Load the model and translate a test line now, so translations do not wait for it once you start.",
+  ],
+  "llmUnchecked": ["LLM 尚未准备", "LLM not prepared"],
+  "llmChecking": ["正在准备 LLM…", "Preparing the LLM…"],
+  "llmReady": ["LLM 已就绪", "LLM ready"],
+  "llmCheckFailed": ["LLM 不可用", "LLM unavailable"],
+  "llmCheckAgain": ["重新检查", "Check again"],
+  "llmRetry": ["重试", "Retry"],
+  "llmAfterTranscribe": ["转录完成后加载 LLM", "LLM loads after transcription"],
+  "llmTranslateAfterStop": ["停止转录后翻译", "Translated after stopping"],
+  "llmSharesGpu": ["显存可能不足", "GPU memory may run short"],
+  "gpuMemoryShort": [
+    "显存可能不足 · 预计 {need} / {total} GB",
+    "GPU memory may run short · about {need} / {total} GB",
+  ],
+  "gpuEstimate": [
+    "预计显存 {need} / {total} GB",
+    "GPU memory about {need} / {total} GB",
+  ],
+  "setCloudModel": ["设置云端模型", "Set cloud model"],
+  "transcribeLiveTitle": ["实时转录的翻译", "Translation in live sessions"],
+  "liveRunLocal": ["与 Transcribe 同时运行", "Run beside Transcribe"],
+  "cloudModel": ["云端模型", "Cloud model"],
   "generateSummary": ["生成标题与摘要", "Generate title & summary"],
   "followLatest": ["跟随最新内容", "Follow latest text"],
   "renameTitle": ["重命名标题", "Rename title"],
@@ -909,6 +935,27 @@ const strings = <String, List<String>>{
   "nemotronModelMissing": [
     "请先下载一个 Nemotron 模型。",
     "Download a Nemotron model first.",
+  ],
+  "transcribeHint": [
+    "整段识别录音，英文准确率最高，提供逐词时间。需要 32 GB 显存的 Blackwell 显卡（如 RTX 5090），运行时约占 29 GB。",
+    "Transcribes whole recordings with word timing; most accurate in English. Requires a 32 GB Blackwell GPU, such as the RTX 5090; uses about 29 GB.",
+  ],
+  "transcribeProgram": ["Transcribe 程序", "Transcribe executable"],
+  "transcribeModelMissing": [
+    "请先下载 Transcribe 模型。",
+    "Download the Transcribe model first.",
+  ],
+  "transcribeProgramMissing": [
+    "找不到 nemo-speech.exe。请安装 NeMo-Speech.cpp，并在「Transcribe 程序」中填写它的路径。",
+    "nemo-speech.exe was not found. Install NeMo-Speech.cpp and enter its path under Transcribe executable.",
+  ],
+  "transcribeMemory": [
+    "显存不足：Transcribe 需要约 {needed} GB 空闲显存，现在只有 {free} GB。请先关闭占用显存的程序，例如本机 LLM。",
+    "Not enough GPU memory: Transcribe needs about {needed} GB but only {free} GB is free. Close what is using it, such as a local LLM.",
+  ],
+  "transcribeOutOfMemory": [
+    "显存不足，Transcribe 没能加载。请先关闭占用显存的程序，例如本机 LLM。",
+    "Transcribe ran out of GPU memory while loading. Close what is using it, such as a local LLM.",
   ],
   "nemotronEnglishOnly": [
     "英文 Nemotron 模型只识别英语，其他语言请改用多语言模型。",

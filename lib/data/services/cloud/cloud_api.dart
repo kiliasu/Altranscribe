@@ -114,9 +114,10 @@ class CloudApi {
     }
   }
 
+  /// The provider's models, newest first.
   Future<List<String>> models(CloudProvider provider) async {
     await prepare(provider);
-    final result = <String>[];
+    final result = <String, DateTime?>{};
     if (provider == CloudProvider.anthropic) {
       String? after;
       do {
@@ -126,10 +127,14 @@ class CloudApi {
         );
         final items = data['data'];
         if (items is! List) throw StateError('cloudInvalidResponse');
-        result.addAll(items.map((item) => item['id'] as String));
+        for (final item in items) {
+          result[item['id'] as String] = DateTime.tryParse(
+            item['created_at'] as String? ?? '',
+          );
+        }
         after = data['has_more'] == true ? data['last_id'] as String? : null;
       } while (after != null && after.isNotEmpty);
-      return result.toSet().toList()..sort();
+      return newestFirst(result);
     }
     String? page;
     do {
@@ -141,16 +146,15 @@ class CloudApi {
       );
       final items = data[provider == CloudProvider.openAI ? 'data' : 'models'];
       if (items is! List) throw StateError('cloudInvalidResponse');
-      result.addAll(
-        items.map(
-          (item) =>
-              (item[provider == CloudProvider.openAI ? 'id' : 'name'] as String)
-                  .replaceFirst(RegExp(r'^models/'), ''),
-        ),
-      );
+      for (final item in items) {
+        final id =
+            (item[provider == CloudProvider.openAI ? 'id' : 'name'] as String)
+                .replaceFirst(RegExp(r'^models/'), '');
+        result[id] = createdAt(item);
+      }
       page = data['nextPageToken'] as String?;
     } while (page != null && page.isNotEmpty);
-    return result.toSet().toList()..sort();
+    return newestFirst(result);
   }
 
   void close() {
@@ -176,4 +180,38 @@ String interactionText(Map<String, dynamic> response) {
     }
   }
   return text.toString().trim();
+}
+
+/// When a listed model was created: OpenAI-style `created` seconds.
+DateTime? createdAt(Object? item) {
+  final created = item is Map ? item['created'] : null;
+  return created is int && created > 0
+      ? DateTime.fromMillisecondsSinceEpoch(created * 1000, isUtc: true)
+      : null;
+}
+
+/// Model names, newest first: by the creation time a service lists for
+/// every model, else by the version in the name, so gemini-3.5 comes before
+/// gemini-3 and gemini-2.5. Equal ones keep alphabetical order.
+List<String> newestFirst(Map<String, DateTime?> created) {
+  List<int> version(String id) =>
+      RegExp(r'\d+')
+          .allMatches(id)
+          .map((match) => int.parse(match[0]!))
+          .toList();
+  int byVersion(String a, String b) {
+    final left = version(a), right = version(b);
+    for (var i = 0; i < left.length && i < right.length; i++) {
+      if (left[i] != right[i]) return right[i].compareTo(left[i]);
+    }
+    final longer = right.length.compareTo(left.length);
+    return longer != 0 ? longer : a.compareTo(b);
+  }
+
+  final dated = created.values.every((time) => time != null);
+  return created.keys.toList()..sort(
+    (a, b) => dated && created[a] != created[b]
+        ? created[b]!.compareTo(created[a]!)
+        : byVersion(a, b),
+  );
 }

@@ -6,6 +6,7 @@ import 'package:altranscribe/data/services/translation/translation_context.dart'
 import 'package:altranscribe/data/services/transcription/transcript_assembler.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
+import 'package:altranscribe/data/services/files/pause_cutter.dart';
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/data/services/files/sentence_merger.dart';
 
@@ -30,38 +31,108 @@ class FileTranscriber {
     required CleanupOptions options,
     required void Function() onChanged,
     int chunkSeconds = 20,
+    PauseCutter? cutter,
     TranslationContextPolicy translationContext =
         const TranslationContextPolicy(),
   }) async {
-    final sentences = TranscriptAssembler();
-    Future<void> save() async {
-      await store.save(record);
-      onChanged();
+    if (await transcribe(
+      record: record,
+      engine: engine,
+      store: store,
+      onChanged: onChanged,
+      chunkSeconds: chunkSeconds,
+      cutter: cutter,
+    )) {
+      await process(
+        record: record,
+        translator: translator,
+        store: store,
+        options: options,
+        onChanged: onChanged,
+        translationContext: translationContext,
+      );
     }
+  }
 
+  /// Recognizes the file's speech into [record]: pieces of [chunkSeconds],
+  /// or cut at pauses by [cutter]. False when it was cancelled or failed;
+  /// the record is then saved as final, and [process] must not follow.
+  Future<bool> transcribe({
+    required TranscriptRecord record,
+    required SpeechEngine engine,
+    required RecordStore store,
+    required void Function() onChanged,
+    int chunkSeconds = 20,
+    PauseCutter? cutter,
+  }) async {
+    final sentences = TranscriptAssembler();
     try {
-      await save();
+      await _save(record, store, onChanged);
       await for (final chunk in decoder.decode(
         record.inputFile!,
         chunkSeconds: chunkSeconds,
+        cutter: cutter,
       )) {
         if (cancelled) break;
-        final text = await engine.transcribe(
-          pcmToWave(chunk.pcm),
-          record.language,
-        );
-        if (cancelled) break;
+        final wave = pcmToWave(chunk.pcm);
+        if (engine is TimedSpeechEngine) {
+          final result = await engine.transcribeTimed(wave, record.language);
+          if (cancelled) break;
+          final timed = timedSentences(
+            result.text,
+            result.words,
+            chunk.endMs - chunk.startMs,
+          );
+          for (final (i, sentence) in timed.indexed) {
+            sentences.accept(
+              record,
+              source: 'file',
+              startMs: chunk.startMs + sentence.startMs,
+              endMs: chunk.startMs + sentence.endMs,
+              text: sentence.text,
+              continues: i == timed.length - 1,
+              estimated: sentence.estimated,
+            );
+          }
+        } else {
+          final text = await engine.transcribe(wave, record.language);
+          if (cancelled) break;
+          sentences.accept(
+            record,
+            source: 'file',
+            startMs: chunk.startMs,
+            endMs: chunk.endMs,
+            text: text,
+            continues: true,
+          );
+        }
         processedMs = chunk.endMs;
-        sentences.accept(
-          record,
-          source: 'file',
-          startMs: chunk.startMs,
-          endMs: chunk.endMs,
-          text: text,
-          continues: true,
-        );
-        await save();
+        await _save(record, store, onChanged);
       }
+      if (!cancelled) return true;
+    } catch (e) {
+      if (!cancelled) {
+        record.status = 'error';
+        record.error = e.toString();
+      }
+    }
+    await _finish(record, store, onChanged);
+    return false;
+  }
+
+  /// Cleans up, translates and summarizes a transcribed [record] as its
+  /// options ask, then saves it as final.
+  Future<void> process({
+    required TranscriptRecord record,
+    required TranslationService translator,
+    required RecordStore store,
+    required CleanupOptions options,
+    required void Function() onChanged,
+    TranslationContextPolicy translationContext =
+        const TranslationContextPolicy(),
+  }) async {
+    Future<void> save() => _save(record, store, onChanged);
+    try {
       if (cancelled) return;
 
       Future<void> clean(bool translation) async {
@@ -206,24 +277,42 @@ class FileTranscriber {
         record.error = e.toString();
       }
     } finally {
-      if (cancelled && record.targetLanguage != null) {
-        for (final line in record.lines) {
-          if (line.translationStatus == 'none' ||
-              line.translationStatus == 'pending') {
-            line.translationStatus = 'interrupted';
-          }
+      await _finish(record, store, onChanged);
+    }
+  }
+
+  Future<void> _save(
+    TranscriptRecord record,
+    RecordStore store,
+    void Function() onChanged,
+  ) async {
+    await store.save(record);
+    onChanged();
+  }
+
+  /// Settles what is still open: a cancelled step reads as interrupted.
+  Future<void> _finish(
+    TranscriptRecord record,
+    RecordStore store,
+    void Function() onChanged,
+  ) async {
+    if (cancelled && record.targetLanguage != null) {
+      for (final line in record.lines) {
+        if (line.translationStatus == 'none' ||
+            line.translationStatus == 'pending') {
+          line.translationStatus = 'interrupted';
         }
       }
-      if (record.status != 'error') {
-        record.status = cancelled ? 'interrupted' : 'completed';
-      }
-      if (record.cleanupStatus == 'pending') {
-        record.cleanupStatus = 'interrupted';
-      }
-      if (record.summaryStatus == 'pending') {
-        record.summaryStatus = 'interrupted';
-      }
-      await save();
     }
+    if (record.status != 'error') {
+      record.status = cancelled ? 'interrupted' : 'completed';
+    }
+    if (record.cleanupStatus == 'pending') {
+      record.cleanupStatus = 'interrupted';
+    }
+    if (record.summaryStatus == 'pending') {
+      record.summaryStatus = 'interrupted';
+    }
+    await _save(record, store, onChanged);
   }
 }

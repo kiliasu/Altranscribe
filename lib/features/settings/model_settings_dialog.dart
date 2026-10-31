@@ -36,6 +36,13 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       (!remotePreview || controller.remoteConnection.address.isNotEmpty);
   late SpeechProvider provider = controller.speechProvider;
   late String? nemotronSelected = controller.nemotronModel;
+  late String? transcribeSelected = controller.transcribeModel;
+
+  /// Run the local text model beside Transcribe in live sessions anyway.
+  late bool keepLocal = controller.liveLocalLlm;
+  late final transcribeProgram = TextEditingController(
+    text: controller.transcribeExecutable,
+  );
   late bool direct = controller.cloudDirectTranslation;
   late bool autoLanguage = controller.cloudAutoLanguage;
   List<String>? cloudModels;
@@ -74,6 +81,8 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       setState(() {
         if (model is NemotronModel) {
           nemotronSelected = model.id;
+        } else if (model is TranscribeModel) {
+          transcribeSelected = model.id;
         } else {
           selected = model.id;
         }
@@ -104,6 +113,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
               ? controller.nemotronModel
               : null;
         }
+        if (!ready(transcribeSelected)) transcribeSelected = null;
         if (!ready(selected)) {
           selected = ModelCatalog.models
               .where(
@@ -122,6 +132,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
   void dispose() {
     controller.catalog.removeListener(downloadChanged);
     executable.dispose();
+    transcribeProgram.dispose();
     super.dispose();
   }
 
@@ -166,7 +177,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                     '${model.size} · ${t(controller.catalog.downloadingModel == model ? 'modelDownloading' : 'model_${(available[model.id] ?? ModelAvailability.missing).name}')}',
                     style: const TextStyle(fontSize: 14, letterSpacing: .25),
                   ),
-                  if (model is NemotronModel)
+                  if (model is FolderModel)
                     Text(
                       '${t('modelLicense')}: ${model.licenseName}',
                       style: const TextStyle(fontSize: 12, letterSpacing: .25),
@@ -290,6 +301,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
   List<SpeechProvider?> get speechOptions => [
     if (controller.localInferenceAllowed) SpeechProvider.whisper,
     SpeechProvider.nemotron,
+    if (controller.localInferenceAllowed) SpeechProvider.transcribe,
     null,
     SpeechProvider.openAI,
     SpeechProvider.gemini,
@@ -366,6 +378,62 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
         (value) => setState(() => nemotronSelected = value),
       ),
       if (!MobilePlatform.android) ...[gap(), folderRow()],
+    ] else if (provider == SpeechProvider.transcribe) ...[
+      Text(t('transcribeHint')),
+      gap(),
+      ...modelTiles(
+        ModelCatalog.transcribeModels,
+        'transcribe',
+        transcribeSelected,
+        (value) => setState(() => transcribeSelected = value),
+      ),
+      folderRow(sourceUrl: ModelCatalog.transcribeModels.first.sourceUrl),
+      // A local text model and Transcribe do not fit in the GPU together.
+      if (controller.llmLocal) ...[
+        gap(),
+        Text(
+          t('transcribeLiveTitle'),
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 8),
+        RadioGroup<bool>(
+          groupValue: keepLocal,
+          onChanged: (value) {
+            if (value != null && editable) setState(() => keepLocal = value);
+          },
+          child: choices([
+            RadioListTile<bool>(
+              key: const Key('live-llm-after-stop'),
+              value: false,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(t('llmTranslateAfterStop')),
+              enabled: editable,
+            ),
+            RadioListTile<bool>(
+              key: const Key('live-llm-local'),
+              value: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(t('liveRunLocal')),
+              subtitle: Text(t('llmSharesGpu')),
+              enabled: editable,
+            ),
+          ]),
+        ),
+      ],
+      gap(),
+      ExpansionTile(
+        key: const Key('transcribe-program'),
+        title: Text(t('transcribeProgram')),
+        // Nothing runs until the program is set, so it starts open then.
+        initiallyExpanded: transcribeProgram.text.isEmpty,
+        children: [
+          TextField(
+            controller: transcribeProgram,
+            enabled: editable,
+            decoration: const InputDecoration(labelText: 'nemo-speech.exe'),
+          ),
+        ],
+      ),
     ] else if (provider.isCloud) ...[
       Text(t('cloudAudioNotice')),
       CloudKeyEditor(
@@ -506,6 +574,24 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
         throw const FormatException('nemotronModelMissing');
       }
       controller.nemotronModel = chosen;
+      controller.useRemote = false;
+      controller.speechProvider = provider;
+      await controller.saveSettings();
+      return;
+    }
+    if (provider == SpeechProvider.transcribe) {
+      final result = await controller.catalog.scan();
+      final chosen = transcribeSelected;
+      if (chosen == null || result[chosen] != ModelAvailability.available) {
+        throw const FormatException('transcribeModelMissing');
+      }
+      final program = transcribeProgram.text.trim();
+      if (!File(program).existsSync()) {
+        throw const FormatException('transcribeProgramMissing');
+      }
+      controller.transcribeModel = chosen;
+      controller.transcribeExecutable = program;
+      controller.liveLocalLlm = keepLocal;
       controller.useRemote = false;
       controller.speechProvider = provider;
       await controller.saveSettings();

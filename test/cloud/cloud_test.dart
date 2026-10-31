@@ -1235,4 +1235,30 @@ void main() {
       llm.stop();
     },
   );
+
+  test('cloud models are listed newest first', () {
+    expect(
+      newestFirst({
+        'gpt-a': DateTime.utc(2025),
+        'gpt-b': DateTime.utc(2026),
+        'gpt-c': DateTime.utc(2024),
+      }),
+      ['gpt-b', 'gpt-a', 'gpt-c'],
+    );
+    // Gemini lists no creation times: the version in the name decides.
+    expect(
+      newestFirst({
+        'gemini-2.5-pro': null,
+        'gemini-3.5-pro': null,
+        'gemini-3-pro-preview': null,
+        'gemini-3.5-flash': null,
+      }),
+      [
+        'gemini-3.5-flash',
+        'gemini-3.5-pro',
+        'gemini-3-pro-preview',
+        'gemini-2.5-pro',
+      ],
+    );
+  });
 }

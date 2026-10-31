@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:altranscribe/data/models/transcript_record.dart';
+import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 
 final _ends = RegExp(
   r'''[。！？!?]+[”’"）)\]」』》】]*|\.+[”’"）)\]」』》】]*(?=\s|$)|\n+''',
@@ -79,6 +82,71 @@ List<String> transcriptSentences(String text) {
 String readableTranscript(String text) =>
     transcriptSentences(text).join('\n\n');
 
+final _wordCharacters = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+/// [text]'s sentences, each spanning the words an aligner placed for it in
+/// audio [durationMs] long. Words are matched to sentences by their letters
+/// and digits, so punctuation the aligner leaves out does not matter.
+/// Sentences the words do not reach share the time around them by length,
+/// as untimed text does, and are marked estimated.
+List<({String text, int startMs, int endMs, bool estimated})> timedSentences(
+  String text,
+  List<TimedWord> words,
+  int durationMs,
+) {
+  final parts = transcriptSentences(text);
+  final starts = List<int?>.filled(parts.length, null);
+  final ends = List<int>.filled(parts.length, 0);
+  var next = 0;
+  for (var i = 0; i < parts.length; i++) {
+    final needed = _wordCharacters.allMatches(parts[i]).length;
+    var matched = 0;
+    while (next < words.length && matched < needed) {
+      final word = words[next++];
+      final count = _wordCharacters.allMatches(word.text).length;
+      if (count == 0) continue;
+      starts[i] ??= word.startMs;
+      ends[i] = max(word.endMs, starts[i]!);
+      matched += count;
+    }
+  }
+  final result = <({String text, int startMs, int endMs, bool estimated})>[];
+  for (var i = 0; i < parts.length;) {
+    if (starts[i] case final start?) {
+      result.add((
+        text: parts[i],
+        startMs: start,
+        endMs: ends[i],
+        estimated: false,
+      ));
+      i++;
+      continue;
+    }
+    var j = i;
+    while (j < parts.length && starts[j] == null) {
+      j++;
+    }
+    final from = result.isEmpty ? 0 : result.last.endMs;
+    final to = max(from, j < parts.length ? starts[j]! : durationMs);
+    final total = parts
+        .sublist(i, j)
+        .fold<int>(0, (sum, part) => sum + part.runes.length);
+    var consumed = 0;
+    for (var k = i; k < j; k++) {
+      final start = from + (to - from) * consumed ~/ max(total, 1);
+      consumed += parts[k].runes.length;
+      result.add((
+        text: parts[k],
+        startMs: start,
+        endMs: from + (to - from) * consumed ~/ max(total, 1),
+        estimated: true,
+      ));
+    }
+    i = j;
+  }
+  return result;
+}
+
 /// Audio windows are replaceable hypotheses; reading rows are sentences.
 /// Only the unfinished tail of an adjacent window from the same source can join.
 class TranscriptAssembler {
@@ -93,6 +161,7 @@ class TranscriptAssembler {
     required String text,
     bool partial = false,
     bool continues = false,
+    bool estimated = false,
   }) {
     final key = (source, startMs);
     // A temporarily empty hypothesis should not flicker the previous preview.
@@ -114,7 +183,7 @@ class TranscriptAssembler {
           endMs: startMs + (endMs - startMs) * consumed ~/ total,
           text: part,
           transcriptionStatus: partial ? 'partial' : 'done',
-          timingEstimated: parts.length > 1,
+          timingEstimated: estimated || parts.length > 1,
         ),
       );
     }

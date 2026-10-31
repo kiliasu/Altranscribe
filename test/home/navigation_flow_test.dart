@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:altranscribe/app/app.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
+import 'package:altranscribe/data/services/files/pause_cutter.dart';
 import 'package:altranscribe/data/services/files/text_cleanup.dart';
 import 'package:altranscribe/shared/ui/expressive.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
@@ -23,8 +24,11 @@ import '../support/preview_binding.dart';
 class _FileDecoder extends AudioFileDecoder {
   final chunks = StreamController<FileAudioChunk>();
   @override
-  Stream<FileAudioChunk> decode(String path, {int chunkSeconds = 20}) =>
-      chunks.stream;
+  Stream<FileAudioChunk> decode(
+    String path, {
+    int chunkSeconds = 20,
+    PauseCutter? cutter,
+  }) => chunks.stream;
   @override
   Future<void> cancel() => chunks.close();
 }

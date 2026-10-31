@@ -43,45 +43,79 @@ class ModelFile {
   final String sha256;
 }
 
-/// A sherpa-onnx export of a Nemotron streaming transducer: a folder of
-/// encoder, decoder, joiner and tokens, fetched file by file from a pinned
-/// revision of its mirror.
-class NemotronModel extends SpeechModel {
+/// A model that is a folder of files, fetched file by file from a pinned
+/// revision of a Hugging Face repository.
+abstract class FolderModel extends SpeechModel {
+  const FolderModel({
+    required this.repo,
+    required this.revision,
+    required this.files,
+    required this.licenseName,
+    required this.licenseUrl,
+    required this.modelCard,
+  });
+  final String repo;
+  final String revision;
+  final List<ModelFile> files;
+  final String licenseName;
+  final String licenseUrl;
+  final String modelCard;
+  @override
+  int get bytes => files.fold(0, (sum, file) => sum + file.bytes);
+  String get sourceUrl => 'https://huggingface.co/$repo';
+  Uri downloadUri(ModelFile file) =>
+      Uri.parse('https://huggingface.co/$repo/resolve/$revision/${file.name}');
+}
+
+/// A sherpa-onnx export of a Nemotron streaming transducer: encoder,
+/// decoder, joiner and tokens.
+class NemotronModel extends FolderModel {
   const NemotronModel(
     this.id,
     this.label,
     this.shortLabel, {
-    required this.repo,
-    required this.revision,
-    required this.files,
+    required super.repo,
+    required super.revision,
+    required super.files,
     required this.multilingual,
-    required this.licenseName,
-    required this.licenseUrl,
-    required this.modelCard,
+    required super.licenseName,
+    required super.licenseUrl,
+    required super.modelCard,
   });
   @override
   final String id;
   @override
   final String label;
   final String shortLabel;
-  final String repo;
-  final String revision;
-  final List<ModelFile> files;
   final bool multilingual;
-  final String licenseName;
-  final String licenseUrl;
-  final String modelCard;
   static const fileNames = [
     'encoder.int8.onnx',
     'decoder.int8.onnx',
     'joiner.int8.onnx',
     'tokens.txt',
   ];
+}
+
+/// Nemotron 3.5 Transcribe as GGUF files for NeMo-Speech.cpp: the language
+/// model decoder the server loads, and the speech encoder it names.
+class TranscribeModel extends FolderModel {
+  const TranscribeModel(
+    this.id,
+    this.label, {
+    required super.repo,
+    required super.revision,
+    required super.files,
+    required super.licenseName,
+    required super.licenseUrl,
+    required super.modelCard,
+  });
   @override
-  int get bytes => files.fold(0, (sum, file) => sum + file.bytes);
-  String get sourceUrl => 'https://huggingface.co/$repo';
-  Uri downloadUri(ModelFile file) =>
-      Uri.parse('https://huggingface.co/$repo/resolve/$revision/${file.name}');
+  final String id;
+  @override
+  final String label;
+
+  /// The file passed to the server; the others sit beside it.
+  String get decoder => files.first.name;
 }
 
 class ModelCatalog extends ChangeNotifier {
@@ -222,10 +256,45 @@ class ModelCatalog extends ChangeNotifier {
   static NemotronModel? nemotron(String id) =>
       nemotronModels.where((model) => model.id == id).firstOrNull;
 
+  // AtomicChat's conversion with NVIDIA's own converter: experts in NVFP4
+  // for Blackwell GPUs. NVIDIA publishes no GGUF; its NVFP4 checkpoint runs
+  // only in vLLM. Sizes and SHA-256 values are the pinned revision's LFS
+  // metadata.
+  static const transcribeModels = [
+    TranscribeModel(
+      'nemotron-transcribe-nvfp4',
+      'Nemotron 3.5 Transcribe · NVFP4 (30B-A4B)',
+      repo: 'AtomicChat/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF',
+      revision: 'dbd06c5cad7a2f33c8e06be2fb3ef814dbd9aa59',
+      files: [
+        ModelFile(
+          'NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-AD-NVFP4.gguf',
+          19678656416,
+          'ff1ae7655e66efe1d161a83e71c24853cea0614261b041b961089a23c7dcf2d3',
+        ),
+        ModelFile(
+          'NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-Encoder-F16.gguf',
+          1670410080,
+          '4221029c8a565c4a80c507ffa760c716e595acf663f9f4273ce69910050e7ba2',
+        ),
+      ],
+      licenseName: 'OpenMDW 1.1',
+      licenseUrl: 'https://openmdw.ai/license/1-1/',
+      modelCard: 'https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B',
+    ),
+  ];
+
+  static TranscribeModel? transcribe(String id) =>
+      transcribeModels.where((model) => model.id == id).firstOrNull;
+
   String path(WhisperModel model) => '${directory.path}/${model.filename}';
 
-  /// The folder a Nemotron model's files live in.
-  String folder(NemotronModel model) => '${directory.path}/${model.id}';
+  /// The folder a Nemotron or Transcribe model's files live in.
+  String folder(FolderModel model) => '${directory.path}/${model.id}';
+
+  /// The decoder file the Transcribe server loads.
+  String decoderPath(TranscribeModel model) =>
+      '${folder(model)}/${model.decoder}';
 
   /// What the last [scan] found, by model id. Downloads and removals scan
   /// again, so listeners see a model appear or go.
@@ -281,12 +350,12 @@ class ModelCatalog extends ChangeNotifier {
           clock,
         );
       }
-      final nemotron = model as NemotronModel;
-      final target = Directory(folder(nemotron));
+      final folderModel = model as FolderModel;
+      final target = Directory(folder(folderModel));
       await target.create(recursive: true);
       // Files already present and complete are kept, so a retry only fetches
       // what is missing.
-      for (final file in nemotron.files) {
+      for (final file in folderModel.files) {
         final destination = File('${target.path}/${file.name}');
         if (await destination.exists() &&
             await destination.length() == file.bytes) {
@@ -296,7 +365,7 @@ class ModelCatalog extends ChangeNotifier {
         }
         if (!await _fetch(
           client,
-          nemotron.downloadUri(file),
+          folderModel.downloadUri(file),
           destination,
           file.bytes,
           file.sha256,
@@ -553,7 +622,7 @@ class ModelCatalog extends ChangeNotifier {
   Future<void> remove(SpeechModel model) async {
     if (downloadingModel == model) throw StateError('modelDownloadBusy');
     try {
-      if (model is NemotronModel) {
+      if (model is FolderModel) {
         final target = Directory(folder(model));
         if (await target.exists()) await target.delete(recursive: true);
       } else if (model is WhisperModel && await directory.exists()) {
@@ -615,7 +684,7 @@ class ModelCatalog extends ChangeNotifier {
         await handle.close();
       }
     }
-    for (final model in nemotronModels) {
+    for (final model in <FolderModel>[...nemotronModels, ...transcribeModels]) {
       var present = 0;
       var complete = 0;
       for (final entry in model.files) {

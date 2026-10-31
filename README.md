@@ -24,14 +24,14 @@ The Windows app is not code-signed, so Windows may say "Windows protected your P
 
 ## Getting started
 
-1. Under **Settings → Speech models**, choose how speech is recognized: local Whisper on this computer, local Nemotron streaming models on the CPU (also on the phone), a Windows host on your network, or OpenAI / Gemini.
-2. For translations, titles and summaries, choose a text model under **Settings → Translation & LLM**, or turn them off on the home screen.
+1. Under **Settings → Speech models**, choose how speech is recognized: local Whisper on this computer, local Nemotron streaming models on the CPU (also on the phone), local Nemotron 3.5 Transcribe on a 32 GB Blackwell GPU such as the RTX 5090, a Windows host on your network, or OpenAI / Gemini.
+2. For translations, titles and summaries, choose a text model under **Settings → Translation & LLM**, or turn them off on the home screen. **Prepare LLM** on the home screen loads the model before you start, so the first translations do not lag.
 3. Pick the microphone, system audio or both, set the languages and start. For recordings, open **Files** and add one or more audio or video files; they are processed in order.
 4. **Stop & save** moves the transcript to the **Library**. The last sentences, translations and the summary finish in the background; wait for them before starting the next task.
 
 Pausing stops new capture while earlier speech finishes processing, and **Discard recording** deletes the current transcript. Closing the caption window only hides it.
 
-**Local models on Windows:** get `whisper-server.exe` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp), enter its path in the model settings and choose CPU or GPU. The download button next to each model fetches Tiny to Large v3 Turbo and verifies the file; the [model guide](docs/en/models.md) explains adding files yourself. For translation and summaries, run Ollama or another OpenAI-compatible text service on the same computer, enter an online OpenAI-compatible service with its API key, or use OpenAI, Gemini or Anthropic directly.
+**Local models on Windows:** get `whisper-server.exe` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp), enter its path in the model settings and choose CPU or GPU. The download button next to each model fetches Tiny to Large v3 Turbo and verifies the file; the [model guide](docs/en/models.md) explains adding files yourself. Nemotron 3.5 Transcribe needs NVIDIA's [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) and downloads its model in the same panel; see [its section](docs/en/models.md#nemotron-35-transcribe). For translation and summaries, run Ollama or another OpenAI-compatible text service on the same computer, enter an online OpenAI-compatible service with its API key, or use OpenAI, Gemini or Anthropic directly.
 
 Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a Windows host](docs/en/remote-processing.md), which lets a phone use your computer's models: turn on sharing on the computer, scan its QR code with the phone, and the host appears on the phone's **Devices** page. The phone can also transcribe with Nemotron itself and leave only translation and summaries to the computer.
 
@@ -41,6 +41,7 @@ Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a 
 | --- | --- | --- |
 | Local Whisper (CPU / NVIDIA GPU) | Yes | No |
 | Local Nemotron streaming (CPU, sherpa-onnx) | Yes | Yes |
+| Local Nemotron 3.5 Transcribe (32 GB Blackwell GPU, NeMo-Speech.cpp) | Yes | No |
 | Local Ollama / OpenAI-compatible text model | Yes | Through a Windows host |
 | Local network sharing | Host or client | Client |
 | OpenAI / Gemini (speech and text), Anthropic and online OpenAI-compatible services (text) | Yes | Yes |

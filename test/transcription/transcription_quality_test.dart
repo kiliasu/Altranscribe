@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 
+import 'package:altranscribe/data/services/audio/audio_service.dart';
 import 'package:altranscribe/data/services/transcription/chinese_script.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,5 +76,34 @@ void main() {
       () => WhisperService.decodeTranscript({'text': 'invalid format'}, 'zh'),
       throwsFormatException,
     );
+  });
+
+  test('quiet speech is raised to speech level before Whisper hears it', () {
+    Int16List level(Uint8List wave) =>
+        Int16List.sublistView(Uint8List.fromList(wave.sublist(44)));
+    // Two seconds of a 200 Hz tone with a second of silence in the middle.
+    Uint8List wave(double amplitude) => pcmToWave(
+      Uint8List.sublistView(
+        Int16List.fromList([
+          for (var i = 0; i < 48000; i++)
+            i >= 16000 && i < 32000
+                ? 0
+                : (amplitude * 32767 * sin(2 * pi * 200 * i / 16000)).round(),
+        ]),
+      ),
+    );
+    // A distant lecture: about -50 dBFS. The silence does not count.
+    final quiet = WhisperService.raiseToSpeechLevel(wave(.004));
+    final peak = level(quiet).map((value) => value.abs()).reduce(max);
+    expect(peak / 32767, closeTo(.1 * sqrt2, .01));
+    expect(level(quiet).sublist(16000, 32000).every((v) => v == 0), isTrue);
+    // At most 40 times louder, and normal speech is left as it is.
+    final faint = WhisperService.raiseToSpeechLevel(wave(.0001));
+    expect(
+      level(faint).map((value) => value.abs()).reduce(max) / 32767,
+      closeTo(.004, .0005),
+    );
+    final normal = wave(.3);
+    expect(WhisperService.raiseToSpeechLevel(normal), same(normal));
   });
 }

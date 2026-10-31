@@ -23,7 +23,7 @@ Windows 上的模型存放在 `%LOCALAPPDATA%\Altranscribe\models\`，也就是�
 
 应用下载会校验固定版本的文件大小与 SHA-256；手动添加时只检查文件名、大小和文件头。下载模型不包含 Whisper 运行程序，需另行配置 `whisper-server.exe`。Whisper 只在 Windows 上运行；Android 可以用 Nemotron、Windows 主机或云端服务。
 
-随包附带的 [Silero VAD](third-party.md#silero-vad) 会在启动本地 Whisper 时复制到模型目录，用于语音检测，不属于可选转录模型。
+随包附带的 [Silero VAD](third-party.md#silero-vad) 会在启动本地 Whisper 时复制到模型目录，用于语音检测，不属于可选转录模型。应用自己也会用它在停顿处切分文件：Whisper 一次只听 30 秒，所以每段都在此前最后一个停顿处结束。远处录制的讲座这类远低于正常音量的声音，会先提高音量再交给 Whisper；它的语音检测为了不把提示音当成语音设得较严，否则会把这类语音几乎全部丢掉。
 
 ## Nemotron 流式模型
 
@@ -36,3 +36,12 @@ Windows 上的模型存放在 `%LOCALAPPDATA%\Altranscribe\models\`，也就是�
 
 文件来自 sherpa-onnx `asr-models` 发布中的 int8 导出（560 ms 分块），从其 Hugging Face 镜像的固定版本下载并做 SHA-256 校验。在声音很小的录音上，Whisper Large v3 Turbo 仍然给出更完整的文稿；英文 Nemotron 模型接近，多语言模型差一些。Nemotron 不需要显卡和 whisper-server，也是 Android 上唯一的本地引擎。
 
+## Nemotron 3.5 Transcribe
+
+[Nemotron 3.5 Transcribe](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B) 是 NVIDIA 用于整段录音的语音大模型，参数 30B，推理时约激活 4B。它自己写出标点，并给出每个词的时间。英文最准；中文属于 NVIDIA 最低的质量档，建议用自己的录音和 Whisper 对比。
+
+它在 Windows 上通过 NVIDIA 的本地运行时 [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) 运行，需另行安装：运行它的 Windows 安装脚本，或从发布页解压 `windows-x86_64-cuda` 压缩包，然后在「Transcribe 程序」中填写 `nemo-speech.exe` 的路径。安装脚本的默认位置会自动找到。
+
+模型是 NVFP4 版本，共约 21.3 GB，分两个文件：解码器和它指定的语音编码器。NVIDIA 没有发布 GGUF 文件（它自己的 NVFP4 权重只能在 Linux 上用 vLLM 运行），所以应用下载的是 [AtomicChat 的转换版本](https://huggingface.co/AtomicChat/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF)，用 NVIDIA 的转换工具制作，从固定版本下载并做 SHA-256 校验。许可证：[OpenMDW 1.1](https://openmdw.ai/license/1-1/)。
+
+NVFP4 需要 Blackwell 显卡，转录长录音时模型约占 29 GB 显存，实际需要 RTX 5090 这类 32 GB 的显卡；应用启动前会检查，显存被本机 LLM 等占用时会提示。在 RTX 5090 上，模型 20 秒内加载完，58 分钟的讲座约 35 秒转完。文件会在停顿处切成最长 55 分钟的片段，每行保留自己那几个词的时间。本机文字模型和 Transcribe 无法同时放进显存，所以两者轮流使用。所选文件会先全部转录完，等 Transcribe 离开显卡后，再加载用于整理、翻译和摘要的文字模型；已经加载的本机模型会在 Transcribe 启动前卸载。实时转录时，Transcribe 按和 Whisper 相同的短窗口识别；本机文字模型在停止转录后再翻译并生成摘要，要边说边译，请在「设置 → 翻译选择」中改用云端模型。也可以在 Transcribe 的模型设置里让本机模型与它同时运行，这时 Transcribe 先加载，开始页会显示预计显存，可能不足时给出提示。Transcribe 不能在 Android 上运行。

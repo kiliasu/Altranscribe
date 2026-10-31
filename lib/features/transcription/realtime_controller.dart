@@ -7,9 +7,11 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
 import 'package:altranscribe/data/services/files/android_audio_decoder.dart';
+import 'package:altranscribe/data/services/files/pause_cutter.dart';
 import 'package:altranscribe/shared/platform/environment.dart';
 import 'package:altranscribe/shared/platform/mobile_platform.dart';
 import 'package:altranscribe/data/services/files/file_transcriber.dart';
@@ -25,6 +27,7 @@ import 'package:altranscribe/data/services/audio/audio_service.dart';
 import 'package:altranscribe/data/services/transcription/chinese_script.dart';
 import 'package:altranscribe/data/repositories/record_store.dart';
 import 'package:altranscribe/data/services/transcription/nemotron_engine.dart';
+import 'package:altranscribe/data/services/transcription/transcribe_service.dart';
 import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/translation/translation_service.dart';
 import 'package:altranscribe/data/services/translation/translation_context.dart';
@@ -40,6 +43,23 @@ import 'package:altranscribe/data/services/remote/shared_host.dart';
 
 enum SessionPhase { idle, loading, listening, paused, stopping, fileProcessing }
 
+enum LlmCheckState { checking, ready, failed }
+
+/// How a live session translates: as usual, or, while the local text model
+/// would share the GPU with Transcribe, once the session stops or beside
+/// Transcribe as the user chose.
+enum LiveLlm { own, afterStop, shared }
+
+/// Whole gigabytes as GPU memory is usually quoted (GiB).
+String gigabytes(int bytes) => (bytes / (1 << 30)).toStringAsFixed(0);
+
+/// What preparing the text model found: whether it answers, and why not.
+class LlmCheck {
+  const LlmCheck(this.state, {this.error});
+  final LlmCheckState state;
+  final String? error;
+}
+
 class RealtimeController extends ChangeNotifier {
   RealtimeController({
     required this.audio,
@@ -53,9 +73,13 @@ class RealtimeController extends ChangeNotifier {
     this.cloudSocketConnector,
     SharedHost? sharedHost,
     NemotronEngine? nemotron,
+    SpeechEngine? transcribe,
+    SpeechDetector? speechDetector,
   }) : localEngine = engine,
        _providedHost = sharedHost,
        _providedNemotron = nemotron,
+       _providedTranscribe = transcribe,
+       _providedDetector = speechDetector,
        credentials = credentials ?? WindowsCredentialStore(store.directory),
        localTranslator =
            translator ??
@@ -104,21 +128,75 @@ class RealtimeController extends ChangeNotifier {
 
   /// Which Nemotron model a session uses, by catalog id.
   String nemotronModel = ModelCatalog.nemotronModels.first.id;
+  final SpeechEngine? _providedTranscribe;
+
+  /// Nemotron 3.5 Transcribe in a NeMo-Speech.cpp server; Windows only.
+  late final SpeechEngine transcribeEngine =
+      _providedTranscribe ?? TranscribeService(audio);
+
+  /// Which Transcribe model a session uses, by catalog id.
+  String transcribeModel = ModelCatalog.transcribeModels.first.id;
+
+  /// The NeMo-Speech.cpp program that serves Transcribe.
+  String transcribeExecutable = '';
   SpeechEngine get engine => remoteProcessing
       ? remoteEngine
       : speechProvider == SpeechProvider.nemotron
       ? nemotronEngine
+      : speechProvider == SpeechProvider.transcribe
+      ? transcribeEngine
       : localEngine;
   bool get nemotronSpeech =>
       !remoteProcessing && speechProvider == SpeechProvider.nemotron;
+  bool get transcribeSpeech =>
+      !remoteProcessing && speechProvider == SpeechProvider.transcribe;
 
-  /// The model argument for `engine.start`: a Whisper file or a Nemotron folder.
+  /// The model argument for `engine.start`: a Whisper file, a Nemotron
+  /// folder or the Transcribe decoder.
   String get engineModel => nemotronSpeech
       ? catalog.folder(
           ModelCatalog.nemotron(nemotronModel) ??
               ModelCatalog.nemotronModels.first,
         )
+      : transcribeSpeech
+      ? catalog.decoderPath(
+          ModelCatalog.transcribe(transcribeModel) ??
+              ModelCatalog.transcribeModels.first,
+        )
       : model;
+
+  /// The program argument for `engine.start`.
+  String get engineExecutable =>
+      transcribeSpeech ? transcribeExecutable : executable;
+
+  final SpeechDetector? _providedDetector;
+  SpeechDetector? _bundledDetector;
+
+  /// Hears where speech pauses, so files are cut there. The bundled model
+  /// is read when a file first needs it.
+  Future<Float32List> _detectSpeech(Uint8List pcm) async {
+    final detector =
+        _providedDetector ??
+        (_bundledDetector ??= sileroDetector(
+          (await rootBundle.load('assets/models/ggml-silero-v5.1.2.bin')).buffer
+              .asUint8List(),
+        ));
+    return detector(pcm);
+  }
+
+  /// How a file is cut for the session's engine: Whisper hears 30 seconds
+  /// at a time, Transcribe up to an hour (55 minutes, as NVIDIA cuts long
+  /// recordings). Both end each piece in a pause; other engines keep their
+  /// fixed windows.
+  PauseCutter? get _fileCutter => cloudSpeech || nemotronSpeech
+      ? null
+      : transcribeSpeech
+      ? PauseCutter(
+          maxMs: 55 * 60000,
+          searchMs: 5 * 60000,
+          detector: _detectSpeech,
+        )
+      : PauseCutter(maxMs: 30000, searchMs: 12000, detector: _detectSpeech);
   final RecordStore store;
   final TranslationService localTranslator;
   final TranslationService localRecordSummarizer;
@@ -194,11 +272,190 @@ class RealtimeController extends ChangeNotifier {
       ? (remoteConnection.info?['model'] as String? ?? 'Whisper · Remote')
       : nemotronSpeech
       ? (ModelCatalog.nemotron(nemotronModel)?.label ?? nemotronModel)
+      : transcribeSpeech
+      ? (ModelCatalog.transcribe(transcribeModel)?.label ?? transcribeModel)
       : model.split(RegExp(r'[/\\]')).last;
   String get sessionLlmModel => remoteLlm
       ? (remoteLlmModel.isNotEmpty ? remoteLlmModel : hostLlmModel ?? '')
       : translationModel;
   String get sessionLlmProvider => remoteLlm ? 'remote' : llmProvider.name;
+
+  /// The user chose to run the local text model beside Transcribe in live
+  /// sessions anyway.
+  bool liveLocalLlm = false;
+
+  /// The user's own text service runs on this computer.
+  bool get _ownLlmLocal {
+    if (llmProvider.isCloud) return false;
+    try {
+      return !LocalLlmService.isOnline(
+        LocalLlmService.serviceAddress(translationAddress, llmProvider),
+      );
+    } on FormatException {
+      return true;
+    }
+  }
+
+  /// Transcribe and the local text model would share the GPU, where both
+  /// do not fit.
+  bool get llmSharesGpu => transcribeSpeech && !remoteLlm && _ownLlmLocal;
+
+  /// The text model runs online, so there is nothing to load beforehand.
+  bool get llmOnline => !remoteLlm && !_ownLlmLocal;
+
+  /// The text model runs on this computer.
+  bool get llmLocal => !remoteLlm && _ownLlmLocal;
+
+  /// How the next live session translates.
+  LiveLlm get liveLlm => !llmSharesGpu
+      ? LiveLlm.own
+      : liveLocalLlm
+      ? LiveLlm.shared
+      : LiveLlm.afterStop;
+
+  /// What a live session with Transcribe and the local text model would
+  /// use of the GPU, and the GPU's size, in bytes; null when unknown.
+  int? sharedGpuNeed;
+  int? gpuTotal;
+  Future<int?> Function() gpuTotalMemory = nvidiaTotalMemory;
+
+  /// Estimates [sharedGpuNeed] from Transcribe's files and the size the
+  /// local server lists for the text model, with room for its context.
+  Future<void> estimateSharedGpu() async {
+    if (liveLlm != LiveLlm.shared) return;
+    final speech =
+        ModelCatalog.transcribe(transcribeModel) ??
+        ModelCatalog.transcribeModels.first;
+    final text = await localTranslator.modelBytes(
+      translationAddress,
+      translationModel,
+      provider: llmProvider,
+    );
+    gpuTotal = await gpuTotalMemory();
+    sharedGpuNeed = text == null
+        ? null
+        : speech.bytes +
+              TranscribeService.liveHeadroomBytes +
+              text +
+              1000000000;
+    _notify();
+  }
+
+  /// The estimate leaves room on the GPU.
+  bool get sharedGpuFits {
+    final need = sharedGpuNeed, total = gpuTotal;
+    return need != null && total != null && need <= total * .95;
+  }
+
+  /// The warning for a live session whose text model shares the GPU with
+  /// Transcribe: with the estimate when it is known.
+  String get sharedGpuWarning {
+    final need = sharedGpuNeed, total = gpuTotal;
+    return need == null || total == null
+        ? 'llmSharesGpu'
+        : 'gpuMemoryShort: ${gigabytes(need)} ${gigabytes(total)}';
+  }
+
+  /// This live session translates once it stops and Transcribe has left the
+  /// GPU.
+  bool _deferForSession = false;
+
+  /// The text model the next task would use.
+  String get _llmKey => remoteLlm
+      ? 'remote ${remoteConnection.address} $remoteLlmModel'
+      : '${llmProvider.name} $translationAddress $translationModel';
+  LlmCheck? _llmCheck;
+  String _llmCheckKey = '';
+  DateTime _llmUsedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Future<void>? _llmChecking;
+  Future<void>? _llmPrepareStep;
+  int _tasksStarted = 0;
+
+  /// Ollama unloads a model 30 minutes after it was last used.
+  static const _llmLoadedFor = Duration(minutes: 25);
+
+  /// The last check of the text model, while its settings still apply and a
+  /// model it loaded is likely still loaded.
+  LlmCheck? get llmCheck {
+    final check = _llmCheck;
+    if (check == null || _llmCheckKey != _llmKey) return null;
+    if (check.state == LlmCheckState.ready &&
+        DateTime.now().difference(_llmUsedAt) > _llmLoadedFor) {
+      return null;
+    }
+    return check;
+  }
+
+  /// Loads the text model and translates a test line, so translation keeps up
+  /// from the first sentence of the next session. A session that starts
+  /// meanwhile joins this preparation instead of restarting it.
+  Future<void> checkLlm() => _llmChecking ??= _checkLlm().whenComplete(() {
+    _llmChecking = null;
+    _llmPrepareStep = null;
+  });
+
+  Future<void> _checkLlm() async {
+    if (active || !initialized) return;
+    final key = _llmKey;
+    final tasks = _tasksStarted;
+    _llmCheckKey = key;
+    _llmCheck = const LlmCheck(LlmCheckState.checking);
+    _notify();
+    try {
+      final step = _llmPrepareStep = translator.prepare(
+        _llmAddress,
+        _llmModel,
+        provider: llmProvider,
+      );
+      await step;
+      // The reply waits for the model to load.
+      await translator.translate('Hello.', 'en', 'zh');
+      _llmReady(key);
+    } catch (e) {
+      if (tasks == _tasksStarted) {
+        _llmCheck = LlmCheck(
+          LlmCheckState.failed,
+          error: e is SocketException || e is TimeoutException
+              ? 'llmUnavailable'
+              : e.toString(),
+        );
+      } else if (_llmCheck?.state == LlmCheckState.checking) {
+        // A task that started meanwhile closed the connection when it ended.
+        _llmCheck = null;
+      }
+      AppLog.instance.warn('translation', 'LLM check failed: $e');
+    }
+    _notify();
+  }
+
+  void _llmReady(String key) {
+    _llmCheckKey = key;
+    _llmCheck = const LlmCheck(LlmCheckState.ready);
+    _llmUsedAt = DateTime.now();
+  }
+
+  /// Prepares the translator for a task, joining a check of the same model
+  /// that is still loading instead of cutting its connection.
+  Future<void> _prepareTranslator() {
+    final step = _llmPrepareStep;
+    if (step != null && _llmChecking != null && _llmCheckKey == _llmKey) {
+      return step;
+    }
+    return translator.prepare(_llmAddress, _llmModel, provider: llmProvider);
+  }
+
+  /// Unloads the user's local text model before Transcribe starts, so the
+  /// speech model gets the GPU memory a prepared or earlier model holds.
+  Future<void> _releaseLocalLlm() async {
+    if (!llmSharesGpu) return;
+    await translator.release(
+      translationAddress,
+      translationModel,
+      provider: llmProvider,
+    );
+    if (_llmCheckKey == _llmKey) _llmCheck = null;
+  }
+
   final ModelCatalog catalog;
   final AudioFileDecoder fileDecoder;
   final CredentialStore credentials;
@@ -323,7 +580,10 @@ class RealtimeController extends ChangeNotifier {
       cloudAutoLanguage = settings['cloudAutoLanguage'] as bool? ?? true;
       useRemote = settings['useRemote'] == true;
       remoteLlmModel = settings['remoteLlmModel'] as String? ?? '';
-      if (!localInferenceAllowed && speechProvider == SpeechProvider.whisper) {
+      if (!localInferenceAllowed &&
+          (speechProvider == SpeechProvider.whisper ||
+              speechProvider == SpeechProvider.transcribe)) {
+        speechProvider = SpeechProvider.whisper;
         useRemote = true;
       }
       // A host used to lend its text model only while it recognized speech;
@@ -375,6 +635,17 @@ class RealtimeController extends ChangeNotifier {
           ModelCatalog.nemotron(settings['nemotronModel'] as String? ?? '')
               ?.id ??
           nemotronModel;
+      transcribeModel =
+          ModelCatalog.transcribe(settings['transcribeModel'] as String? ?? '')
+              ?.id ??
+          transcribeModel;
+      liveLocalLlm = settings['liveLocalLlm'] as bool? ?? false;
+      final savedTranscribe = settings['transcribeExecutable'] as String? ?? '';
+      transcribeExecutable =
+          environmentValue('ALTRANSCRIBE_NEMO_SPEECH_EXECUTABLE') ??
+          (savedTranscribe.isNotEmpty
+              ? savedTranscribe
+              : TranscribeService.installedProgram() ?? '');
       translationAddress =
           settings['translationAddress'] as String? ?? translationAddress;
       llmProvider =
@@ -439,6 +710,7 @@ class RealtimeController extends ChangeNotifier {
     _notify();
     // A saved host's model details are only known after one look at it.
     if (remoteConnection.address.isNotEmpty) unawaited(probeHost());
+    unawaited(estimateSharedGpu());
   }
 
   Future<void> saveSettings() async {
@@ -447,6 +719,9 @@ class RealtimeController extends ChangeNotifier {
       'model': model,
       'computeMode': computeMode.name,
       'nemotronModel': nemotronModel,
+      'transcribeModel': transcribeModel,
+      'transcribeExecutable': transcribeExecutable,
+      'liveLocalLlm': liveLocalLlm,
       'translationAddress': translationAddress,
       'translationModel': translationModel,
       'llmProvider': llmProvider.name,
@@ -472,6 +747,7 @@ class RealtimeController extends ChangeNotifier {
       'remoteHostId': remoteConnection.hostId,
     });
     _notify();
+    unawaited(estimateSharedGpu());
   }
 
   Future<void> setGenerateSummary(bool value) async {
@@ -979,6 +1255,7 @@ class RealtimeController extends ChangeNotifier {
     if (active || removingModel || !initialized || paths.isEmpty) {
       return Future.value();
     }
+    _tasksStarted++;
     _cancelled = false;
     error = warning = null;
     record = null;
@@ -1016,22 +1293,31 @@ class RealtimeController extends ChangeNotifier {
         options.enabled ||
         generateSummary ||
         (targetLanguage != null && targetLanguage != language);
+    // Transcribe needs most of the GPU, so every file is transcribed first
+    // and the text model only loads once the speech model has left it.
+    final speechFirst = transcribeSpeech;
+    final transcribed = <(FileTranscriber, TranscriptRecord)>[];
+    void changed() {
+      transcriptRevision++;
+      _notify();
+    }
+
     try {
       _checkMobileProviders();
       await MobilePlatform.backgroundWork(true, language: summaryLanguage);
       await saveSettings();
       if (_cancelled) return;
-      if (needsLlm) {
-        await translator.prepare(_llmAddress, _llmModel, provider: llmProvider);
-      }
+      if (needsLlm && !speechFirst) await _prepareTranslator();
       if (nemotronSpeech) _warnNemotronLanguage(language);
+      await _releaseLocalLlm();
       if (_cancelled) return;
       await fileEngine.start(
-        executable,
+        engineExecutable,
         engineModel,
         store.directory,
         compute: computeMode,
       );
+      final cutter = _fileCutter;
       if (_cancelled) return;
       for (final path in paths) {
         if (_cancelled) break;
@@ -1064,24 +1350,68 @@ class RealtimeController extends ChangeNotifier {
         record = current;
         phase = SessionPhase.fileProcessing;
         _notify();
-        await fileTask!.run(
-          record: current,
-          engine: fileEngine,
-          chunkSeconds: cloudSpeech ? 600 : 20,
-          translator: translator,
-          translationContext: translationContext,
-          store: store,
-          options: options,
-          onChanged: () {
-            transcriptRevision++;
-            _notify();
-          },
-        );
+        final task = fileTask!;
+        if (speechFirst) {
+          if (await task.transcribe(
+            record: current,
+            engine: fileEngine,
+            store: store,
+            onChanged: changed,
+            cutter: cutter,
+          )) {
+            transcribed.add((task, current));
+          }
+        } else {
+          await task.run(
+            record: current,
+            engine: fileEngine,
+            chunkSeconds: cloudSpeech ? 600 : 20,
+            cutter: cutter,
+            translator: translator,
+            translationContext: translationContext,
+            store: store,
+            options: options,
+            onChanged: changed,
+          );
+        }
         if (_cloudFile?.cleanupWarning != null) {
           warning = _cloudFile!.cleanupWarning;
         }
         if (current.status == 'error') warning = 'fileSomeFailed';
         await _reloadRecords();
+      }
+      if (transcribed.isNotEmpty) {
+        await fileEngine.stop();
+        Object? llmError;
+        if (needsLlm && !_cancelled) {
+          try {
+            await _prepareTranslator();
+          } catch (e) {
+            // The transcripts stay; each step that needed the model says it
+            // failed, and the session reports why.
+            llmError = e;
+          }
+        }
+        fileNumber = 0;
+        while (transcribed.isNotEmpty) {
+          final (task, current) = transcribed.removeAt(0);
+          fileNumber++;
+          fileTask = task;
+          record = current;
+          if (_cancelled) task.cancelled = true;
+          _notify();
+          await task.process(
+            record: current,
+            translator: translator,
+            translationContext: translationContext,
+            store: store,
+            options: options,
+            onChanged: changed,
+          );
+          if (current.status == 'error') warning = 'fileSomeFailed';
+          await _reloadRecords();
+        }
+        if (llmError != null) throw llmError;
       }
     } catch (e, s) {
       AppLog.instance.error('files', e, s);
@@ -1091,6 +1421,21 @@ class RealtimeController extends ChangeNotifier {
             : e.toString();
       }
     } finally {
+      // Transcripts that a failure kept from their text steps still end.
+      for (final (task, current) in transcribed) {
+        task.cancelled = true;
+        try {
+          await task.process(
+            record: current,
+            translator: translator,
+            store: store,
+            options: options,
+            onChanged: changed,
+          );
+        } catch (e) {
+          error ??= e.toString();
+        }
+      }
       await fileDecoder.cancel();
       await MobilePlatform.backgroundWork(false);
       await fileEngine.stop();
@@ -1128,9 +1473,18 @@ class RealtimeController extends ChangeNotifier {
     if (active || removingModel || !initialized || (!microphone && !system)) {
       return Future.value();
     }
+    _tasksStarted++;
     _cancelled = false;
     _directForSession =
         cloudSpeech && cloudDirectTranslation && targetLanguage != null;
+    final plan =
+        generateSummary ||
+            (!_directForSession &&
+                targetLanguage != null &&
+                targetLanguage != language)
+        ? liveLlm
+        : LiveLlm.own;
+    _deferForSession = plan == LiveLlm.afterStop;
     _cloudLines.clear();
     _cloudFinalized.clear();
     _finalLines.clear();
@@ -1149,14 +1503,15 @@ class RealtimeController extends ChangeNotifier {
     AppLog.instance.info(
       'session',
       'Start: microphone=$microphone system=$system $language→${targetLanguage ?? '-'} '
-          'engine=${cloudSpeech
+          'engine=${cloudSpeech || transcribeSpeech
               ? speechProvider.name
               : remoteProcessing
               ? 'remote'
               : nemotronSpeech
               ? 'nemotron'
               : 'whisper'} '
-          'llm=${remoteLlm ? 'remote' : llmProvider.name}',
+          'llm=${remoteLlm ? 'remote' : llmProvider.name}'
+          '${_deferForSession ? ' after stop' : ''}',
     );
     _notify();
     final future = _start(
@@ -1183,31 +1538,43 @@ class RealtimeController extends ChangeNotifier {
       _checkMobileProviders();
       await saveSettings();
       if (_cancelled) return;
-      if (generateSummary ||
-          (!_directForSession &&
-              targetLanguage != null &&
-              targetLanguage != language)) {
+      Future<void> prepare() async {
         try {
-          await translator.prepare(
-            _llmAddress,
-            _llmModel,
-            provider: llmProvider,
-          );
+          await _prepareTranslator();
         } on SocketException {
           throw const FormatException('llmUnavailable');
         } on TimeoutException {
           throw const FormatException('llmUnavailable');
         }
+      }
+
+      final needsLlm =
+          generateSummary ||
+          (!_directForSession &&
+              targetLanguage != null &&
+              targetLanguage != language);
+      // A local text model and Transcribe do not fit in the GPU together:
+      // Transcribe loads first, and the text model only beside it when the
+      // user chose that.
+      final besideSpeech = needsLlm && liveLlm == LiveLlm.shared;
+      await _releaseLocalLlm();
+      if (needsLlm && !_deferForSession && !besideSpeech) {
+        await prepare();
         if (_cancelled) return;
       }
       if (!cloudSpeech) {
         await engine.start(
-          executable,
+          engineExecutable,
           engineModel,
           store.directory,
           compute: computeMode,
         );
       }
+      if (besideSpeech) {
+        if (!sharedGpuFits) warning ??= sharedGpuWarning;
+        await prepare();
+      }
+      if (_deferForSession) warning ??= 'llmTranslateAfterStop';
       if (_cancelled) return;
       final now = DateTime.now();
       record = TranscriptRecord(
@@ -1334,6 +1701,7 @@ class RealtimeController extends ChangeNotifier {
     // which rejects plain-HTTP addresses on a phone.
     if (!localInferenceAllowed &&
         ((!remoteProcessing && speechProvider == SpeechProvider.whisper) ||
+            transcribeSpeech ||
             (!remoteLlm && llmProvider == LlmProvider.ollama))) {
       throw const FormatException('mobileRemoteOnly');
     }
@@ -1606,6 +1974,9 @@ class RealtimeController extends ChangeNotifier {
       if (current.targetLanguage == current.language) {
         line.translation = line.text;
         line.translationStatus = 'done';
+      } else if (_deferForSession) {
+        // Translated once the session stops and Transcribe leaves the GPU.
+        continue;
       } else if (_translationQueue.length >= 8) {
         line.translationStatus = 'failed';
         line.translationError = warning = 'translationTooSlow';
@@ -1690,6 +2061,7 @@ class RealtimeController extends ChangeNotifier {
       }
       lastTranslationSeconds = clock.elapsedMilliseconds / 1000;
       _translationTimes.add(lastTranslationSeconds);
+      _llmUsedAt = DateTime.now();
     } catch (e) {
       if (!_discarding && current.indexOfLine(line) >= 0) {
         line.translationStatus = 'failed';
@@ -1719,6 +2091,8 @@ class RealtimeController extends ChangeNotifier {
           'request ${summary(_translationTimes)}'
           '${_translationWaits.isEmpty ? '' : '; wait ${summary(_translationWaits)}'}',
     );
+    // The model stays loaded after a session.
+    _llmReady(_llmKey);
   }
 
   Future<void> togglePause() async {
@@ -1906,6 +2280,9 @@ class RealtimeController extends ChangeNotifier {
             : 'error';
         current.error = error;
         try {
+          if (_deferForSession && !_disposed) {
+            await _translateAfterStop(current);
+          }
           if (current.summaryStatus == 'pending') {
             await store.save(current);
             if (_disposed) {
@@ -1949,6 +2326,7 @@ class RealtimeController extends ChangeNotifier {
       _queuedAt.clear();
       levels.clear();
       levelHistory.clear();
+      _deferForSession = false;
       try {
         await MobilePlatform.backgroundWork(false);
       } catch (e) {
@@ -1957,6 +2335,37 @@ class RealtimeController extends ChangeNotifier {
       phase = SessionPhase.idle;
       backgroundFinishing = false;
       _notify();
+    }
+  }
+
+  /// Translates and summarizes a live session once it has stopped, with the
+  /// local text model Transcribe kept off the GPU during it. A model that
+  /// cannot load leaves each line saying its translation failed.
+  Future<void> _translateAfterStop(TranscriptRecord current) async {
+    try {
+      await _prepareTranslator();
+    } catch (e) {
+      // The transcript stays complete; its lines say they were not translated.
+      warning ??= e is SocketException || e is TimeoutException
+          ? 'llmUnavailable'
+          : e.toString();
+    }
+    generatingSummary = current.summaryStatus == 'pending';
+    _notify();
+    try {
+      await FileTranscriber(fileDecoder).process(
+        record: current,
+        translator: translator,
+        store: store,
+        options: const CleanupOptions(),
+        translationContext: translationContext,
+        onChanged: () {
+          transcriptRevision++;
+          _notify();
+        },
+      );
+    } finally {
+      generatingSummary = false;
     }
   }
 

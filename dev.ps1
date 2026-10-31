@@ -1,4 +1,4 @@
-param([switch]$Capture, [switch]$Verify, [switch]$Build, [switch]$Release, [switch]$Smoke, [switch]$CloudSmoke, [switch]$CaptionsSmoke, [switch]$RemoteSmoke, [switch]$Gpu, [string]$WhisperDirectory, [string]$TranslationModel, [string]$Target = 'lib/main.dart')
+param([switch]$Capture, [switch]$Verify, [switch]$Build, [switch]$Release, [switch]$Smoke, [switch]$CloudSmoke, [switch]$CaptionsSmoke, [switch]$RemoteSmoke, [switch]$Gpu, [switch]$Transcribe, [string]$WhisperDirectory, [string]$TranslationModel, [string]$Target = 'lib/main.dart')
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 . (Join-Path $projectRoot 'scripts/development-tools.ps1')
@@ -23,6 +23,11 @@ if ($Gpu) {
     if (-not (Test-Path -LiteralPath $gpuExecutable)) { throw 'Run scripts/setup-whisper-gpu.ps1 first.' }
     $localEnvironment.ALTRANSCRIBE_WHISPER_EXECUTABLE = $gpuExecutable
     $localEnvironment.ALTRANSCRIBE_COMPUTE_MODE = 'gpu'
+}
+if ($Transcribe) {
+    $nemoSpeech = Get-ChildItem -LiteralPath (Join-Path $projectRoot '.tools\nemo-speech') -Filter nemo-speech.exe -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $nemoSpeech) { throw 'Run scripts/setup-nemo-speech.ps1 first.' }
+    $localEnvironment.ALTRANSCRIBE_NEMO_SPEECH_EXECUTABLE = $nemoSpeech.FullName
 }
 if ($TranslationModel) { $localEnvironment.ALTRANSCRIBE_TRANSLATION_MODEL = $TranslationModel }
 $previousEnvironment = @{}
