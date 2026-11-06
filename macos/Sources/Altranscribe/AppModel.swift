@@ -110,6 +110,7 @@ private actor RecordWriter {
     private var deferredSave: Task<Void, Never>?
     private var activity: NSObjectProtocol?
     var captions: CaptionWindow?
+    private var preparedRecordingLocation = false
 
     init(paths: AppPaths = AppPaths(), api: APIClient = APIClient()) {
         self.api = api
@@ -127,6 +128,24 @@ private actor RecordWriter {
     }
 
     var busy: Bool { phase != .idle || isPostProcessing }
+    func prepareRecordingLocation() async {
+        guard !preparedRecordingLocation else { return }
+        preparedRecordingLocation = true
+        guard records.contains(where: { $0.hasRecording == true }) else { return }
+        do {
+            let folder = paths.recordings
+            // Documents access may wait for a macOS permission prompt. Keep the window responsive.
+            try await Task.detached {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
+                                                        attributes: [.posixPermissions: 0o700])
+            }.value
+            for index in records.indices where records[index].hasRecording == true {
+                try store.relocateRecording(&records[index])
+            }
+        } catch {
+            self.error = LocalizedText("Recordings could not be moved. Existing audio is still available at its original location.")
+        }
+    }
     var activeRecord: TranscriptRecord? { records.first { $0.id == activeRecordID } }
     var isCapturing: Bool { phase == .recording || phase == .paused }
     var filteredRecords: [TranscriptRecord] { records.filter { $0.matches(search) } }
@@ -285,6 +304,7 @@ private actor RecordWriter {
         var record = TranscriptRecord(title: title, source: source, language: configuration.recognitionLanguage, speechModel: speechModel)
         record.sourcePath = file?.path
         record.hasRecording = source != .file && configuration.saveRecording == true ? true : nil
+        if record.hasRecording == true { record.recordingFilename = AppPaths.recordingFilename(for: record) }
         record.targetLanguage = configuration.translate ? configuration.targetLanguage : nil
         try store.save(record)
         records.insert(record, at: 0)
@@ -334,7 +354,7 @@ private actor RecordWriter {
                     automaticChunks: configuration.usesBatchLiveAudio && (configuration.liveChunkMode ?? .automatic) == .automatic,
                     adaptiveGain: configuration.adaptiveInputGain ?? true, voiceProcessing: configuration.microphoneVoiceProcessing ?? false,
                     microphoneUID: configuration.microphoneDeviceUID,
-                    recordingURL: configuration.saveRecording == true ? paths.recording(id) : nil) { [weak self] level, duration in
+                    recordingURL: configuration.saveRecording == true ? activeRecord.map { paths.recording($0) } : nil) { [weak self] level, duration in
                     Task { @MainActor in
                         guard let self, self.phase == .recording else { return }
                         self.meter = level; self.elapsed = duration
@@ -364,7 +384,7 @@ private actor RecordWriter {
             }
             await capture.stop()
             if let recordID, let index = records.firstIndex(where: { $0.id == recordID }), records[index].hasRecording == true {
-                records[index].hasRecording = FileManager.default.fileExists(atPath: paths.recording(recordID).path) ? true : nil
+                records[index].hasRecording = FileManager.default.fileExists(atPath: paths.recording(records[index]).path) ? true : nil
                 records[index].recordingDuration = capture.recordedDuration
                 await persist(index)
             }

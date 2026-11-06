@@ -96,6 +96,14 @@ struct SettingsView: View {
                 Button(L("Show Caption Window")) { model.showCaptions() }
             }
             Section(L("Data & Privacy")) {
+                LabeledContent(L("Recording Location")) {
+                    Button(L("Open in Finder")) {
+                        do {
+                            try FileManager.default.createDirectory(at: model.paths.recordings, withIntermediateDirectories: true)
+                            NSWorkspace.shared.open(model.paths.recordings)
+                        } catch { model.error = LocalizedText(error: error) }
+                    }
+                }
                 LabeledContent(L("Transcript Location")) {
                     Button(L("Open in Finder")) {
                         do { try model.paths.prepare(); NSWorkspace.shared.open(model.paths.root) }

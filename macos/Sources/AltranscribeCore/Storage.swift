@@ -7,12 +7,28 @@ public struct AppPaths: Sendable {
     public let root: URL
     public var records: URL { root.appendingPathComponent("Records", isDirectory: true) }
     public var models: URL { root.appendingPathComponent("Models", isDirectory: true) }
-    public var recordings: URL { root.appendingPathComponent("Recordings", isDirectory: true) }
-    public func recording(_ id: UUID) -> URL { recordings.appendingPathComponent("\(id).m4a") }
+    public let recordings: URL
+    public func recording(_ record: TranscriptRecord) -> URL {
+        let legacy = root.appendingPathComponent("Recordings/\(record.id).m4a")
+        guard let filename = record.recordingFilename else { return legacy }
+        let current = recordings.appendingPathComponent(URL(fileURLWithPath: filename).lastPathComponent)
+        // A failed/interrupted migration must leave the original audio reachable.
+        if !FileManager.default.fileExists(atPath: current.path), FileManager.default.fileExists(atPath: legacy.path) { return legacy }
+        return current
+    }
+    public static func recordingFilename(for record: TranscriptRecord) -> String {
+        let date = DateFormatter()
+        date.locale = Locale(identifier: "en_US_POSIX")
+        date.dateFormat = "yyyy-MM-dd HH-mm-ss"
+        return "\(date.string(from: record.createdAt)) \(record.source.title) \(record.id.uuidString.prefix(8)).m4a"
+    }
     public var settings: URL { root.appendingPathComponent("settings.json") }
-    public init(root: URL? = nil) {
+    public init(root: URL? = nil, recordings: URL? = nil) {
         self.root = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Altranscribe", isDirectory: true)
+        self.recordings = recordings ?? (root.map { $0.appendingPathComponent("Recordings", isDirectory: true) }
+            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Altranscribe/Recordings", isDirectory: true))
     }
     public func prepare() throws {
         for url in [root, records, models] {
@@ -41,6 +57,21 @@ public struct RecordStore: Sendable {
         }
         return (records.sorted { $0.createdAt > $1.createdAt }, unreadable)
     }
+    public func relocateRecording(_ record: inout TranscriptRecord) throws {
+        let original = paths.recording(record)
+        guard FileManager.default.fileExists(atPath: original.path) else { return }
+        if record.recordingFilename == nil {
+            record.recordingFilename = AppPaths.recordingFilename(for: record)
+            // Persist the new name first. The resolver still finds the old file until the move succeeds.
+            try save(record)
+        }
+        guard let filename = record.recordingFilename else { return }
+        let target = paths.recordings.appendingPathComponent(URL(fileURLWithPath: filename).lastPathComponent)
+        guard original != target else { return }
+        try FileManager.default.createDirectory(at: paths.recordings, withIntermediateDirectories: true,
+                                               attributes: [.posixPermissions: 0o700])
+        try FileManager.default.moveItem(at: original, to: target)
+    }
     public func save(_ record: TranscriptRecord) throws {
         try paths.prepare()
         let encoder = JSONEncoder()
@@ -59,9 +90,13 @@ public struct RecordStore: Sendable {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
     public func delete(_ id: UUID) throws {
-        let audio = paths.recording(id)
+        let url = paths.records.appendingPathComponent("\(id).json")
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let record = try decoder.decode(TranscriptRecord.self, from: Data(contentsOf: url))
+        let audio = paths.recording(record)
         if FileManager.default.fileExists(atPath: audio.path) { try FileManager.default.removeItem(at: audio) }
-        try FileManager.default.removeItem(at: paths.records.appendingPathComponent("\(id).json"))
+        try FileManager.default.removeItem(at: url)
     }
     public func loadSettings() throws -> AppSettings {
         guard FileManager.default.fileExists(atPath: paths.settings.path) else { return AppSettings() }

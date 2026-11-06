@@ -76,7 +76,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var translate = false
     public var summarize = false
     public var vocabulary = ""
-    public var captionSize = 24.0
+    public var captionSize = 20.0
     public var captionTranslationOnly = false
     public var liveChunkMode: LiveChunkMode?
     public var adaptiveInputGain: Bool?
@@ -286,6 +286,7 @@ public struct TranscriptRecord: Codable, Equatable, Identifiable, Sendable {
     public var source: AudioSource
     public var sourcePath: String?
     public var hasRecording: Bool?
+    public var recordingFilename: String?
     public var recordingDuration: Double?
     public var language: String
     public var targetLanguage: String?

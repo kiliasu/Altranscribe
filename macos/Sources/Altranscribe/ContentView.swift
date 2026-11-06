@@ -56,6 +56,7 @@ struct ContentView: View {
             if reopening { reopeningInspector = false }
         }
         .onChange(of: model.settings) { _, _ in model.saveSettings() }
+        .task { await model.prepareRecordingLocation() }
         .task(id: model.settings.appleSpeechLocale + model.settings.speechProvider.rawValue) {
             if model.settings.speechProvider == .appleSpeech { await model.refreshAppleSpeech() }
         }

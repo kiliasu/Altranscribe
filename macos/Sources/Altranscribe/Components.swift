@@ -112,7 +112,7 @@ struct RecordActions: View {
         }
         if record.hasRecording == true {
             Button(L("Show Recording in Finder"), systemImage: "waveform") {
-                NSWorkspace.shared.activateFileViewerSelecting([model.paths.recording(record.id)])
+                NSWorkspace.shared.activateFileViewerSelecting([model.paths.recording(record)])
             }
             .disabled(model.busy)
         }

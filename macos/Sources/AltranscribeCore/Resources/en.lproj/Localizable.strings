@@ -485,3 +485,6 @@
 "The selected microphone is unavailable. Connect it or choose another microphone." = "The selected microphone is unavailable. Connect it or choose another microphone.";
 "The microphone changed or disconnected. Select a microphone and start a new recording." = "The microphone changed or disconnected. Select a microphone and start a new recording.";
 "Could not use the selected microphone. Choose another microphone or turn off Apple voice processing." = "Could not use the selected microphone. Choose another microphone or turn off Apple voice processing.";
+
+"Recording Location" = "Recording Location";
+"Recordings could not be moved. Existing audio is still available at its original location." = "Recordings could not be moved. Existing audio is still available at its original location.";

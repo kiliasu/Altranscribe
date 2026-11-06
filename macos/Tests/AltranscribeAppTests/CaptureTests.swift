@@ -15,10 +15,12 @@ final class CaptureTests: XCTestCase, @unchecked Sendable {
     func testPauseResumeAndStopKeepTailWithoutCapturingPausedAudio() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let paths = AppPaths(root: root), store = RecordStore(paths: AppPaths(root: root))
+        let paths = AppPaths(root: root, recordings: root.appendingPathComponent("Documents/Recordings", isDirectory: true))
+        let store = RecordStore(paths: paths)
         var record = TranscriptRecord(title: "Capture", source: .microphone, language: "en", speechModel: "test")
         record.hasRecording = true
-        let sink = CaptureSink(recordingURL: paths.recording(record.id)) { _, _ in }
+        record.recordingFilename = AppPaths.recordingFilename(for: record)
+        let sink = CaptureSink(recordingURL: paths.recording(record)) { _, _ in }
         sink.microphone(buffer(seconds: 0.5))
         sink.setPaused(true)
         sink.microphone(buffer(seconds: 1))
@@ -31,13 +33,37 @@ final class CaptureTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(chunks.map(\.start), [0, 0.5])
         XCTAssertEqual(chunks.map(\.duration), [0.5, 0.25])
         XCTAssertEqual(record.recordingDuration ?? 0, 0.75, accuracy: 0.01)
-        let file = try AVAudioFile(forReading: paths.recording(record.id))
+        let file = try AVAudioFile(forReading: paths.recording(record))
         XCTAssertEqual(Double(file.length) / file.processingFormat.sampleRate, 0.75, accuracy: 0.1)
         file.close()
         try store.save(record)
         XCTAssertEqual(try store.load().records.first?.hasRecording, true)
+
+        // Upgrade a UUID-named recording. A failed move must retain both its transcript and audio;
+        // reopening after the destination becomes available must finish the move without re-encoding.
+        let audio = try Data(contentsOf: paths.recording(record))
+        let legacy = root.appendingPathComponent("Recordings/\(record.id).m4a")
+        try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: paths.recording(record), to: legacy)
+        record.recordingFilename = nil
+        try store.save(record)
+        try FileManager.default.removeItem(at: paths.recordings)
+        try Data().write(to: paths.recordings) // A file blocks creation of the new recording directory.
+        XCTAssertThrowsError(try store.relocateRecording(&record))
+        let retained = try XCTUnwrap(store.load().records.first)
+        XCTAssertEqual(paths.recording(retained), legacy)
+        XCTAssertEqual(try Data(contentsOf: paths.recording(retained)), audio)
+        try FileManager.default.removeItem(at: paths.recordings)
+        try store.relocateRecording(&record)
+        record = try XCTUnwrap(store.load().records.first)
+        XCTAssertEqual(paths.recording(record).deletingLastPathComponent(), paths.recordings)
+        XCTAssertEqual(try Data(contentsOf: paths.recording(record)), audio)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
         try store.delete(record.id)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.recording(record.id).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.recording(record).path))
+        XCTAssertEqual(AppSettings().captionSize, 20)
+        var settings = AppSettings(); settings.captionSize = 30
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)).captionSize, 30)
         await sink.finish() // Teardown is idempotent.
     }
 

@@ -485,3 +485,6 @@
 "The selected microphone is unavailable. Connect it or choose another microphone." = "所选麦克风不可用。请连接它或选择其他麦克风。";
 "The microphone changed or disconnected. Select a microphone and start a new recording." = "麦克风已更改或断开。请选择麦克风并重新开始录音。";
 "Could not use the selected microphone. Choose another microphone or turn off Apple voice processing." = "无法使用所选麦克风。请选择其他麦克风或关闭 Apple 麦克风语音处理。";
+
+"Recording Location" = "录音位置";
+"Recordings could not be moved. Existing audio is still available at its original location." = "未能移动录音。已有音频仍可从原位置访问。";
