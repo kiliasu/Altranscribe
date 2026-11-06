@@ -11,16 +11,29 @@ public struct AppPaths: Sendable {
     public func recording(_ record: TranscriptRecord) -> URL {
         let legacy = root.appendingPathComponent("Recordings/\(record.id).m4a")
         guard let filename = record.recordingFilename else { return legacy }
-        let current = recordings.appendingPathComponent(URL(fileURLWithPath: filename).lastPathComponent)
+        let folder = record.recordingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? recordings
+        let current = folder.appendingPathComponent(URL(fileURLWithPath: filename).lastPathComponent)
+        if !FileManager.default.fileExists(atPath: current.path), let previous = record.recordingPreviousPath,
+           FileManager.default.fileExists(atPath: previous) { return URL(fileURLWithPath: previous) }
         // A failed/interrupted migration must leave the original audio reachable.
         if !FileManager.default.fileExists(atPath: current.path), FileManager.default.fileExists(atPath: legacy.path) { return legacy }
         return current
     }
-    public static func recordingFilename(for record: TranscriptRecord) -> String {
+    public static func recordingFilename(for record: TranscriptRecord, title: String? = nil) -> String {
         let date = DateFormatter()
         date.locale = Locale(identifier: "en_US_POSIX")
         date.dateFormat = "yyyy-MM-dd HH-mm-ss"
-        return "\(date.string(from: record.createdAt)) \(record.source.title) \(record.id.uuidString.prefix(8)).m4a"
+        let invalid = CharacterSet.controlCharacters.union(CharacterSet(charactersIn: "/:"))
+        let clean = (title ?? record.title).components(separatedBy: invalid).joined(separator: " ")
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        var title = ""
+        for character in clean {
+            guard title.utf8.count + String(character).utf8.count <= 160 else { break }
+            title.append(character)
+        }
+        if title.isEmpty { title = record.source.title }
+        return "\(title) · \(date.string(from: record.createdAt)) \(record.id.uuidString.prefix(8)).m4a"
     }
     public var settings: URL { root.appendingPathComponent("settings.json") }
     public init(root: URL? = nil, recordings: URL? = nil) {
@@ -58,6 +71,8 @@ public struct RecordStore: Sendable {
         return (records.sorted { $0.createdAt > $1.createdAt }, unreadable)
     }
     public func relocateRecording(_ record: inout TranscriptRecord) throws {
+        // A chosen directory belongs to the recording, not to the app's current default.
+        guard record.recordingDirectory == nil else { return }
         let original = paths.recording(record)
         guard FileManager.default.fileExists(atPath: original.path) else { return }
         if record.recordingFilename == nil {
@@ -71,6 +86,37 @@ public struct RecordStore: Sendable {
         try FileManager.default.createDirectory(at: paths.recordings, withIntermediateDirectories: true,
                                                attributes: [.posixPermissions: 0o700])
         try FileManager.default.moveItem(at: original, to: target)
+    }
+    public func rename(_ record: TranscriptRecord, title: String) throws -> TranscriptRecord {
+        var updated = record
+        updated.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !updated.title.isEmpty else { return record }
+        guard record.hasRecording == true else { try save(updated); return updated }
+        let manager = FileManager.default
+        let original = paths.recording(record)
+        guard manager.fileExists(atPath: original.path) else {
+            throw AppError("The recording is unavailable. Reconnect its drive before renaming.")
+        }
+        updated.recordingDirectory = original.deletingLastPathComponent().path
+        updated.recordingPreviousPath = nil
+        let filename = AppPaths.recordingFilename(for: updated)
+        updated.recordingFilename = filename
+        let target = original.deletingLastPathComponent().appendingPathComponent(filename)
+        if original == target { try save(updated); return updated }
+        if manager.fileExists(atPath: target.path) {
+            let first = try manager.attributesOfItem(atPath: original.path)[.systemFileNumber] as? NSNumber
+            let second = try manager.attributesOfItem(atPath: target.path)[.systemFileNumber] as? NSNumber
+            guard let first, let second, first == second else { throw CocoaError(.fileWriteFileExists) }
+        }
+        // Persist both paths before moving. A crash at either side of the move must keep audio reachable.
+        updated.recordingPreviousPath = original.path
+        try save(updated)
+        do { try manager.moveItem(at: original, to: target) }
+        catch { try save(record); throw error }
+        updated.recordingPreviousPath = nil
+        // The pending metadata already resolves the new file if this optional cleanup cannot be written.
+        try? save(updated)
+        return updated
     }
     public func save(_ record: TranscriptRecord) throws {
         try paths.prepare()

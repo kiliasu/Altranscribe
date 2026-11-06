@@ -331,7 +331,7 @@ struct TransportBar: View {
     }
 
     private var saveRecording: some View {
-        Toggle(isOn: Binding(get: { model.settings.saveRecording ?? false }, set: { model.settings.saveRecording = $0 })) {
+        Toggle(isOn: Binding(get: { model.settings.keepsRecording }, set: { model.settings.saveRecording = $0 })) {
             Label(L("Save Recording"), systemImage: "waveform")
         }
         .toggleStyle(.button)

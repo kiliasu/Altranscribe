@@ -96,21 +96,37 @@ struct SettingsView: View {
                 Button(L("Show Caption Window")) { model.showCaptions() }
             }
             Section(L("Data & Privacy")) {
-                LabeledContent(L("Recording Location")) {
-                    Button(L("Open in Finder")) {
-                        do {
-                            try FileManager.default.createDirectory(at: model.paths.recordings, withIntermediateDirectories: true)
-                            NSWorkspace.shared.open(model.paths.recordings)
-                        } catch { model.error = LocalizedText(error: error) }
+                HStack {
+                    Text(L("Recording Location"))
+                    Spacer()
+                    HStack {
+                        Button(L("Choose Folder…")) { model.chooseRecordingFolder() }.disabled(model.busy)
+                        Menu {
+                            Button(L("Open in Finder")) {
+                                do {
+                                    try FileManager.default.createDirectory(at: model.recordingFolder, withIntermediateDirectories: true)
+                                    NSWorkspace.shared.open(model.recordingFolder)
+                                } catch { model.error = LocalizedText(error: error) }
+                            }
+                            Button(L("Use Default Location")) { model.settings.recordingDirectory = nil; model.saveSettings() }
+                                .disabled(model.busy || model.settings.recordingDirectory == nil)
+                        } label: { Label(L("Recording Location"), systemImage: "ellipsis") }
+                        .labelStyle(.iconOnly)
+                        .menuIndicator(.hidden)
+                        .help(L("Recording Location"))
                     }
                 }
+                Text(model.recordingFolder.path).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                Text(L("New recordings use this folder. Existing recordings stay at their saved locations."))
+                    .font(.caption).foregroundStyle(.secondary)
                 LabeledContent(L("Transcript Location")) {
                     Button(L("Open in Finder")) {
                         do { try model.paths.prepare(); NSWorkspace.shared.open(model.paths.root) }
                         catch { model.error = LocalizedText(error: error) }
                     }
                 }
-                Text(L("Live audio is processed in memory. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text."))
+                Text(L("Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {

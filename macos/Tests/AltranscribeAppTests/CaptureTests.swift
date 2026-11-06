@@ -59,10 +59,45 @@ final class CaptureTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(paths.recording(record).deletingLastPathComponent(), paths.recordings)
         XCTAssertEqual(try Data(contentsOf: paths.recording(record)), audio)
         XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+
+        let custom = root.appendingPathComponent("Chosen Folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: custom, withIntermediateDirectories: true)
+        let original = paths.recording(record)
+        record.recordingDirectory = custom.path
+        try FileManager.default.moveItem(at: original, to: paths.recording(record))
+        try store.save(record)
+        try store.relocateRecording(&record)
+        XCTAssertEqual(paths.recording(record).deletingLastPathComponent(), custom)
+        record = try store.rename(record, title: "Lecture / notes: 中文")
+        XCTAssertTrue(paths.recording(record).lastPathComponent.hasPrefix("Lecture notes 中文 · "))
+        XCTAssertEqual(try Data(contentsOf: paths.recording(record)), audio)
+        record = try store.rename(record, title: "lecture / notes: 中文")
+        XCTAssertEqual(try store.load().records.first?.title, record.title)
+        var collision = record; collision.title = "Existing file"
+        let occupied = custom.appendingPathComponent(AppPaths.recordingFilename(for: collision))
+        try Data("keep".utf8).write(to: occupied)
+        XCTAssertThrowsError(try store.rename(record, title: collision.title))
+        XCTAssertEqual(try Data(contentsOf: occupied), Data("keep".utf8))
+        XCTAssertEqual(try store.load().records.first?.title, record.title)
+        var pending = record
+        pending.recordingPreviousPath = paths.recording(record).path
+        pending.recordingFilename = "pending.m4a"
+        try store.save(pending)
+        XCTAssertEqual(try Data(contentsOf: paths.recording(try XCTUnwrap(store.load().records.first))), audio)
+        try store.save(record)
+        XCTAssertLessThan(AppPaths.recordingFilename(for: record, title: String(repeating: "👨‍👩‍👧‍👦中文/", count: 100)).utf8.count, 255)
         try store.delete(record.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.recording(record).path))
         XCTAssertEqual(AppSettings().captionSize, 20)
         var settings = AppSettings(); settings.captionSize = 30
+        XCTAssertTrue(settings.keepsRecording)
+        var oldSettings = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+        oldSettings.removeValue(forKey: "saveRecording")
+        XCTAssertTrue(try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: oldSettings)).keepsRecording)
+        settings.saveRecording = false; settings.recordingDirectory = custom.path
+        try store.saveSettings(settings)
+        XCTAssertFalse(try store.loadSettings().keepsRecording)
+        XCTAssertEqual(try store.loadSettings().recordingDirectory, custom.path)
         XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)).captionSize, 30)
         await sink.finish() // Teardown is idempotent.
     }

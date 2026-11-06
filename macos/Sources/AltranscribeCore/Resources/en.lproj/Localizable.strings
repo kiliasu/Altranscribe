@@ -93,7 +93,6 @@
 "Light" = "Light";
 "Listening" = "Listening";
 "Live Transcription" = "Live Transcription";
-"Live audio is processed in memory. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text." = "Live audio is processed in memory. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text.";
 "Live audio is sent in approximately 8-second chunks; files in 20-second chunks. Timestamps are estimates. Paid inference requests are not retried automatically." = "Live audio is sent in approximately 8-second chunks; files in 20-second chunks. Timestamps are estimates. Paid inference requests are not retried automatically.";
 "Local transcription failed. Earlier text was retained." = "Local transcription failed. Earlier text was retained.";
 "Make Text Bigger" = "Make Text Bigger";
@@ -488,3 +487,17 @@
 
 "Recording Location" = "Recording Location";
 "Recordings could not be moved. Existing audio is still available at its original location." = "Recordings could not be moved. Existing audio is still available at its original location.";
+
+"Choose Folder" = "Choose Folder";
+
+"Choose Folder…" = "Choose Folder…";
+
+"Use Default Location" = "Use Default Location";
+
+"New recordings use this folder. Existing recordings stay at their saved locations." = "New recordings use this folder. Existing recordings stay at their saved locations.";
+
+"The recording is unavailable. Reconnect its drive before renaming." = "The recording is unavailable. Reconnect its drive before renaming.";
+
+"Recording could not be renamed: " = "Recording could not be renamed: ";
+
+"Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text." = "Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text.";

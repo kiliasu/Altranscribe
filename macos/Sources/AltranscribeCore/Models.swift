@@ -82,7 +82,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var adaptiveInputGain: Bool?
     public var microphoneVoiceProcessing: Bool?
     public var microphoneDeviceUID: String?
-    public var saveRecording: Bool?
+    public var saveRecording: Bool? = true
+    public var recordingDirectory: String?
     public var captionSentenceCount: Int?
 
     public var usesBatchLiveAudio: Bool {
@@ -94,6 +95,12 @@ public struct AppSettings: Codable, Equatable, Sendable {
         return (liveChunkMode ?? .automatic).seconds
     }
     public var visibleCaptionCount: Int { min(8, max(1, captionSentenceCount ?? 3)) }
+    public var keepsRecording: Bool { saveRecording != false }
+    public var fileTranslationConcurrency: Int {
+        if textProvider == .apple || textProvider == .gemini { return 1 }
+        if textProvider == .compatible, (try? APIEndpoint(textEndpoint).isLoopback) == true { return 1 }
+        return 4
+    }
 
     public init() {}
 
@@ -287,6 +294,8 @@ public struct TranscriptRecord: Codable, Equatable, Identifiable, Sendable {
     public var sourcePath: String?
     public var hasRecording: Bool?
     public var recordingFilename: String?
+    public var recordingDirectory: String?
+    public var recordingPreviousPath: String?
     public var recordingDuration: Double?
     public var language: String
     public var targetLanguage: String?

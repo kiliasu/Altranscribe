@@ -93,7 +93,6 @@
 "Light" = "浅色";
 "Listening" = "正在聆听";
 "Live Transcription" = "实时转写";
-"Live audio is processed in memory. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text." = "实时音频只在内存中处理。转写记录存放在本机，API 密钥保存在 macOS 钥匙串。选择在线服务时，相关音频或文本会发送到该服务。";
 "Live audio is sent in approximately 8-second chunks; files in 20-second chunks. Timestamps are estimates. Paid inference requests are not retried automatically." = "实时音频按约 8 秒分段提交；文件按 20 秒分段。时间戳为估计值。不会自动重试付费推理请求。";
 "Local transcription failed. Earlier text was retained." = "本地转写失败，已保留之前的文本。";
 "Make Text Bigger" = "放大文字";
@@ -488,3 +487,17 @@
 
 "Recording Location" = "录音位置";
 "Recordings could not be moved. Existing audio is still available at its original location." = "未能移动录音。已有音频仍可从原位置访问。";
+
+"Choose Folder" = "选择文件夹";
+
+"Choose Folder…" = "选择文件夹…";
+
+"Use Default Location" = "使用默认位置";
+
+"New recordings use this folder. Existing recordings stay at their saved locations." = "新录音保存到此文件夹，已有录音仍保留在原位置。";
+
+"The recording is unavailable. Reconnect its drive before renaming." = "录音暂时不可用，请重新连接其所在磁盘后再重命名。";
+
+"Recording could not be renamed: " = "录音无法重命名：";
+
+"Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text." = "开启“保存录音”时会保留音频文件。转写记录存放在本机，API 密钥保存在 macOS 钥匙串。选择在线服务时，相关音频或文本会发送到该服务。";

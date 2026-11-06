@@ -128,10 +128,25 @@ private actor RecordWriter {
     }
 
     var busy: Bool { phase != .idle || isPostProcessing }
+    var recordingFolder: URL {
+        settings.recordingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? paths.recordings
+    }
+    func chooseRecordingFolder() {
+        let panel = NSOpenPanel()
+        panel.title = L("Recording Location")
+        panel.prompt = L("Choose Folder")
+        panel.canChooseFiles = false; panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false; panel.canCreateDirectories = true
+        panel.directoryURL = recordingFolder
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.recordingDirectory = url.path
+            saveSettings()
+        }
+    }
     func prepareRecordingLocation() async {
         guard !preparedRecordingLocation else { return }
         preparedRecordingLocation = true
-        guard records.contains(where: { $0.hasRecording == true }) else { return }
+        guard records.contains(where: { $0.hasRecording == true && $0.recordingDirectory == nil }) else { return }
         do {
             let folder = paths.recordings
             // Documents access may wait for a macOS permission prompt. Keep the window responsive.
@@ -303,8 +318,11 @@ private actor RecordWriter {
         } }
         var record = TranscriptRecord(title: title, source: source, language: configuration.recognitionLanguage, speechModel: speechModel)
         record.sourcePath = file?.path
-        record.hasRecording = source != .file && configuration.saveRecording == true ? true : nil
-        if record.hasRecording == true { record.recordingFilename = AppPaths.recordingFilename(for: record) }
+        record.hasRecording = source != .file && configuration.keepsRecording ? true : nil
+        if record.hasRecording == true {
+            record.recordingDirectory = configuration.recordingDirectory ?? paths.recordings.path
+            record.recordingFilename = AppPaths.recordingFilename(for: record, title: source.title)
+        }
         record.targetLanguage = configuration.translate ? configuration.targetLanguage : nil
         try store.save(record)
         records.insert(record, at: 0)
@@ -354,7 +372,7 @@ private actor RecordWriter {
                     automaticChunks: configuration.usesBatchLiveAudio && (configuration.liveChunkMode ?? .automatic) == .automatic,
                     adaptiveGain: configuration.adaptiveInputGain ?? true, voiceProcessing: configuration.microphoneVoiceProcessing ?? false,
                     microphoneUID: configuration.microphoneDeviceUID,
-                    recordingURL: configuration.saveRecording == true ? activeRecord.map { paths.recording($0) } : nil) { [weak self] level, duration in
+                    recordingURL: configuration.keepsRecording ? activeRecord.map { paths.recording($0) } : nil) { [weak self] level, duration in
                     Task { @MainActor in
                         guard let self, self.phase == .recording else { return }
                         self.meter = level; self.elapsed = duration
@@ -511,15 +529,34 @@ private actor RecordWriter {
             if segments.isEmpty, partial != nil { scheduleSave(recordID) } else { try await persistNow(index) }
         }
         if configuration.translate && !(records[index].source != .file && configuration.usesDirectSpeechTranslation) {
-            for segment in segments {
-                try Task.checkCancellation()
-                guard let line = records[index].segments.last(where: { $0.id == segment.id }),
-                      line.translation == nil || line.translationIsProvisional == true,
-                      line.translationError == nil else { continue }
-                if records[index].source == .file {
-                    if fileRun?.recordID == recordID { fileRun?.stage = .translating }
-                    try await translateSegment(line, recordID: recordID, configuration: configuration, textKey: textKey)
-                } else {
+            if records[index].source == .file {
+                let snapshot = records[index], incoming = Set(segments.map(\.id))
+                let pending = snapshot.segments.indices.filter {
+                    let line = snapshot.segments[$0]
+                    return incoming.contains(line.id) && (line.translation == nil || line.translationIsProvisional == true) && line.translationError == nil
+                }
+                if !pending.isEmpty, fileRun?.recordID == recordID { fileRun?.stage = .translating }
+                try await translateBatch(snapshot, indices: pending, configuration: configuration, key: textKey) { line, result in
+                    guard let index = self.records.firstIndex(where: { $0.id == recordID }),
+                          let current = self.records[index].segments.firstIndex(where: { $0.id == snapshot.segments[line].id }) else { return }
+                    switch result {
+                    case .success(let text):
+                        self.records[index].segments[current].translation = text
+                        self.records[index].segments[current].translationError = nil
+                    case .failure(let error):
+                        self.records[index].segments[current].translation = nil
+                        self.records[index].segments[current].translationError = LocalizedText(error: error)
+                    }
+                    self.records[index].segments[current].translationIsProvisional = nil
+                    self.records[index].segments[current].translationSource = nil
+                    try await self.persistNow(index)
+                }
+            } else {
+                for segment in segments {
+                    try Task.checkCancellation()
+                    guard let line = records[index].segments.last(where: { $0.id == segment.id }),
+                          line.translation == nil || line.translationIsProvisional == true,
+                          line.translationError == nil else { continue }
                     try enqueueTranslation(line, recordID: recordID, configuration: configuration, textKey: textKey)
                 }
             }
@@ -621,6 +658,37 @@ private actor RecordWriter {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// A bounded pool shared by file chunks and historical retranslations. Context and result
+    /// indices come from the original transcript, so completion order never changes sentence order.
+    private func translateBatch(_ record: TranscriptRecord, indices: [Int], configuration: AppSettings, key: String,
+                                receive: @MainActor (Int, Result<String, Error>) async throws -> Void) async throws {
+        let api = api
+        let translate: @Sendable (Int) async throws -> (Int, Result<String, Error>) = { index in
+            try Task.checkCancellation()
+            let context = record.segments[..<index].suffix(3).map(\.text).joined(separator: "\n")
+            do {
+                let text = try await api.translate(record.segments[index].text, sourceLanguage: record.language,
+                                                   context: context, settings: configuration, key: key)
+                return (index, .success(text))
+            } catch is CancellationError { throw CancellationError() }
+            catch { return (index, .failure(error)) }
+        }
+        try await withThrowingTaskGroup(of: (Int, Result<String, Error>).self) { group in
+            var next = 0
+            for index in indices.prefix(configuration.fileTranslationConcurrency) {
+                group.addTask { try await translate(index) }; next += 1
+            }
+            while let (index, result) = try await group.next() {
+                try Task.checkCancellation()
+                try await receive(index, result)
+                if next < indices.count {
+                    let index = indices[next]; next += 1
+                    group.addTask { try await translate(index) }
+                }
+            }
+        }
+    }
+
     private func drainTranslations(cancel: Bool = false) async {
         draftTranslation?.cancel(); await draftTranslation?.value
         draftTranslation = nil; partialID = nil
@@ -649,7 +717,7 @@ private actor RecordWriter {
                 try Task.checkCancellation()
                 records[index].summary = result.summary
                 records[index].summaryLanguage = summaryLanguage
-                if let title = result.title, !title.isEmpty { records[index].title = title }
+                useSummaryTitle(result.title, at: index)
             } catch is CancellationError { throw CancellationError() }
             catch { records[index].error = LocalizedText(error: error, context: "Summary failed: ") }
         }
@@ -773,9 +841,14 @@ private actor RecordWriter {
     }
 
     func renameRecord(_ id: UUID, title: String) {
-        guard let index = records.firstIndex(where: { $0.id == id }), !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        var copy = records[index]; copy.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        do { try store.save(copy); records[index] = copy } catch { self.error = LocalizedText(error: error) }
+        guard !busy, let index = records.firstIndex(where: { $0.id == id }) else { return }
+        do { records[index] = try store.rename(records[index], title: title) }
+        catch { self.error = LocalizedText(error: error) }
+    }
+    private func useSummaryTitle(_ title: String?, at index: Int) {
+        guard let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        do { records[index] = try store.rename(records[index], title: title) }
+        catch { records[index].error = LocalizedText(error: error, context: "Recording could not be renamed: ") }
     }
     func deleteRecord(_ id: UUID) {
         do {
@@ -887,8 +960,9 @@ private actor RecordWriter {
         let summaryLanguage = InterfaceLanguage.current.speechCode
         isPostProcessing = true; postProcessingID = record.id
         status = summary ? LocalizedText("Creating summary…") : LocalizedText("Translating…")
+        beginActivity()
         work = Task {
-            defer { isPostProcessing = false; postProcessingID = nil; work = nil; status = LocalizedText("Ready") }
+            defer { isPostProcessing = false; postProcessingID = nil; work = nil; status = LocalizedText("Ready"); endActivity() }
             do {
                 let key = configuration.textProvider == .apple ? "" : try await KeychainStore.read(endpoint: configuration.textEndpoint)
                 if summary {
@@ -897,22 +971,23 @@ private actor RecordWriter {
                     if let index = records.firstIndex(where: { $0.id == record.id }) {
                         records[index].summary = result.summary
                         records[index].summaryLanguage = summaryLanguage
-                        if let title = result.title, !title.isEmpty { records[index].title = title }
                         records[index].error = nil
+                        useSummaryTitle(result.title, at: index)
                         try store.save(records[index])
                     }
                 } else {
                     // Replace a translation as one saved result, so failures never mix languages.
                     var updated = record
-                    for (line, segment) in record.segments.enumerated() {
-                        try Task.checkCancellation()
-                        status = LocalizedText("Translating %@/%@", String(line + 1), String(record.segments.count))
-                        let context = record.segments.prefix(line).suffix(3).map(\.text).joined(separator: "\n")
-                        let translation = try await api.translate(segment.text, sourceLanguage: record.language, context: context, settings: configuration, key: key)
-                        try Task.checkCancellation()
-                        updated.segments[line].translation = translation
+                    var completed = 0
+                    try await translateBatch(record, indices: Array(record.segments.indices), configuration: configuration, key: key) { line, result in
+                        updated.segments[line].translation = try result.get()
                         updated.segments[line].translationError = nil
+                        updated.segments[line].translationIsProvisional = nil
+                        updated.segments[line].translationSource = nil
+                        completed += 1
+                        self.status = LocalizedText("Translating %@/%@", String(completed), String(record.segments.count))
                     }
+                    try Task.checkCancellation()
                     updated.targetLanguage = configuration.targetLanguage
                     if let index = records.firstIndex(where: { $0.id == record.id }) {
                         try store.save(updated)

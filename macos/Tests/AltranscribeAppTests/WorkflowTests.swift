@@ -25,6 +25,21 @@ private final class ResponseGate: @unchecked Sendable {
     func receive(_ request: WorkflowProtocol) { lock.withLock { requests.append(request) } }
     var count: Int { lock.withLock { requests.count } }
     func reply(_ text: String, index: Int = 0) { lock.withLock { requests.indices.contains(index) ? requests[index] : nil }?.reply(text) }
+    func replyEcho(index: Int) throws {
+        let request = try XCTUnwrap(lock.withLock { requests.indices.contains(index) ? requests[index] : nil })
+        var data = request.request.httpBody ?? Data()
+        if let stream = request.request.httpBodyStream {
+            stream.open(); defer { stream.close() }
+            var bytes = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&bytes, maxLength: bytes.count)
+                if count <= 0 { break }; data.append(contentsOf: bytes.prefix(count))
+            }
+        }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let messages = try XCTUnwrap(object["messages"] as? [[String: String]])
+        request.reply("Translated: " + (try XCTUnwrap(messages.last?["content"])))
+    }
     var last: WorkflowProtocol? { lock.withLock { requests.last } }
 }
 
@@ -203,6 +218,10 @@ private final class ResponseGate: @unchecked Sendable {
         defer { try? FileManager.default.removeItem(at: root); WorkflowProtocol.handler = nil }
         let app = app(at: root)
         var record = TranscriptRecord(title: "Saved", source: .file, language: "en", speechModel: "whisper")
+        let imported = root.appendingPathComponent("original.wav")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("source".utf8).write(to: imported)
+        record.sourcePath = imported.path
         record.status = .completed; record.targetLanguage = "zh"
         var first = TranscriptSegment(start: 0, end: 1, text: "Hello")
         first.translation = "你好"
@@ -245,6 +264,79 @@ private final class ResponseGate: @unchecked Sendable {
         XCTAssertNil(app.error)
         XCTAssertEqual(app.records.first, translated, "Cancelling must preserve the earlier translation")
         XCTAssertEqual(try app.store.load().records.first?.segments, translated.segments)
+
+        // Remote file and history translation share four bounded lanes; replies may finish out of order.
+        app.settings.textBaseURL = "https://translation.example/v1"
+        try await KeychainStore.save("fixture", endpoint: app.settings.textEndpoint)
+        defer { Task { try? await KeychainStore.save("", endpoint: "https://translation.example/v1") } }
+        record.segments = (0..<6).map { TranscriptSegment(start: Double($0), end: Double($0 + 1), text: "Sentence \($0)") }
+        record.segments[0].translationIsProvisional = true
+        app.records = [record]; try app.store.save(record)
+        let parallel = ResponseGate()
+        WorkflowProtocol.handler = { parallel.receive($0) }
+        app.postProcess(record, summary: false)
+        try await waitUntil { parallel.count == 4 }
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(parallel.count, 4)
+        for i in (0..<4).reversed() { try parallel.replyEcho(index: i) }
+        try await waitUntil { parallel.count == 6 }
+        for i in (4..<6).reversed() { try parallel.replyEcho(index: i) }
+        try await waitUntil { !app.busy }
+        XCTAssertNil(app.error)
+        XCTAssertEqual(app.records[0].segments.map(\.translation), record.segments.map { "Translated: " + $0.text })
+        XCTAssertEqual(try app.store.load().records.first?.segments, app.records[0].segments)
+        let previous = app.records[0]
+        let failed = ResponseGate(); WorkflowProtocol.handler = { failed.receive($0) }
+        app.postProcess(previous, summary: false)
+        try await waitUntil { failed.count == 4 }
+        failed.last?.reply("limited", status: 429)
+        try await waitUntil { !app.busy }
+        XCTAssertNotNil(app.error)
+        XCTAssertEqual(app.records[0], previous)
+        app.error = nil
+        let cancelParallel = ResponseGate(); WorkflowProtocol.handler = { cancelParallel.receive($0) }
+        app.postProcess(previous, summary: false)
+        try await waitUntil { cancelParallel.count == 4 }
+        app.cancel(); try await waitUntil { !app.busy }
+        XCTAssertEqual(app.records[0], previous)
+        XCTAssertEqual(cancelParallel.count, 4)
+        let fileGate = ResponseGate(); WorkflowProtocol.handler = { fileGate.receive($0) }
+        app.records = [record]
+        app.settings.translate = true
+        let configuration = app.settings, lines = record.segments
+        app.records[0].segments = []
+        let feed = Task { try await app.saveSegments(lines, recordID: record.id, configuration: configuration, textKey: "fixture") }
+        try await waitUntil { fileGate.count == 4 }
+        for i in (0..<4).reversed() { try fileGate.replyEcho(index: i) }
+        try await waitUntil { fileGate.count == 6 }
+        for i in (4..<6).reversed() { try fileGate.replyEcho(index: i) }
+        try await feed.value
+        XCTAssertEqual(app.records[0].segments.map(\.translation), lines.map { "Translated: " + $0.text })
+        XCTAssertEqual(try app.store.load().records.first?.segments, app.records[0].segments)
+        app.renameRecord(record.id, title: "New transcript title")
+        XCTAssertEqual(try Data(contentsOf: imported), Data("source".utf8))
+        XCTAssertEqual(app.records[0].sourcePath, imported.path)
+
+        app.settings.textBaseURL = "http://127.0.0.1:11434/v1"
+        var recorded = app.records[0]; recorded.source = .microphone; recorded.hasRecording = true
+        recorded.recordingDirectory = root.appendingPathComponent("Audio").path
+        recorded.recordingFilename = AppPaths.recordingFilename(for: recorded)
+        let audio = app.paths.recording(recorded)
+        try FileManager.default.createDirectory(at: audio.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("recording".utf8).write(to: audio)
+        app.records = [recorded]; try app.store.save(recorded)
+        WorkflowProtocol.handler = { $0.reply("{\"title\":\"Network lecture\",\"summary\":\"Notes\"}") }
+        app.postProcess(recorded, summary: true)
+        try await waitUntil { !app.busy }
+        XCTAssertNil(app.error)
+        XCTAssertEqual(app.records[0].title, "Network lecture")
+        XCTAssertTrue(app.paths.recording(app.records[0]).lastPathComponent.hasPrefix("Network lecture · "))
+        XCTAssertEqual(try Data(contentsOf: app.paths.recording(app.records[0])), Data("recording".utf8))
+        var summarySettings = app.settings; summarySettings.summarize = true
+        WorkflowProtocol.handler = { $0.reply("{\"title\":\"Final summary title\",\"summary\":\"Notes\"}") }
+        try await app.finishRecord(record.id, configuration: summarySettings, textKey: "")
+        XCTAssertTrue(app.paths.recording(app.records[0]).lastPathComponent.hasPrefix("Final summary title · "))
+        XCTAssertEqual(try app.store.load().records.first?.recordingFilename, app.records[0].recordingFilename)
     }
 
     func testDirectSpeechUpdatesPersistWithoutCallingTextService() async throws {
