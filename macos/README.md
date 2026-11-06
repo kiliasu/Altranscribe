@@ -106,7 +106,9 @@ OpenAI 文件转录提供原生模型预选，默认 `gpt-transcribe`，并保�
 
 ## 数据与安全
 
-数据位于 `~/Library/Application Support/Altranscribe/`：`Records/` 保存 JSON 文稿，`Recordings/` 保存主动开启的录音，`Models/` 保存下载模型，`settings.json` 保存不含密钥的设置。API 密钥只保存在 macOS Keychain，并按完整 API 基地址隔离。
+文稿、模型和设置位于 `~/Library/Application Support/Altranscribe/`：`Records/` 保存 JSON 文稿，`Models/` 保存下载模型，`settings.json` 保存不含密钥的设置。API 密钥只保存在 macOS Keychain，并按完整 API 基地址隔离。
+
+主动保留的录音位于 `~/Documents/Altranscribe/Recordings/`，默认文件名包含日期、时间、音源和短标识。旧录音会迁到这里；目录暂不可访问或迁移失败时仍可从原位置找到音频。设置 → 通用 → 录音位置可直接打开文件夹。悬浮字幕的新默认字号为 20 pt，已有字号设置不变。
 
 macOS 记录格式版本 2 保存可随界面语言切换的应用错误及摘要语言；仍可读取版本 1 记录和旧字符串错误。旧记录只在用户后续保存时升级。
 
