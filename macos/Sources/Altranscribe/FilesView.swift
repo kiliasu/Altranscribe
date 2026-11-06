@@ -79,7 +79,7 @@ private struct FileProgressPage: View {
                 .padding(.horizontal, 36)
                 .padding(.top, 20)
                 .frame(maxWidth: .infinity)
-            TranscriptScroll(record: record, live: LiveState(run.stage)) { EmptyView() }
+            TranscriptScroll(record: record, live: LiveState(run.stage)) { _ in EmptyView() }
         }
     }
 }

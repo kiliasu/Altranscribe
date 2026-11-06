@@ -24,7 +24,7 @@ struct LiveView: View {
         // A new session blurs the welcome page into its transcript; starting another blurs it back.
         ZStack {
             if let record {
-                TranscriptScroll(record: record, live: live) {
+                TranscriptScroll(record: record, live: live) { record in
                     RecordHeader(model: model, record: record, compact: true)
                 }
                 .transition(.page)

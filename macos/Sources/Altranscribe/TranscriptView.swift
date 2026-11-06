@@ -17,21 +17,31 @@ enum LiveState: Equatable {
 
 /// A transcript laid out for reading: one measure-limited column of timestamped lines, each followed by its translation.
 struct TranscriptScroll<Header: View>: View {
-    let record: TranscriptRecord
-    var live: LiveState?
-    @ViewBuilder var header: Header
+    private struct Snapshot: Equatable {
+        var record: TranscriptRecord
+        var live: LiveState?
+    }
+    private let latest: Snapshot
+    private let header: (TranscriptRecord) -> Header
+    @State private var presented: Snapshot
     @AppStorage("transcriptTextSize") private var textSize = 15.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.appearsActive) private var appearsActive
     @State private var follow = true
     @State private var scrollRevision = 0
     @State private var scrollPhase = ScrollPhase.idle
-    @State private var catchingUp = true
+    @State private var animateChanges = false
     private let bottom = "bottom"
 
-    private struct ScrollRequest: Equatable {
-        var revision: Int, active: Bool
+    init(record: TranscriptRecord, live: LiveState? = nil, @ViewBuilder header: @escaping (TranscriptRecord) -> Header) {
+        let snapshot = Snapshot(record: record, live: live)
+        latest = snapshot
+        _presented = State(initialValue: snapshot)
+        self.header = header
     }
+
+    private var record: TranscriptRecord { presented.record }
+    private var live: LiveState? { presented.live }
 
     private struct Metrics: Equatable {
         var offset: CGFloat, distance: CGFloat
@@ -42,7 +52,7 @@ struct TranscriptScroll<Header: View>: View {
         ScrollViewReader { proxy in
             List {
                 Group {
-                    header
+                    header(record)
                     if let summary = record.summary {
                         SummaryCard(summary: summary, textSize: textSize)
                             .padding(.bottom, 20)
@@ -50,7 +60,7 @@ struct TranscriptScroll<Header: View>: View {
                     }
                     ForEach(record.segments) { segment in
                         SegmentRow(segment: segment, textSize: textSize,
-                                   streaming: live != nil && appearsActive && segment.id == record.segments.last?.id,
+                                   streaming: live != nil && appearsActive && animateChanges && segment.id == record.segments.last?.id,
                                    current: live == nil || !follow ? nil : segment.id == record.segments.last?.id).equatable()
                     }
                     if record.segments.isEmpty && live == nil {
@@ -80,7 +90,7 @@ struct TranscriptScroll<Header: View>: View {
             .contentMargins(.bottom, 36, for: .scrollContent)
             .background(TranscriptScrollInput { follow = false })
             .transaction { transaction in
-                if !appearsActive || catchingUp { transaction.animation = nil; transaction.disablesAnimations = true }
+                if !appearsActive || !animateChanges { transaction.animation = nil; transaction.disablesAnimations = true }
             }
             .onScrollGeometryChange(for: Metrics.self) { geometry in
                 Metrics(offset: geometry.contentOffset.y,
@@ -94,17 +104,17 @@ struct TranscriptScroll<Header: View>: View {
             .onScrollPhaseChange { _, phase in scrollPhase = phase }
             // Actual content changes schedule one scroll. A List's estimated height changes while
             // scrolling too; feeding those changes back into scrollTo creates a positioning loop.
-            .onChange(of: record) { _, _ in scrollRevision += 1 }
+            // Capture and persistence keep their latest data. An inactive List keeps its last
+            // presented snapshot, instead of accumulating offscreen row/translation height changes.
+            .onChange(of: latest) { _, _ in presentLatest(animated: true) }
+            .onChange(of: appearsActive) { _, active in
+                if active { presentLatest(animated: false) }
+                else { animateChanges = false; scrollRevision += 1 }
+            }
             .onChange(of: textSize) { _, _ in scrollRevision += 1 }
-            .onChange(of: live) { _, _ in scrollRevision += 1 }
-            .task(id: ScrollRequest(revision: scrollRevision, active: appearsActive)) {
-                guard appearsActive else { catchingUp = true; return }
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                followLatest(proxy, catchingUp ? nil : .smooth(duration: 0.55))
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                catchingUp = false
+            .onChange(of: scrollRevision, initial: true) { _, _ in
+                guard appearsActive else { return }
+                followLatest(proxy, animateChanges ? .smooth(duration: 0.55) : nil)
             }
             .overlay(alignment: .bottom) {
                 if live != nil && !follow {
@@ -120,6 +130,17 @@ struct TranscriptScroll<Header: View>: View {
                 }
             }
             .animation(Motion.content, value: follow)
+        }
+    }
+
+    private func presentLatest(animated: Bool) {
+        guard appearsActive else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) {
+            animateChanges = animated
+            presented = latest
+            scrollRevision += 1
         }
     }
 
@@ -205,6 +226,8 @@ struct SegmentRow: View, Equatable {
 private struct ListeningIndicator: View {
     let state: LiveState
     let textSize: Double
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var symbol: String {
         switch state {
@@ -229,16 +252,18 @@ private struct ListeningIndicator: View {
             Color.clear.frame(width: 58, height: 1)
             HStack(spacing: 6) {
                 Image(systemName: symbol)
-                    .symbolEffect(.variableColor.iterative, isActive: state != .paused)
+                    .symbolEffect(.variableColor.iterative, isActive: appearsActive && !reduceMotion && state != .paused)
                     .contentTransition(.symbolEffect(.replace))
+                    .frame(width: max(16, textSize), height: max(16, textSize))
                 Text(title)
                     .contentTransition(.opacity)
+                    .lineLimit(1)
             }
             .font(.system(size: max(11, textSize - 2)))
             .foregroundStyle(.tertiary)
         }
         .padding(.vertical, textSize * 0.55)
-        .animation(Motion.quick, value: state)
+        .animation(appearsActive && !reduceMotion ? Motion.quick : nil, value: state)
     }
 }
 
@@ -358,7 +383,7 @@ struct TranscriptPage: View {
     }
 
     var body: some View {
-        TranscriptScroll(record: record, live: live) {
+        TranscriptScroll(record: record, live: live) { record in
             RecordHeader(model: model, record: record)
             if model.postProcessingID == record.id {
                 HStack(spacing: 10) {
