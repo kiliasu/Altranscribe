@@ -25,11 +25,17 @@ struct TranscriptScroll<Header: View>: View {
     @Environment(\.appearsActive) private var appearsActive
     @State private var follow = true
     @State private var scrollRevision = 0
+    @State private var scrollPhase = ScrollPhase.idle
+    @State private var catchingUp = true
     private let bottom = "bottom"
+
+    private struct ScrollRequest: Equatable {
+        var revision: Int, active: Bool
+    }
 
     private struct Metrics: Equatable {
         var offset: CGFloat, distance: CGFloat
-        var content: CGFloat, container: CGFloat, insets: EdgeInsets
+        var container: CGFloat, insets: EdgeInsets
     }
 
     var body: some View {
@@ -58,10 +64,8 @@ struct TranscriptScroll<Header: View>: View {
                     }
                     Color.clear.frame(height: 1).id(bottom)
                 }
-                // New lines, arriving translations, a new summary and the end of listening all move as content.
-                .animation(live == nil ? nil : Motion.content, value: record.segments.count)
-                .animation(Motion.content, value: record.summary)
-                .animation(Motion.content, value: live)
+                // Row text and sentence emphasis animate locally. Animating the entire List's diff
+                // lets offscreen row-height corrections replay when a long session returns to the front.
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
@@ -74,29 +78,34 @@ struct TranscriptScroll<Header: View>: View {
             .scrollContentBackground(.hidden)
             .contentMargins(.top, 28, for: .scrollContent)
             .contentMargins(.bottom, 36, for: .scrollContent)
+            .background(TranscriptScrollInput { follow = false })
             .transaction { transaction in
-                if !appearsActive { transaction.animation = nil; transaction.disablesAnimations = true }
+                if !appearsActive || catchingUp { transaction.animation = nil; transaction.disablesAnimations = true }
             }
             .onScrollGeometryChange(for: Metrics.self) { geometry in
                 Metrics(offset: geometry.contentOffset.y,
                         distance: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY,
-                        content: geometry.contentSize.height, container: geometry.containerSize.height, insets: geometry.contentInsets)
+                        container: geometry.containerSize.height, insets: geometry.contentInsets)
             } action: { old, new in
-                // New text keeps the reader on the latest line. Only moving up by hand, with the
-                // layout unchanged, stops following; new lines, insets and resizing never do.
+                if new.container != old.container || new.insets != old.insets { scrollRevision += 1 }
                 if new.distance < 40 { follow = true }
-                else if new.content == old.content && new.container == old.container && new.insets == old.insets
-                            && new.offset < old.offset - 0.5 { follow = false }
-                if new.content != old.content || new.container != old.container { scrollRevision += 1 }
+                else if (scrollPhase == .interacting || scrollPhase == .decelerating), new.offset < old.offset - 0.5 { follow = false }
             }
-            // Follow the measured layout once, after wrapping and translation have settled.
-            // Per-token scroll requests otherwise restart the same movement before layout.
-            .task(id: scrollRevision) {
+            .onScrollPhaseChange { _, phase in scrollPhase = phase }
+            // Actual content changes schedule one scroll. A List's estimated height changes while
+            // scrolling too; feeding those changes back into scrollTo creates a positioning loop.
+            .onChange(of: record) { _, _ in scrollRevision += 1 }
+            .onChange(of: textSize) { _, _ in scrollRevision += 1 }
+            .onChange(of: live) { _, _ in scrollRevision += 1 }
+            .task(id: ScrollRequest(revision: scrollRevision, active: appearsActive)) {
+                guard appearsActive else { catchingUp = true; return }
                 await Task.yield()
                 guard !Task.isCancelled else { return }
-                followLatest(proxy, .smooth(duration: 0.55))
+                followLatest(proxy, catchingUp ? nil : .smooth(duration: 0.55))
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                catchingUp = false
             }
-            .onAppear { if live != nil { proxy.scrollTo(bottom, anchor: .bottom) } }
             .overlay(alignment: .bottom) {
                 if live != nil && !follow {
                     Button {
@@ -121,6 +130,32 @@ struct TranscriptScroll<Header: View>: View {
     private func scroll(_ proxy: ScrollViewProxy, _ animation: Animation?) {
         if let animation, !reduceMotion, appearsActive { withAnimation(animation) { proxy.scrollTo(bottom, anchor: .bottom) } }
         else { proxy.scrollTo(bottom, anchor: .bottom) }
+    }
+}
+
+/// macOS List doesn't report a scrolling phase for every input device. Observe upward wheel
+/// input within this transcript, without consuming the event or treating layout corrections as input.
+private struct TranscriptScrollInput: NSViewRepresentable {
+    let onScrollUp: () -> Void
+    func makeNSView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak view] event in
+            guard let view, event.window === view.window,
+                  view.bounds.contains(view.convert(event.locationInWindow, from: nil)),
+                  event.scrollingDeltaY > 0 else { return event }
+            view.onScrollUp?()
+            return event
+        }
+        return view
+    }
+    func updateNSView(_ view: ObserverView, context: Context) { view.onScrollUp = onScrollUp }
+    static func dismantleNSView(_ view: ObserverView, coordinator: ()) {
+        if let monitor = view.monitor { NSEvent.removeMonitor(monitor); view.monitor = nil }
+    }
+    final class ObserverView: NSView {
+        var monitor: Any?
+        var onScrollUp: (() -> Void)?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

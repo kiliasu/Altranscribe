@@ -12,17 +12,14 @@ struct StreamingText: View {
     init(_ text: String, active: Bool = true) { self.text = text; self.active = active }
 
     var body: some View {
-        Group {
-            if active && !reduceMotion {
-                TimelineView(.animation(minimumInterval: 1 / 60, paused: changedAt == nil)) { timeline in
-                    let progress = changedAt.map { min(1, max(0, timeline.date.timeIntervalSince($0) / 0.18)) } ?? 1
-                    Self.content(text, stableCharacters: stableCharacters)
-                        .textRenderer(StreamingTextRenderer(progress: progress))
-                }
-            } else {
-                Text(verbatim: text)
-            }
+        // Keep one text/layout identity when the window deactivates; only its clock pauses.
+        TimelineView(.animation(minimumInterval: 1 / 60, paused: !active || reduceMotion || changedAt == nil)) { timeline in
+            let progress = active && !reduceMotion
+                ? changedAt.map { min(1, max(0, timeline.date.timeIntervalSince($0) / 0.18)) } ?? 1 : 1
+            Self.content(text, stableCharacters: stableCharacters)
+                .textRenderer(StreamingTextRenderer(progress: progress))
         }
+        .onChange(of: active) { _, _ in settle() }
         .onChange(of: text) { old, new in
             if active && !reduceMotion {
                 stableCharacters = Self.commonPrefix(old, new)
