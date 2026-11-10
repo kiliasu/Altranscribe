@@ -21,7 +21,8 @@ struct StreamingText: View {
         }
         .onChange(of: active) { _, _ in settle() }
         .onChange(of: text) { old, new in
-            if active && !reduceMotion {
+            // In Low Power Mode the words simply appear.
+            if active && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled {
                 stableCharacters = Self.commonPrefix(old, new)
                 changedAt = .now
             }

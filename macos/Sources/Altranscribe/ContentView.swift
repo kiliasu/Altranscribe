@@ -165,10 +165,11 @@ private struct LiveRow: View {
                 Spacer(minLength: 4)
                 if active {
                     HStack(spacing: 6) {
+                        // The clock ticks like the one in the bar. Rolling its digits redrew them on every
+                        // frame of the roll: a third of a processor core for as long as a session lasted.
                         Text(timestamp(model.elapsed))
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
-                            .rollingNumbers(timestamp(model.elapsed))
                         PulsingDot(color: model.phase == .recording ? .systemRed : .systemOrange,
                                    pulsing: model.phase == .recording, diameter: 7)
                     }

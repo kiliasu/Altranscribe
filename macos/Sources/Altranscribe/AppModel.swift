@@ -163,7 +163,25 @@ private actor RecordWriter {
     }
     var activeRecord: TranscriptRecord? { records.first { $0.id == activeRecordID } }
     var isCapturing: Bool { phase == .recording || phase == .paused }
-    var filteredRecords: [TranscriptRecord] { records.filter { $0.matches(search) } }
+    /// The transcripts the sidebar lists: all of them, or those that contain the search text.
+    /// A session adds words to its transcript several times a second and the sidebar reads this each
+    /// time, so what is known about a transcript is kept until its text changes: only the transcript
+    /// being written is searched again, not the whole library.
+    var filteredRecords: [TranscriptRecord] {
+        guard !search.isEmpty else { return records }
+        if searched.text != search { searched = (search, [:]) }
+        return records.filter { record in
+            var state = Hasher()
+            state.combine(record.title); state.combine(record.summary?.utf8.count); state.combine(record.segments.count)
+            state.combine(record.segments.last?.text); state.combine(record.segments.last?.translation)
+            let stamp = state.finalize()
+            if let known = searched.records[record.id], known.stamp == stamp { return known.matches }
+            let matches = record.matches(search)
+            searched.records[record.id] = (stamp, matches)
+            return matches
+        }
+    }
+    @ObservationIgnored private var searched: (text: String, records: [UUID: (stamp: Int, matches: Bool)]) = ("", [:])
     /// The record the floating captions follow: only a live session while it is captured or finishing.
     /// Idle captions are empty; a file being transcribed or a session that has ended is never shown.
     var captionRecord: TranscriptRecord? {
