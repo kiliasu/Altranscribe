@@ -12,11 +12,15 @@ struct ContentView: View {
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
-        // The sidebar keeps the system's column widths. An explicit sidebar width together with the
-        // window's minimum size below made AppKit loop through Update Constraints passes (and crash)
-        // whenever the inspector was open in a window narrower than about 1,100 points.
+        // The window has to hold the sidebar's width twice, the inspector's once and the least the detail
+        // column asks for. When that came to more than the window's minimum size below, AppKit looped
+        // through Update Constraints passes and stopped the app: showing the inspector in a narrow
+        // window did it, and so did dragging the sidebar wider. So the detail column asks for nothing
+        // (its pages fit the 270 points that are left at the least), and the widest sidebar and
+        // inspector add up to the window's minimum: 2 × 270 + 320 = 860.
         NavigationSplitView {
             Sidebar(model: model)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 270)
         } detail: {
             // Pages give way to one another the way the welcome page gives way to a transcript.
             ZStack {
@@ -25,6 +29,7 @@ struct ContentView: View {
                     .transition(.page)
             }
             .animation(Motion.content, value: model.destination)
+            .frame(minWidth: 0, maxWidth: .infinity)
             .inspector(isPresented: Binding(get: {
                 showInspector && model.destination != .settings && !reopeningInspector
             }, set: { shown in
@@ -33,7 +38,7 @@ struct ContentView: View {
                 showInspector = shown
             })) {
                 inspector
-                    .inspectorColumnWidth(min: 250, ideal: 280, max: 360)
+                    .inspectorColumnWidth(min: 250, ideal: 280, max: 320)
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
