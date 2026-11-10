@@ -38,7 +38,10 @@ private final class ResponseGate: @unchecked Sendable {
         }
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let messages = try XCTUnwrap(object["messages"] as? [[String: String]])
-        request.reply("Translated: " + (try XCTUnwrap(messages.last?["content"])))
+        // The line to translate is in the message's <source> tag, after the lines that came before it.
+        let message = try XCTUnwrap(messages.last?["content"])
+        let line = try XCTUnwrap(message.components(separatedBy: "<source>\n").last?.components(separatedBy: "\n</source>").first)
+        request.reply("Translated: " + line)
     }
     var last: WorkflowProtocol? { lock.withLock { requests.last } }
 }

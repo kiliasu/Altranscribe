@@ -220,6 +220,7 @@
 "Translation" = "Translation";
 "Translation and summary use the same text model. For local services, fetch the installed models or use an override." = "Translation and summary use the same text model. For local services, fetch the installed models or use an override.";
 "Translation is falling behind. The original text was saved; translate it later from Library." = "Translation is falling behind. The original text was saved; translate it later from the transcript's menu.";
+"The text model did not return a translation of this line. The original text was saved; translate it again from Library." = "The text model did not return a translation of this line. The original text was saved; translate it again from the transcript's menu.";
 "Translation or summary is enabled. Configure a text model in Settings first." = "Translation or summary is enabled. Configure a text model in Settings first.";
 "Turn sound into words" = "Turn sound into words";
 "Unreadable record files: %@. The files were retained." = "Unreadable record files: %@. The files were retained.";

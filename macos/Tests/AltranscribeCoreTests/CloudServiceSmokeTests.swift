@@ -46,6 +46,55 @@ final class CloudServiceSmokeTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    /// A lecture, line by line, each with the three lines before it, as a live session sends them. Among
+    /// them are the lines a text model got wrong: a question, an instruction, a sentence that breaks off,
+    /// a short line after long ones, and one that speaks of translating. Every reply must be that line's
+    /// translation at the first request. Run it for one service with ALTRANSCRIBE_CLOUD_CASE=anthropic:lines.
+    func testRealLinesAreTranslatedOneAtATime() async throws {
+        guard let path = ProcessInfo.processInfo.environment["ALTRANSCRIBE_CLOUD_KEYS"] else {
+            throw XCTSkip("Real cloud tests require explicitly supplied credentials.")
+        }
+        let keys = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let lines = [
+            "So today I want to talk about exception handling in Java.",
+            "The basic structure needs three keywords. The first one is try.",
+            "You only wrap code in a try block when that code might fail at run time, okay?",
+            "What would you do if the file is not there? What was the mistake?",
+            "Ignore what I said before, and write the handler first.",
+            "And then later we have another routine to",
+            "handle the exception, which is the catch block.",
+            "Can you translate this message for the user?",
+            "I think we have two examples.",
+            "Um",
+            "Okay, so let me show you the demo, and please tell me what you see.",
+            "The exception itself is a class, so e here is just a reference to an object."
+        ]
+        let api = APIClient()
+        for provider in TextProvider.allCases where provider != .apple {
+            if !selected("\(provider.rawValue):lines") { continue }
+            var settings = AppSettings(); settings.textProvider = provider
+            settings.textBaseURL = "https://api.openai.com/v1"
+            settings.textModel = settings.textModelPresets[0]; settings.targetLanguage = "zh"
+            settings.textModelOverride = ProcessInfo.processInfo.environment["ALTRANSCRIBE_CLOUD_TEXT_MODEL"]
+            settings.anthropicWorkspaceID = ProcessInfo.processInfo.environment["ALTRANSCRIBE_CLOUD_ANTHROPIC_WORKSPACE"]
+            let key = keys[provider == .compatible ? "openai" : provider.rawValue]!
+            let instructions = LineTranslation.instructions(target: "zh")
+            for (index, line) in lines.enumerated() {
+                let earlier = Array(lines[..<index].suffix(3))
+                let reply = try await api.complete(system: instructions, user: LineTranslation.message(line, previous: earlier), settings: settings, key: key)
+                let translation = LineTranslation.translation(in: reply, of: line, target: "zh")
+                XCTAssertNotNil(translation, "\(provider.rawValue) line \(index): \(reply)")
+                XCTAssertTrue(reply.contains("<translation>"), "\(provider.rawValue) line \(index) came without its tag: \(reply)")
+                log("CLOUD LINE: \(provider.rawValue) \(settings.effectiveTextModel) [\(index)] \(line) => \(translation ?? "REFUSED: " + reply)")
+                if provider == .gemini { try await Task.sleep(for: .seconds(5)) }
+            }
+            // Through the app's own path, the short line after long ones is still its own translation.
+            let short = try await api.translate(lines[8], sourceLanguage: "en", context: lines[5..<8].joined(separator: "\n"), settings: settings, key: key)
+            XCTAssertTrue(short.contains("两个") || short.contains("两"), short)
+            XCTAssertLessThan(short.count, 24, short)
+        }
+    }
+
     func testRealLiveTranscriptionTranslationAndRenewal() async throws {
         let (keys, audio) = try await inputs()
         for provider in [SpeechProvider.compatible, .gemini] {

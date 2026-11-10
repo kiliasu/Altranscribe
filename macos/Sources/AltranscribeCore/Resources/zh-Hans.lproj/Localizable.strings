@@ -220,6 +220,7 @@
 "Translation" = "译文";
 "Translation and summary use the same text model. For local services, fetch the installed models or use an override." = "翻译和摘要共用此文本模型。本机服务可获取已安装模型，或使用自定义名称。";
 "Translation is falling behind. The original text was saved; translate it later from Library." = "翻译暂时跟不上，原文已保存；可稍后在该记录的菜单中翻译。";
+"The text model did not return a translation of this line. The original text was saved; translate it again from Library." = "文本模型返回的不是这一句的译文。原文已保存；可在该记录的菜单中重新翻译。";
 "Translation or summary is enabled. Configure a text model in Settings first." = "已开启翻译或摘要，请先在设置中填写文本模型。";
 "Turn sound into words" = "让声音成为文字";
 "Unreadable record files: %@. The files were retained." = "有 %@ 个记录文件无法读取，原文件已保留。";
