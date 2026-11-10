@@ -469,6 +469,74 @@ final class APITests: XCTestCase, @unchecked Sendable {
 }
 
 final class MediaTests: XCTestCase, @unchecked Sendable {
+    func testQuietFileGainPreservesSamplesTimingAndLoudPassages() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let boosted = MediaDecoder(boostQuietAudio: true)
+        func decode(_ decoder: MediaDecoder) async throws -> [AudioChunk] {
+            _ = try await decoder.open(url)
+            var chunks: [AudioChunk] = []
+            while let chunk = try await decoder.next() { chunks.append(chunk) }
+            await decoder.cancel()
+            return chunks
+        }
+        // Twenty-one seconds, so the last chunk is a partial one.
+        let quiet = (0..<336_000).map { Float(sin(Double($0) * 0.03)) * 0.003 }
+        var knock = quiet
+        knock[330_000] = 0.7
+        var loudPassage = quiet
+        for index in 300_000..<316_000 { loudPassage[index] = Float(sin(Double(index) * 0.03)) * 0.6 }
+        let cases: [(name: String, samples: [Float], gain: ClosedRange<Float>)] = [
+            ("quiet", quiet, 17.78...17.79),
+            // One loud sample is not the recording's level: it is rounded off, and the speech is still raised.
+            ("quiet with a knock", knock, 17.78...17.79),
+            ("a little quiet", quiet.map { $0 * 25 }, 6.4...6.7),
+            // A second of loud speech near the end is: the whole file is read before any of it is raised.
+            ("quiet with a loud passage", loudPassage, 1...1),
+            ("ordinary", quiet.map { $0 * 200 }, 1...1),
+            ("silent", [Float](repeating: 0, count: 16_000), 1...1)
+        ]
+        for (name, samples, gain) in cases {
+            let data = WaveEncoder.encode(samples)
+            try data.write(to: url)
+            let original = try await decode(MediaDecoder())
+            let enhanced = try await decode(boosted)
+            XCTAssertEqual(enhanced.map(\.start), original.map(\.start), name)
+            XCTAssertEqual(enhanced.map { $0.samples.count }, original.map { $0.samples.count }, name)
+            let before = original.flatMap(\.samples), after = enhanced.flatMap(\.samples)
+            if gain == 1...1 {
+                XCTAssertEqual(after, before, "\(name) must stay unchanged")
+            } else {
+                let ratio = after[100] / before[100]
+                XCTAssertTrue(gain.contains(ratio), "\(name): gain \(ratio)")
+                XCTAssertEqual(after[330_100], before[330_100] * ratio, accuracy: 0.00001,
+                               "\(name): one gain across chunks, including the final partial chunk")
+                XCTAssertLessThanOrEqual(after.map(abs).max()!, 1, "\(name): nothing passes full scale")
+                if name == "quiet with a knock" {
+                    XCTAssertGreaterThan(abs(after[330_000]), QuietAudioLevel.knee)
+                    XCTAssertEqual(after[329_999], before[329_999] * ratio, accuracy: 0.00001, "Only the knock is rounded off")
+                } else {
+                    XCTAssertLessThanOrEqual(after.map(abs).max()!, QuietAudioLevel.target * 1.03, name)
+                }
+            }
+            XCTAssertEqual(try Data(contentsOf: url), data, "Enhancement must not rewrite the source")
+        }
+        // The level is the one all but a thousandth of the samples stay below, to a quarter of a decibel.
+        var level = QuietAudioLevel()
+        XCTAssertEqual(level.gain, 1, "Nothing measured")
+        level.measure([Float](repeating: 0.01, count: 9_990) + [Float](repeating: 0.9, count: 10))
+        XCTAssertEqual(level.level, 0.01, accuracy: 0.0004)
+        level.measure([Float](repeating: 0.9, count: 10))
+        XCTAssertEqual(level.level, 0.9, accuracy: 0.03, "More than a thousandth of the samples are loud now")
+        // Above the knee a raised sample approaches full scale without reaching it, and keeps its sign.
+        let rounded = QuietAudioLevel.raise([0.04, 0.05, -0.05, 0.5, -3][...], by: 17)
+        XCTAssertEqual(rounded[0], 0.68, accuracy: 0.0001)
+        XCTAssertTrue(rounded[1] > 0.8 && rounded[1] < 0.85)
+        XCTAssertEqual(rounded[2], -rounded[1])
+        XCTAssertTrue(rounded[3] > rounded[1] && rounded[3] <= 1)
+        XCTAssertTrue(rounded[4] <= -rounded[3] && rounded[4] >= -1)
+    }
+
     func testDecodePreservesFinalPartialChunk() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).wav")
         defer { try? FileManager.default.removeItem(at: url) }

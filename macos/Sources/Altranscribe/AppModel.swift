@@ -805,7 +805,8 @@ private actor RecordWriter {
                 phase = .files
                 while let index = queue.firstIndex(where: { $0.status == .waiting }), !Task.isCancelled {
                     queue[index].status = .processing
-                    let decoder = MediaDecoder(chunkSeconds: configuration.speechProvider.isLocal ? 20 : 600)
+                    let decoder = MediaDecoder(chunkSeconds: configuration.speechProvider.isLocal ? 20 : 600,
+                        boostQuietAudio: configuration.speechProvider.isLocal && configuration.boostQuietFiles == true)
                     var recordID: UUID?
                     do {
                         status = LocalizedText(verbatim: queue[index].url.lastPathComponent)

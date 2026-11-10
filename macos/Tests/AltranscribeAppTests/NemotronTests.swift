@@ -19,6 +19,7 @@ import AltranscribeCore
         old.removeValue(forKey: "nemotronModelID")
         old.removeValue(forKey: "fluidAudioModelID")
         old.removeValue(forKey: "appleSpeechLocaleID")
+        old.removeValue(forKey: "boostQuietFiles")
         let restored = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: old))
         XCTAssertEqual(restored.speechProvider, .whisper)
         XCTAssertEqual(restored.modelPath, settings.modelPath)
@@ -26,12 +27,20 @@ import AltranscribeCore
         XCTAssertFalse(restored.nemotronModel.multilingual)
         XCTAssertEqual(restored.fluidAudioModel, .english)
         XCTAssertEqual(restored.appleSpeechLocale, "en-US")
+        XCTAssertFalse(restored.boostQuietFiles ?? false)
         for provider in [SpeechProvider.fluidAudio, .appleSpeech] {
             settings.speechProvider = provider
             XCTAssertTrue(provider.isLocal)
             XCTAssertEqual(settings.recognitionLanguage, "en")
             XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)), settings)
         }
+        settings.speechProvider = .fluidAudio
+        settings.fluidAudioModelID = FluidAudioModel.ultra.id
+        settings.boostQuietFiles = true
+        let ultra = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(ultra.fluidAudioModel, .ultra)
+        XCTAssertEqual(ultra.recognitionLanguage, "auto")
+        XCTAssertEqual(ultra.boostQuietFiles, true)
     }
 
     func testRealStreamingTailAndFileQueue() async throws {

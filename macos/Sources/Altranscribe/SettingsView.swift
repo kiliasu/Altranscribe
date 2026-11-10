@@ -267,7 +267,7 @@ struct SettingsView: View {
         Section(L("On-device Compute")) {
             LabeledContent(L("Current Model"), value: model.settings.fluidAudioModel.title)
             LabeledContent(L("Compute"), value: "Core ML · CPU + Neural Engine")
-            Text(L("Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported."))
+            Text(L("Parakeet v2 recognizes English. V3 and Ultra detect 25 European languages automatically; Chinese is not supported. Ultra uses further-trained v3 weights."))
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section(L("FluidAudio Models")) {

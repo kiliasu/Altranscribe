@@ -251,9 +251,12 @@
 "Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac." = "实时转写约每 8 秒更新一次，文件按 20 秒分块处理。停止时也会转写剩余音频，识别完全在此 Mac 上运行。";
 "Managed by macOS" = "由 macOS 管理";
 "Model Status" = "模型状态";
-"Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported." = "Parakeet v2 识别英语。V3 自动检测 25 种欧洲语言，不支持中文。";
+"Parakeet v2 recognizes English. V3 and Ultra detect 25 European languages automatically; Chinese is not supported. Ultra uses further-trained v3 weights." = "Parakeet v2 识别英语。V3 和 Ultra 自动检测 25 种欧洲语言，不支持中文。Ultra 是在 v3 基础上继续训练的版本。";
 "Parakeet v2 · English" = "Parakeet v2 · 英语";
 "Parakeet v3 · Multilingual" = "Parakeet v3 · 多语言";
+"Parakeet Ultra · Multilingual" = "Parakeet Ultra · 多语言";
+"Boost quiet audio" = "低音量增强";
+"Checks the whole file and raises quiet audio by up to 25 dB without changing the original. Background noise also gets louder. Leave off for normal recordings." = "先检查整份文件，将低音量录音最多提高 25 dB，不修改原文件。底噪也会被放大，正常音量的录音建议关闭。";
 "Ready for offline transcription" = "可离线转写";
 "Refresh Status" = "刷新状态";
 "Settings" = "设置";

@@ -333,6 +333,15 @@ struct SessionInspector: View {
                 OpenSettingsButton(title: settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…"),
                                    page: .speech, model: model)
             }
+            if !live && settings.speechProvider.isLocal {
+                Section {
+                    Toggle(L("Boost quiet audio"), isOn: Binding(get: { model.settings.boostQuietFiles ?? false },
+                        set: { model.settings.boostQuietFiles = $0 }))
+                } footer: {
+                    Text(L("Checks the whole file and raises quiet audio by up to 25 dB without changing the original. Background noise also gets louder. Leave off for normal recordings."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Section {
                 Toggle(L("Translate"), isOn: $model.settings.translate)
                 Picker(L("Target Language"), selection: $model.settings.targetLanguage) {

@@ -4,13 +4,25 @@ import FluidAudio
 public enum FluidAudioModel: String, CaseIterable, Identifiable, Sendable {
     case english = "parakeet-tdt-0.6b-v2-coreml"
     case multilingual = "parakeet-tdt-0.6b-v3-coreml"
+    case ultra = "parakeet-ultra-coreml"
 
     public var id: String { rawValue }
-    public var title: String { self == .english ? L("Parakeet v2 · English") : L("Parakeet v3 · Multilingual") }
-    private var version: AsrModelVersion { self == .english ? .v2 : .v3 }
+    public var title: String {
+        switch self {
+        case .english: L("Parakeet v2 · English")
+        case .multilingual: L("Parakeet v3 · Multilingual")
+        case .ultra: L("Parakeet Ultra · Multilingual")
+        }
+    }
+    private var version: AsrModelVersion {
+        switch self { case .english: .v2; case .multilingual: .v3; case .ultra: .ultra }
+    }
+    private var repository: Repo {
+        switch self { case .english: .parakeetV2; case .multilingual: .parakeetV3; case .ultra: .parakeetUltra }
+    }
     public var modelCard: URL { URL(string: "https://huggingface.co/FluidInference/\(rawValue)")! }
     public func directory(in models: URL) -> URL {
-        models.appendingPathComponent((self == .english ? Repo.parakeetV2 : Repo.parakeetV3).folderName, isDirectory: true)
+        models.appendingPathComponent(repository.folderName, isDirectory: true)
     }
     public func isInstalled(in models: URL) -> Bool {
         AsrModels.modelsExist(at: directory(in: models), version: version)

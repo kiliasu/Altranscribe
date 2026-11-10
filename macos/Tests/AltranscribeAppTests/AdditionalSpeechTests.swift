@@ -18,10 +18,11 @@ import AltranscribeCore
         await decoder.cancel()
         try await FluidAudioModel.english.download(to: paths.models)
         try await FluidAudioModel.multilingual.download(to: paths.models)
+        try await FluidAudioModel.ultra.download(to: paths.models)
         try await NativeAppleSpeech.install(locale: "en-US")
 
         for (provider, fluidModel) in [(SpeechProvider.fluidAudio, FluidAudioModel.english),
-                                      (.fluidAudio, .multilingual), (.appleSpeech, .english)] {
+                                      (.fluidAudio, .multilingual), (.fluidAudio, .ultra), (.appleSpeech, .english)] {
             let fluid = NativeFluidAudio(), apple = NativeAppleSpeech()
             if provider == .fluidAudio { try await fluid.load(model: fluidModel, models: paths.models) }
             else { try await apple.load(locale: "en-US") }
@@ -61,7 +62,9 @@ import AltranscribeCore
             app.settings = AppSettings()
             app.settings.speechProvider = provider
             app.settings.fluidAudioModelID = fluidModel.id
-            app.addFiles([URL(fileURLWithPath: audio)])
+            app.settings.boostQuietFiles = true
+            let fileAudio = ProcessInfo.processInfo.environment["ALTRANSCRIBE_TEST_QUIET_AUDIO"] ?? audio
+            app.addFiles([URL(fileURLWithPath: fileAudio)])
             app.startQueue()
             let deadline = Date().addingTimeInterval(90)
             while app.busy && Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
@@ -70,7 +73,8 @@ import AltranscribeCore
             XCTAssertEqual(app.queue.first?.status, .completed, app.queue.first?.error?.text ?? "")
             let record = try XCTUnwrap(app.activeRecord)
             XCTAssertEqual(record.status, .completed)
-            XCTAssertEqual(record.language, provider == .fluidAudio && fluidModel == .multilingual ? "auto" : "en")
+            XCTAssertEqual(record.language, provider == .fluidAudio && fluidModel != .english ? "auto" : "en")
+            if provider == .fluidAudio { XCTAssertEqual(record.speechModel, fluidModel.id) }
             XCTAssertTrue(record.fullText.lowercased().contains("ask not"), record.fullText)
             let stored = try XCTUnwrap(app.store.load().records.first { $0.id == record.id })
             XCTAssertEqual(stored.fullText, record.fullText)

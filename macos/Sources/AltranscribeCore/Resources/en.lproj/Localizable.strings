@@ -251,9 +251,12 @@
 "Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac." = "Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac.";
 "Managed by macOS" = "Managed by macOS";
 "Model Status" = "Model Status";
-"Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported." = "Parakeet v2 recognizes English. V3 detects 25 European languages automatically; Chinese is not supported.";
+"Parakeet v2 recognizes English. V3 and Ultra detect 25 European languages automatically; Chinese is not supported. Ultra uses further-trained v3 weights." = "Parakeet v2 recognizes English. V3 and Ultra detect 25 European languages automatically; Chinese is not supported. Ultra uses further-trained v3 weights.";
 "Parakeet v2 · English" = "Parakeet v2 · English";
 "Parakeet v3 · Multilingual" = "Parakeet v3 · Multilingual";
+"Parakeet Ultra · Multilingual" = "Parakeet Ultra · Multilingual";
+"Boost quiet audio" = "Boost quiet audio";
+"Checks the whole file and raises quiet audio by up to 25 dB without changing the original. Background noise also gets louder. Leave off for normal recordings." = "Checks the whole file and raises quiet audio by up to 25 dB without changing the original. Background noise also gets louder. Leave off for normal recordings.";
 "Ready for offline transcription" = "Ready for offline transcription";
 "Refresh Status" = "Refresh Status";
 "Settings" = "Settings";

@@ -80,6 +80,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var captionTranslationOnly = false
     public var liveChunkMode: LiveChunkMode?
     public var adaptiveInputGain: Bool?
+    public var boostQuietFiles: Bool?
     public var microphoneVoiceProcessing: Bool?
     public var microphoneDeviceUID: String?
     public var saveRecording: Bool? = true
