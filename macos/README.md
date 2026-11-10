@@ -32,7 +32,7 @@ Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large 
 
 | 功能 | macOS 实现 |
 | --- | --- |
-| 本地语音识别 | 默认 Nemotron 英语版；可选 Nemotron 3.5 多语言、Whisper / Metal、FluidAudio Parakeet v2 / v3、Apple SpeechTranscriber |
+| 本地语音识别 | 默认 Nemotron 英语版；可选 Nemotron 3.5 多语言、Whisper / Metal、FluidAudio Parakeet v2 / v3 / Ultra、Apple SpeechTranscriber |
 | 模型管理 | Nemotron / Whisper 下载、SHA-256 校验、删除；FluidAudio 下载与删除；Apple 语言模型安装和状态刷新；Whisper 可选择已有 GGML 文件 |
 | 麦克风 | AVAudioEngine；开始前选择输入设备，默认跟随系统，支持虚拟麦克风 |
 | 系统声音 | ScreenCaptureKit；只读取音频，不保存画面，排除本应用的声音 |
@@ -60,11 +60,15 @@ Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large 
 
 Nemotron 英语版固定识别英语；多语言版使用右侧的语言选择。模型使用 dev 分支相同的固定 ONNX 导出和 SHA-256 值，四个文件全部校验后才安装，取消或失败不激活不完整模型。实时采集每 320 ms 送入一次音频，模型采用 560 ms 分块；这两个数字均不是最终字幕延迟。临时文本原位更新，最多每秒写盘一次；实时定稿依据句末标点、系统句子分词与真实音频停顿，短片段和悬空词尾等待更久，无标点连续发言约 18 秒保留一次词边界。已出现的短句和译文可以继续修订，迟到子词不再被拆成新行。停止和文件结尾排空模型尾段；超过一分钟后的自然静音处释放旧识别流。Nemotron 暂不提供词汇提示或 GPU 加速。
 
-FluidAudio 默认提供 Parakeet v2 英语版，使用 Core ML 的 CPU / Neural Engine；可选 v3 自动识别 25 种欧洲语言，不支持中文。本应用不启用 FluidAudio 的额外词汇模型，首次请在语音设置里显式下载模型，之后识别只从本地加载。
+FluidAudio 默认提供 Parakeet v2 英语版，使用 Core ML 的 CPU / Neural Engine；可选 v3 和 Ultra 自动识别 25 种欧洲语言，不支持中文。Ultra 是在 v3 基础上继续训练的版本，沿用同一套本地模型管理与转写流程。本应用不启用 FluidAudio 的额外词汇模型，首次请在语音设置里显式下载模型，之后识别只从本地加载。
 
 Apple SpeechTranscriber 默认英语（美国），在语音设置里从系统实际支持的语言中选择，按需安装并刷新状态。模型由 macOS 管理，不放在应用的 `Models/` 目录中；可用性与资产下载取决于设备及系统。没有使用旧的 SFSpeechRecognizer，也不需要语音 API 密钥。Apple 实时使用持续运行的 SpeechAnalyzer 和快速临时结果，停止时排空尾句。Apple、Nemotron 和云端转录的临时文本可以先翻译当前草稿，最多每 4 秒一次；非 Gemini 文本服务才启用此额外请求。界面保留并标注「暂定译文」，后续原文会触发修订，磁盘仅保存定稿译文。
 
-FluidAudio 的 Parakeet v2 / v3 与 Whisper 使用切片。自动模式在至少 3 秒后寻找短停顿，最长等 4 秒；可选固定 2 / 4 / 8 秒。连续切片在最多 12 秒的音频窗口内重识别，原位修订已有行；明显停顿开始新窗口，短停止尾段带上前文重识别。各引擎的相邻未完成短片段会按停顿、标点和长度合并，保留原始片段编号以接收迟到修订；在线直接翻译同时维护原文和译文的对应关系。
+FluidAudio 的 Parakeet v2 / v3 / Ultra 与 Whisper 使用切片。自动模式在至少 3 秒后寻找短停顿，最长等 4 秒；可选固定 2 / 4 / 8 秒。连续切片在最多 12 秒的音频窗口内重识别，原位修订已有行；明显停顿开始新窗口，短停止尾段带上前文重识别。各引擎的相邻未完成句子会按停顿、标点和时间范围合并，不再仅因超过七个词而强行分行；文字仍即时显示，保留原始片段编号以接收迟到修订。在线直接翻译同时维护原文和译文的对应关系。
+
+词汇提示和源语言按当前任务模式显示。Nemotron、FluidAudio 不显示词汇输入；Whisper 和 Apple 保留已接入的提示接口。OpenAI / Gemini 的实时直接翻译不显示未使用的词汇和源语言选项；文件模式仍按文件模型的实际能力显示。通用设置兼顾两种任务，并说明词汇只用于文件还是只用于实时转录；切换模式不会删除已填写的词汇。
+
+文件转写右侧提供「低音量增强」，仅用于本机引擎，默认关闭。开启后先读完整份文件，取 99.9% 的采样都不超过的电平作为这份录音的语音电平，整份文件用同一个增益把它提到约 −6 dBFS，最多增加 25 dB；本来就在这个电平以上的录音不变。不按单个峰值判断：课堂录音里一次碰桌子或咳嗽就能达到满幅，而语音仍低 40 dB。少数超出的采样平滑收在满幅以内，不削波。分块和时间戳保持不变，原文件不修改。它与实时采集的自适应增益独立，底噪也会一起放大，不能替代降噪；正常音量录音建议关闭。
 
 「翻译与摘要 → 文本服务 → Apple Intelligence · 本机」使用 Apple 官方 Foundation Models 的设备端文本模型，支持转录后的翻译和摘要，无需密钥、额外服务器或打包模型权重。需要兼容 Apple Intelligence 的 Mac，系统模型已启用并完成准备；Mac 与 Siri 语言须一致。应用读取实际可用状态和语言支持，未就绪时解释原因。它独立于 Apple SpeechTranscriber，不替代语音识别引擎；不会回退到云端。切换前的文本服务和模型会保留。
 
@@ -118,6 +122,8 @@ OpenAI 文件转录提供原生模型预选，默认 `gpt-transcribe`，并保�
 
 录音默认位于 `~/Documents/Altranscribe/Recordings/`，可在「设置 → 通用 → 录音位置」选择其他文件夹、打开当前目录或恢复默认位置。更改只影响新录音，每份文稿保留自己的录音位置。文件名采用「名称 · 日期 时间 短标识.m4a」；开始时使用音源名称，摘要成功后优先使用摘要标题，手动重命名文稿也会联动。文件名中的不合法字符会清理，超长名称会截短；同名文件不会被覆盖。旧版录音迁移失败时仍可从原位置找到音频。悬浮字幕的新默认字号为 20 pt，已有字号设置不变。
 
+应用、评测与验证共用这一个 `Models/` 目录，不再保留独立的下载权重副本。验证文稿仍保存在各自目录，其 `Models` 仅建立指向标准目录的符号链接；旧评测路径也通过链接兼容。Apple 系统模型继续由 macOS 管理。
+
 macOS 记录格式版本 2 保存可随界面语言切换的应用错误及摘要语言；仍可读取版本 1 记录和旧字符串错误。旧记录只在用户后续保存时升级。
 
 「保存录音」默认开启，用户可在开始前关闭；已有明确关闭的偏好保持不变。开启时录制过程中持续写盘，停止时封装完成，关闭后音频仅在内存中处理。没有音频播放路径，不启动监听端口。使用本地语音引擎和本机文本服务时，不向在线推理服务发送内容。下载模型与显式选择在线 API 需要网络。在线 API 只允许 HTTPS；明文 HTTP 限定 `localhost`、`127.0.0.1` 和 `::1`。携带密钥的请求不跟随重定向；错误中不显示服务响应正文。
@@ -133,12 +139,14 @@ swift test --package-path macos --filter CloudSessionTests
 早期 FluidAudio / Apple 组合测试覆盖文件与旧版 8 秒采集分块、停止尾段、取消、文件队列和持久保存；旧设置兼容与 i18n 复用已有测试。只读取公开英语文件，不播放到扬声器，也不采集麦克风：
 
 ```sh
+mkdir -p "$HOME/Library/Application Support/Altranscribe/Models" .build/additional-speech-validation
+[ -e .build/additional-speech-validation/Models ] || ln -s "$HOME/Library/Application Support/Altranscribe/Models" .build/additional-speech-validation/Models
 ALTRANSCRIBE_TEST_ADDITIONAL_ROOT="$PWD/.build/additional-speech-validation" \
 ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
 swift test --package-path macos --filter 'AdditionalSpeechTests|testEnglishDefaultAndExistingSettings|LocalizationTests'
 ```
 
-该可选测试会按需下载 FluidAudio 英语模型到验证目录，并为测试进程安装 Apple 英语语言资产。实际执行结果见 [验证记录](VALIDATION.md)。
+该可选测试会复用标准目录中的 FluidAudio v2、v3、Ultra，缺失时下载到同一目录，并为测试进程安装 Apple 英语语言资产。可额外设置 `ALTRANSCRIBE_TEST_QUIET_AUDIO` 指向同一语音的低音量版本，验证开启增强后的文件转写与持久保存。实际执行结果见 [验证记录](VALIDATION.md)。
 
 本轮实时验证使用已安装模型，不下载、不播放声音；组合检查按真实时间输入低音量语音，另检查长静音后的 48 kHz 双声道采集与 Nemotron 首句：
 
@@ -162,9 +170,11 @@ swift test --package-path macos --filter 'LocalizationTests|testSummaryUsesCaptu
 swift test --package-path macos --filter WorkflowTests
 ```
 
-Nemotron 接入仅新增两项测试：英语默认值与旧设置兼容；真实模型的流式结果、尾句、文件队列和保存。使用公开 JFK 样本，模型不存在时会下载到指定的本地验证目录：
+Nemotron 接入仅新增两项测试：英语默认值与旧设置兼容；真实模型的流式结果、尾句、文件队列和保存。使用公开 JFK 样本，模型不存在时通过链接下载到标准模型目录：
 
 ```sh
+mkdir -p "$HOME/Library/Application Support/Altranscribe/Models" .build/nemotron-validation
+[ -e .build/nemotron-validation/Models ] || ln -s "$HOME/Library/Application Support/Altranscribe/Models" .build/nemotron-validation/Models
 ALTRANSCRIBE_TEST_NEMOTRON_ROOT="$PWD/.build/nemotron-validation" \
 ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
 ALTRANSCRIBE_TEST_MULTILINGUAL=1 \
@@ -177,7 +187,7 @@ swift test --package-path macos --filter NemotronTests
 swift test --package-path macos
 
 # 包含真实 Metal 推理的集成验证，使用 whisper.cpp 随附的 JFK 测试音频：
-ALTRANSCRIBE_TEST_MODEL=/absolute/path/ggml-tiny.bin \
+ALTRANSCRIBE_TEST_MODEL="$HOME/Library/Application Support/Altranscribe/Models/ggml-tiny.bin" \
 ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
 swift test --package-path macos
 ```
