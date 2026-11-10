@@ -64,8 +64,8 @@ struct ContentView: View {
 
     /// A saved transcript shows its own facts; the capture pages show what the next session will use.
     @ViewBuilder private var inspector: some View {
-        if case .transcript(let id) = model.destination, let record = model.records.first(where: { $0.id == id }) {
-            RecordInspector(model: model, record: record).id(id)
+        if case .transcript(let id) = model.destination {
+            TranscriptInspector(model: model, id: id).id(id)
         } else {
             SessionInspector(model: model)
         }
@@ -76,13 +76,34 @@ struct ContentView: View {
         case .live: LiveView(model: model)
         case .files: FilesView(model: model)
         case .settings: SettingsView(model: model, embedded: true).navigationTitle(L("Settings"))
-        case .transcript(let id):
-            if let record = model.records.first(where: { $0.id == id }) {
-                TranscriptPage(model: model, record: record).id(id)
-            } else {
-                ContentUnavailableView(L("Your words, kept close"), systemImage: "text.page",
-                                       description: Text(L("Select a transcript to read its text, translation and summary.")))
-            }
+        case .transcript(let id): TranscriptDestination(model: model, id: id).id(id)
+        }
+    }
+}
+
+/// A saved transcript's page. A session that is running changes the records with every recognized word;
+/// looking the record up here keeps those changes from re-evaluating the whole window.
+private struct TranscriptDestination: View {
+    let model: AppModel
+    let id: UUID
+    var body: some View {
+        if let record = model.records.first(where: { $0.id == id }) {
+            TranscriptPage(model: model, record: record)
+        } else {
+            ContentUnavailableView(L("Your words, kept close"), systemImage: "text.page",
+                                   description: Text(L("Select a transcript to read its text, translation and summary.")))
+        }
+    }
+}
+
+private struct TranscriptInspector: View {
+    let model: AppModel
+    let id: UUID
+    var body: some View {
+        if let record = model.records.first(where: { $0.id == id }) {
+            RecordInspector(model: model, record: record)
+        } else {
+            SessionInspector(model: model)
         }
     }
 }
@@ -105,6 +126,7 @@ private struct Sidebar: View {
                     ForEach(group.records) { record in
                         RecordRow(record: record, kind: group.kind,
                                   isLive: record.id == model.activeRecordID && (model.isCapturing || model.phase == .finishing))
+                            .equatable()
                             .tag(Destination.transcript(record.id))
                             .contextMenu { RecordActions(model: model, record: record) }
                     }
@@ -142,16 +164,16 @@ private struct LiveRow: View {
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .rollingNumbers(timestamp(model.elapsed))
-                        Circle()
-                            .fill(model.phase == .recording ? Color.red : Color.orange)
-                            .frame(width: 7, height: 7)
+                        PulsingDot(color: model.phase == .recording ? .systemRed : .systemOrange,
+                                   pulsing: model.phase == .recording, diameter: 7)
                     }
-                    .transition(.pop)
+                    .transition(.opacity)
                 }
             }
         } icon: {
+            // A symbol effect inside a sidebar row updates the window's layout on every frame for as long
+            // as it runs. The pulsing dot beside the clock shows that the session is live instead.
             Image(systemName: "waveform")
-                .symbolEffect(.variableColor.iterative, isActive: model.phase == .recording)
         }
         .tint(active ? .red : nil)
         .animation(Motion.quick, value: active)
@@ -183,20 +205,33 @@ private struct FilesRow: View {
     }
 }
 
-private struct RecordRow: View {
-    let record: TranscriptRecord
+/// One transcript in the sidebar. It keeps only what it shows and compares by that, so the words a
+/// running session adds to its transcript do not redraw the row.
+private struct RecordRow: View, Equatable {
+    let title: String
+    let createdAt: Date
+    let duration: Int
+    let status: RecordStatus
+    let source: AudioSource
     let kind: RecordGroup.Kind
     let isLive: Bool
+
+    init(record: TranscriptRecord, kind: RecordGroup.Kind, isLive: Bool) {
+        title = record.title; createdAt = record.createdAt; status = record.status; source = record.source
+        // The clock in the row above already counts a running session.
+        duration = isLive ? 0 : Int(record.duration)
+        self.kind = kind; self.isLive = isLive
+    }
 
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
-                Text(record.title).lineLimit(1)
+                Text(title).lineLimit(1)
                 HStack(spacing: 5) {
                     Text(detail)
-                    if record.status == .interrupted || record.status == .failed {
+                    if status == .interrupted || status == .failed {
                         Text("·")
-                        Text(record.status.title).foregroundStyle(record.status == .failed ? .red : .orange)
+                        Text(status.title).foregroundStyle(status == .failed ? .red : .orange)
                     }
                 }
                 .font(.subheadline)
@@ -204,10 +239,9 @@ private struct RecordRow: View {
                 .lineLimit(1)
             }
         } icon: {
-            // While recording the row shows a pulsing record mark; once saved it becomes its source's symbol.
-            Image(systemName: isLive ? "record.circle" : record.source.symbol)
+            // While recording the row shows a red record mark; once saved it becomes its source's symbol.
+            Image(systemName: isLive ? "record.circle" : source.symbol)
                 .foregroundStyle(isLive ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-                .symbolEffect(.pulse, isActive: isLive)
                 .contentTransition(.symbolEffect(.replace))
         }
         .padding(.vertical, 2)
@@ -217,11 +251,11 @@ private struct RecordRow: View {
     private var detail: String {
         let locale = InterfaceLanguage.current.locale
         let date: String = switch kind {
-        case .today, .yesterday: record.createdAt.formatted(.dateTime.hour().minute().locale(locale))
-        case .week: record.createdAt.formatted(.dateTime.weekday(.wide).locale(locale))
-        case .month, .earlier: record.createdAt.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+        case .today, .yesterday: createdAt.formatted(.dateTime.hour().minute().locale(locale))
+        case .week: createdAt.formatted(.dateTime.weekday(.wide).locale(locale))
+        case .month, .earlier: createdAt.formatted(.dateTime.month(.abbreviated).day().locale(locale))
         }
-        return record.duration > 0 ? date + " · " + durationText(record.duration) : date
+        return duration > 0 ? date + " · " + durationText(Double(duration)) : date
     }
 }
 

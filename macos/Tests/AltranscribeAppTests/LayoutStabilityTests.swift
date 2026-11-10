@@ -86,6 +86,48 @@ import AltranscribeCore
         }
     }
 
+    /// A session's transcript on the live page, over each state of the bar under it, while the window is
+    /// resized down to its minimum and back. The bar's size feeds the minimum width of the window's columns:
+    /// a bar that reported more than it needs made the window require more room than its minimum size
+    /// allows, and AppKit looped through layout passes until it stopped the app.
+    func testLivePageSettlesWhileTheWindowResizes() throws {
+        let previous = UserDefaults.standard.object(forKey: "showInspector")
+        UserDefaults.standard.set(true, forKey: "showInspector")
+        defer { UserDefaults.standard.set(previous, forKey: "showInspector") }
+        // Idle after a finished session is the bar's widest state; recording and paused are its busiest.
+        for phase: SessionPhase in [.idle, .recording, .paused, .finishing] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let model = AppModel(paths: AppPaths(root: root))
+            model.settings.translate = true
+            var record = TranscriptRecord(title: "Session", source: .microphone, language: "en", speechModel: "fixture")
+            record.targetLanguage = "zh"
+            record.segments = (0..<80).map { index in
+                var line = TranscriptSegment(start: Double(index) * 6, end: Double(index) * 6 + 6,
+                                             text: "Line \(index) of a session whose transcript stays on the live page after it ends.")
+                line.translation = "会话结束后仍留在实时页面上的文稿的第 \(index) 行。"
+                return line
+            }
+            model.records = [record]; model.activeRecordID = record.id
+            model.phase = phase; model.destination = .live
+            let window = NSWindow(contentViewController: NSHostingController(rootView: ContentView(model: model)))
+            window.styleMask.insert(.fullSizeContentView)
+            window.setContentSize(NSSize(width: 1180, height: 780))
+            window.makeKeyAndOrderFront(nil)
+            defer { window.close() }
+            settle(0.5)
+            for size in [NSSize(width: 900, height: 640), NSSize(width: 860, height: 600), NSSize(width: 1316, height: 855),
+                         NSSize(width: 860, height: 600), NSSize(width: 1000, height: 700)] {
+                window.setContentSize(size)
+                settle(0.4)
+                // Text keeps arriving while the window changes size.
+                if phase == .recording { model.records[0].segments.append(TranscriptSegment(start: 600, end: 606, text: "Another line.")) }
+                settle(0.2)
+            }
+            XCTAssertTrue(window.isVisible, "\(phase)")
+        }
+    }
+
     /// Changing pages animates. A transition that scales a page also resizes every AppKit control on it (text
     /// fields, segmented pickers, switches, progress indicators) on each frame, and SwiftUI reports those sizes as
     /// invalid. In the app's own window that resizing, with the inspector moving beside it, kept the layout from

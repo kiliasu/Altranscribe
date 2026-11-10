@@ -5,6 +5,34 @@ struct LiveView: View {
     @Bindable var model: AppModel
     @AppStorage("showInspector") private var showInspector = true
 
+    var body: some View {
+        LiveSession(model: model)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaBar(edge: .bottom) {
+            TransportBar(model: model)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+        }
+        .navigationTitle(L("Live Transcription"))
+        .navigationSubtitle(model.isCapturing || model.phase == .finishing ? model.status.text : model.source.title)
+        .toolbar {
+            ToolbarItem {
+                Toggle(isOn: $model.captionsVisible) { Label(L("Floating Captions"), systemImage: "captions.bubble") }
+                    .toggleStyle(.button)
+                    .help(L(model.captionsVisible ? "Hide Caption Window" : "Show Caption Window") + " ⇧⌘C")
+            }
+            ToolbarSpacer(.fixed)
+            InspectorToggle(isPresented: $showInspector)
+        }
+    }
+}
+
+/// The live page's content: the welcome page, or the session's transcript. The transcript changes with
+/// every word that is recognized; reading it here keeps those changes away from the page's bar, title
+/// and toolbar, which would otherwise be worked out again each time.
+private struct LiveSession: View {
+    let model: AppModel
+
     /// The session on screen: the one being captured, or the last one until a new session starts.
     private var record: TranscriptRecord? {
         guard model.phase != .preparing || model.queueRunning,
@@ -33,23 +61,6 @@ struct LiveView: View {
             }
         }
         .animation(Motion.content, value: record?.id)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaBar(edge: .bottom) {
-            TransportBar(model: model)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-        }
-        .navigationTitle(L("Live Transcription"))
-        .navigationSubtitle(model.isCapturing || model.phase == .finishing ? model.status.text : model.source.title)
-        .toolbar {
-            ToolbarItem {
-                Toggle(isOn: $model.captionsVisible) { Label(L("Floating Captions"), systemImage: "captions.bubble") }
-                    .toggleStyle(.button)
-                    .help(L(model.captionsVisible ? "Hide Caption Window" : "Show Caption Window") + " ⇧⌘C")
-            }
-            ToolbarSpacer(.fixed)
-            InspectorToggle(isPresented: $showInspector)
-        }
     }
 }
 
@@ -237,7 +248,6 @@ private struct SetupNotice: View {
 struct TransportBar: View {
     @Bindable var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var levels = [Float](repeating: 0, count: 26)
     @State private var confirmDiscard = false
     @State private var acknowledgedSave: Date?
 
@@ -258,27 +268,16 @@ struct TransportBar: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 16) {
-                status
-                Spacer(minLength: 16)
-                actions
-            }
-            VStack(spacing: 12) {
-                status
-                actions
-            }
+        // Status at the leading edge and actions at the trailing edge; one above the other where the
+        // column is narrow. Nothing here reads the transcript, the clock or the input level, which change
+        // many times a second while recording: the views that show them do.
+        BarLayout {
+            HStack(spacing: 0) { status }
+            HStack(spacing: 0) { actions }
         }
         .controlSize(.large)
         // The bar floats over content in the control layer, so its controls are Liquid Glass.
         .buttonStyle(.glass)
-        .onChange(of: model.meter) { _, level in
-            levels.removeFirst()
-            levels.append(model.phase == .recording ? level : 0)
-        }
-        .onChange(of: model.phase) { _, phase in
-            if phase != .recording { levels = levels.map { _ in 0 } }
-        }
         .task(id: model.sessionSavedAt) {
             guard let saved = model.sessionSavedAt else { return }
             let remaining = Motion.acknowledgement - Date.now.timeIntervalSince(saved)
@@ -287,8 +286,7 @@ struct TransportBar: View {
         }
         .confirmationDialog(L("Discard this recording?"), isPresented: $confirmDiscard) {
             Button(L("Discard"), role: .destructive) { model.cancel(discardRecording: true) }
-        } message: { Text(L(model.activeRecord?.hasRecording == true
-            ? "This deletes the transcript and its saved audio." : "This deletes the transcript from this recording.")) }
+        } message: { DiscardMessage(model: model) }
     }
 
     @ViewBuilder private var status: some View {
@@ -317,15 +315,11 @@ struct TransportBar: View {
             }
         case .capturing:
             HStack(spacing: 10) {
-                RecordingDot(paused: model.phase == .paused)
-                Text(timestamp(model.elapsed)).monospacedDigit()
-                LevelHistory(levels: levels).foregroundStyle(.secondary)
-                if model.pendingTranslations > 0 {
-                    Label(String(model.pendingTranslations), systemImage: "translate")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .help(L("Pending translations: %@", String(model.pendingTranslations)))
-                }
+                // Recording pulses red; pausing turns it a steady orange, so the state reads without words.
+                PulsingDot(color: model.phase == .paused ? .systemOrange : .systemRed, pulsing: model.phase == .recording)
+                SessionClock(model: model)
+                LevelMeter(model: model)
+                PendingTranslations(model: model)
             }
         }
     }
@@ -379,16 +373,33 @@ struct TransportBar: View {
     }
 }
 
-/// Recording pulses red; pausing turns it a steady orange, so the state reads at a glance without words.
-private struct RecordingDot: View {
-    let paused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// What discarding removes. A view of its own, so the bar itself never depends on the transcript's text.
+private struct DiscardMessage: View {
+    let model: AppModel
     var body: some View {
-        Circle()
-            .fill(paused ? Color.orange : Color.red)
-            .frame(width: 9, height: 9)
-            .phaseAnimator([1.0, 0.35]) { dot, value in
-                dot.opacity(paused || reduceMotion ? 1 : value)
-            } animation: { _ in .easeInOut(duration: 0.9) }
+        Text(L(model.activeRecord?.hasRecording == true
+               ? "This deletes the transcript and its saved audio." : "This deletes the transcript from this recording."))
+    }
+}
+
+/// How many lines are waiting for their translation. The count changes with every line.
+private struct PendingTranslations: View {
+    let model: AppModel
+    var body: some View {
+        if model.pendingTranslations > 0 {
+            Label(String(model.pendingTranslations), systemImage: "translate")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .help(L("Pending translations: %@", String(model.pendingTranslations)))
+        }
+    }
+}
+
+/// The session's running time. Reading the clock here, rather than in the bar, keeps a new second
+/// from re-evaluating the bar and its controls.
+private struct SessionClock: View {
+    let model: AppModel
+    var body: some View {
+        Text(timestamp(model.elapsed)).monospacedDigit()
     }
 }

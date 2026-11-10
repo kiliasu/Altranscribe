@@ -45,6 +45,49 @@ import AltranscribeCore
         XCTAssertEqual(control.accessibilityLabel(), L("Audio Source"))
     }
 
+    /// The bars report their size to the window, whose columns take their minimum widths from it. A bar
+    /// that asks for more than `ViewThatFits` did makes the window need more room than its minimum size
+    /// allows, and AppKit then loops through layout passes until it stops the app.
+    func testBarLayoutReportsTheSizesOfTheArrangementsItReplaces() throws {
+        struct Status: View {
+            var body: some View {
+                HStack(spacing: 10) {
+                    Color.red.frame(width: 9, height: 9)
+                    Text("12:34").monospacedDigit()
+                    Text("A status that can be truncated when the bar is narrow").lineLimit(1)
+                }
+            }
+        }
+        struct Actions: View {
+            var body: some View {
+                HStack(spacing: 8) {
+                    Text("A device name that shortens").lineLimit(1).frame(minWidth: 60)
+                    Color.blue.frame(width: 120, height: 28)
+                }
+            }
+        }
+        let bar = NSHostingController(rootView: BarLayout { HStack(spacing: 0) { Status() }; HStack(spacing: 0) { Actions() } })
+        let reference = NSHostingController(rootView: ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) { Status(); Spacer(minLength: 16); Actions() }
+            VStack(spacing: 12) { Status(); Actions() }
+        })
+        // Zero is what the window asks to learn the least a bar can be.
+        var proposals = [CGSize.zero, CGSize(width: 10_000, height: 10_000)]
+        proposals += stride(from: 40.0, through: 900, by: 20).map { CGSize(width: $0, height: 200) }
+        for proposal in proposals {
+            let size = bar.sizeThatFits(in: proposal), expected = reference.sizeThatFits(in: proposal)
+            XCTAssertEqual(size.width, expected.width, accuracy: 0.5, "Width when offered \(proposal)")
+            XCTAssertEqual(size.height, expected.height, accuracy: 0.5, "Height when offered \(proposal)")
+        }
+        // A group with nothing in it takes no room, on one line or stacked.
+        let lone = NSHostingController(rootView: BarLayout { HStack(spacing: 0) { EmptyView() }; HStack(spacing: 0) { Actions() } })
+        let alone = NSHostingController(rootView: Actions())
+        for width in [80.0, 200, 600] {
+            let proposal = CGSize(width: width, height: 200)
+            XCTAssertEqual(lone.sizeThatFits(in: proposal).height, alone.sizeThatFits(in: proposal).height, accuracy: 0.5)
+        }
+    }
+
     func testRecordingControlsFitTheMinimumDetailColumn() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

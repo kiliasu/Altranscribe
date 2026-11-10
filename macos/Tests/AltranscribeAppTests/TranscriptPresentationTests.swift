@@ -7,6 +7,19 @@ import AltranscribeCore
     @Published var active = true
     @Published var live: LiveState? = .recording
     @Published var record = TranscriptRecord(title: "Rendering", source: .microphone, language: "en", speechModel: "fixture")
+
+    /// One line arriving the way a session delivers it: the text, a provisional translation, the final one.
+    func speak(wait: (Double) -> Void) {
+        let index = record.segments.count
+        var line = TranscriptSegment(start: Double(index * 4), end: Double(index * 4 + 4),
+            text: "Line \(index). Words continue to arrive while the transcript window is somewhere behind the others.")
+        record.segments.append(line); wait(0.002)
+        line.translation = "这是在后台生成的译文，"
+        line.translationIsProvisional = true
+        record.segments[index] = line; wait(0.002)
+        record.segments[index].translation = "这是在后台生成的译文，修订完成后仍应完整显示在这一行的下面。"
+        record.segments[index].translationIsProvisional = nil
+    }
 }
 
 private struct TranscriptFixtureView: View {
@@ -17,61 +30,141 @@ private struct TranscriptFixtureView: View {
     }
 }
 
+/// A growing transcript rests on its latest line and stays there: in front, behind another app, when
+/// many lines arrive at once, and while its window changes size. Nothing is held back while the app is
+/// in the background, so there is nothing to catch up with, or to scroll through, when it returns.
 @MainActor final class TranscriptPresentationTests: XCTestCase {
-    func testBackgroundUpdatesReturnAsOneSettledTranscript() throws {
+    private var scroll: NSScrollView!
+    /// How far the view is from the end of the transcript. Zero when the last line rests on the bottom edge.
+    private var distance: CGFloat {
+        (scroll.documentView?.frame.height ?? 0) + scroll.contentInsets.bottom - scroll.contentView.bounds.maxY
+    }
+    private var offset: CGFloat { scroll.contentView.bounds.origin.y }
+    private var height: CGFloat { scroll.documentView?.frame.height ?? 0 }
+
+    func testAGrowingTranscriptStaysOnItsLatestLine() throws {
         _ = NSApplication.shared
         let fixture = TranscriptFixture()
         let host = NSHostingView(rootView: TranscriptFixtureView(fixture: fixture))
         let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
-                              styleMask: [.titled], backing: .buffered, defer: false)
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host; window.orderFront(nil)
         defer { window.close() }
         wait(0.2)
-        let table = try XCTUnwrap(descendants(host).compactMap { $0 as? NSTableView }.first)
-        let scroll = try XCTUnwrap(table.enclosingScrollView)
-        let indicatorHeight = table.rect(ofRow: 0).height
+        scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first)
+
+        // In front: every line lands with the view on the end.
+        for _ in 0..<40 { fixture.speak(wait: wait) }
+        wait(0.1)
+        XCTAssertGreaterThan(height, scroll.contentView.bounds.height * 2, "The transcript must be longer than its window for this test")
+        XCTAssertEqual(distance, 0, accuracy: 1, "An active transcript follows its latest line")
+
+        // What the session is doing changes the line under the text, never its height.
+        let settled = height
         for state: LiveState in [.paused, .transcribing, .translating, .summarizing, .recording] {
             fixture.live = state; wait(0.3)
-            XCTAssertEqual(table.rect(ofRow: 0).height, indicatorHeight, accuracy: 0.25,
-                           "Status changes must not resize the transcript's last row")
+            XCTAssertEqual(height, settled, accuracy: 0.25, "Status changes must not resize the transcript")
+            XCTAssertEqual(distance, 0, accuracy: 1)
         }
-        // Keep the old native layout while updates accumulate. A longer background interval must
-        // not add more native row updates or extend a sequence of height corrections after return.
+
+        // Behind another app: lines are laid out as they arrive, and the view stays on the latest one.
         for count in [120, 600] {
             fixture.active = false; wait(0.05)
-            let previousRows = table.numberOfRows
-            let previousHeight = table.frame.height
-            for _ in 0..<count {
-                let i = fixture.record.segments.count
-                var line = TranscriptSegment(start: Double(i * 4), end: Double(i * 4 + 4),
-                    text: "Line \(i). Words continue to arrive while the transcript window is in the background.")
-                fixture.record.segments.append(line); wait(0.002)
-                line.translation = "这是后台生成的译文，修订完成后仍应完整显示。"
-                line.translationIsProvisional = true
-                fixture.record.segments[i] = line; wait(0.002)
-                fixture.record.segments[i].translationIsProvisional = nil
+            let before = height
+            for index in 0..<count {
+                fixture.speak(wait: wait)
+                if index % 60 == 59 {
+                    wait(0.02)
+                    XCTAssertEqual(distance, 0, accuracy: 1, "Line \(index) of \(count) in the background")
+                }
             }
-            XCTAssertEqual(table.numberOfRows, previousRows, "Inactive native rows must not be diffed for every result")
-            XCTAssertEqual(table.frame.height, previousHeight, accuracy: 0.25)
-            fixture.active = true; wait(0.05)
-            XCTAssertTrue(descendants(host).contains { $0 === table }, "Returning must retain the native list and reading state")
-            XCTAssertEqual(table.numberOfRows, fixture.record.segments.count + 2, "All accumulated text must appear on return")
-            let height = table.frame.height
-            let offset = scroll.contentView.bounds.origin.y
+            wait(0.05)
+            XCTAssertGreaterThan(height, before + CGFloat(count) * 20, "Text that arrives in the background is laid out then, not on return")
+            XCTAssertEqual(distance, 0, accuracy: 1)
+            // Coming back changes nothing: no text to catch up with, no position to correct, no scrolling to replay.
+            let resting = (offset: offset, height: height)
+            fixture.active = true
             for _ in 0..<25 {
                 wait(0.01)
-                XCTAssertEqual(table.frame.height, height, accuracy: 0.5, "No deferred height correction sequence")
-                XCTAssertEqual(scroll.contentView.bounds.origin.y, offset, accuracy: 0.5, "No replayed scroll sequence")
+                XCTAssertEqual(height, resting.height, accuracy: 0.5, "No height correction after returning")
+                XCTAssertEqual(offset, resting.offset, accuracy: 0.5, "No scrolling after returning")
             }
-            XCTAssertLessThanOrEqual(table.rect(ofRow: table.numberOfRows - 1).maxY,
-                                     scroll.documentVisibleRect.maxY + 1, "Following must reach the actual last row")
+            XCTAssertEqual(distance, 0, accuracy: 1)
         }
-        // A task that finishes in the background must also publish its final state, without a stale spinner.
+
+        // Many lines in one update, as after a stalled recognizer: the next layout is already on the end.
+        for active in [false, true] {
+            fixture.active = active; wait(0.03)
+            let first = fixture.record.segments.count
+            fixture.record.segments.append(contentsOf: (0..<400).map { index in
+                var line = TranscriptSegment(start: Double((first + index) * 4), end: Double((first + index) * 4 + 4),
+                                             text: "Burst line \(first + index), delivered together with hundreds of others.")
+                if index % 3 != 0 { line.translation = "与其他数百行一起送达的一行。" }
+                return line
+            })
+            wait(0.1)
+            XCTAssertEqual(distance, 0, accuracy: 1, "A burst of lines while \(active ? "active" : "inactive")")
+        }
+
+        // A window that changes size keeps the latest line on its bottom edge.
+        for size in [NSSize(width: 560, height: 380), NSSize(width: 900, height: 640), NSSize(width: 760, height: 520)] {
+            window.setContentSize(size); wait(0.7)
+            XCTAssertEqual(distance, 0, accuracy: 1, "After resizing to \(size)")
+            fixture.speak(wait: wait); wait(0.05)
+            XCTAssertEqual(distance, 0, accuracy: 1, "Still following after resizing to \(size)")
+        }
+
+        // The reader scrolls away with the scroll bar, as an assistive app does: the lines being read stay put.
+        let scroller = try XCTUnwrap(scroll.verticalScroller)
+        scroller.setAccessibilityValue(NSNumber(value: 0.5)); wait(0.2)
+        let reading = offset
+        XCTAssertGreaterThan(distance, 1_000)
+        for _ in 0..<30 { fixture.speak(wait: wait) }
+        wait(0.1)
+        XCTAssertEqual(offset, reading, accuracy: 0.5, "New lines must not move a reader who scrolled away")
+        // Back at the end, the view follows again.
+        scroller.setAccessibilityValue(NSNumber(value: 1)); wait(0.2)
+        for _ in 0..<10 { fixture.speak(wait: wait) }
+        wait(0.1)
+        XCTAssertEqual(distance, 0, accuracy: 1, "Reaching the end resumes following")
+
+        // A session that ends in the background leaves its last line where it was, without the status line.
         fixture.active = false; wait(0.03)
-        fixture.live = nil; fixture.record.status = .completed; wait(0.03)
-        fixture.active = true; wait(0.05)
-        XCTAssertEqual(table.numberOfRows, fixture.record.segments.count + 1)
+        let listening = height
+        fixture.live = nil; fixture.record.status = .completed; wait(0.05)
+        fixture.active = true; wait(0.1)
+        XCTAssertLessThan(height, listening - 10, "The line that says what the session is doing leaves with the session")
+        XCTAssertEqual(distance, 0, accuracy: 1)
+    }
+
+    func testASavedTranscriptOpensAtItsFirstLineAndKeepsItsPlace() throws {
+        _ = NSApplication.shared
+        let fixture = TranscriptFixture()
+        fixture.live = nil; fixture.record.status = .completed
+        fixture.record.segments = (0..<300).map {
+            TranscriptSegment(start: Double($0 * 4), end: Double($0 * 4 + 4), text: "Saved line \($0) of a transcript that is read from its beginning.")
+        }
+        let host = NSHostingView(rootView: TranscriptFixtureView(fixture: fixture))
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host; window.orderFront(nil)
+        defer { window.close() }
+        wait(0.3)
+        scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first)
+        let top = offset
+        XCTAssertGreaterThan(distance, 1_000, "A saved transcript opens at its first line")
+        // Translations filling in later, as a retranslation does, leave the first line where it is.
+        for index in 0..<40 { fixture.record.segments[index].translation = "后来补上的译文。"; wait(0.005) }
+        wait(0.1)
+        XCTAssertEqual(offset, top, accuracy: 0.5)
+        // The scroll bar can jump anywhere in a long transcript, to lines that were never laid out.
+        let scroller = try XCTUnwrap(scroll.verticalScroller)
+        for value in [0.3, 0.9, 0.05, 1, 0.5, 0, 0.75, 1, 0] {
+            scroller.setAccessibilityValue(NSNumber(value: value)); wait(0.08)
+        }
+        XCTAssertEqual(offset, top, accuracy: 0.5)
     }
 
     private func wait(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }

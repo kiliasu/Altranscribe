@@ -62,22 +62,287 @@ enum Radius {
     static let region: CGFloat = 18
 }
 
-/// The last moments of input level, scrolling from right to left like the meter in Voice Memos.
-struct LevelHistory: View {
-    let levels: [Float]
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(levels.indices, id: \.self) { index in
-                Capsule().frame(width: 2.5, height: 3 + CGFloat(min(1, max(0, levels[index]))) * 17)
+/// A bar's two groups of controls: one at each edge of a line, or one above the other where the line is
+/// too narrow. It answers with the sizes `ViewThatFits` gives for those two arrangements, so the columns
+/// of the window keep the minimum widths they had, but it holds the controls once. `ViewThatFits` builds
+/// an arrangement to measure it, and the window measures its content again after every update: while
+/// recording, that built and discarded a second bar for each new word and each frame of an animation.
+struct BarLayout: Layout {
+    /// The least room between the groups on one line: a spacer of 16 points with 16 on each side of it.
+    var spacing: CGFloat = 48
+    var lineSpacing: CGFloat = 12
+
+    /// Each group's size by the width it was offered; `nil` is its ideal size. AppKit controls work their
+    /// size out through Auto Layout every time they are asked. SwiftUI discards this when a group changes.
+    func makeCache(subviews: Subviews) -> [CGFloat?: [CGSize]] { [:] }
+
+    private func sizes(_ subviews: Subviews, in width: CGFloat?, cache: inout [CGFloat?: [CGSize]]) -> [CGSize] {
+        if let known = cache[width] { return known }
+        let sizes = subviews.map { subview in
+            let ideal = subview.sizeThatFits(.unspecified)
+            guard let width, ideal.width > width else { return ideal }
+            // Narrower than the group would like to be: it wraps or truncates, or answers with the least
+            // it can be, and that answer stands. A width of zero is the window asking for the minimum
+            // size, so the group is asked for its own. Reporting less would let the window shrink to a
+            // width its columns cannot be laid out in; reporting more makes it demand space it does
+            // not have. AppKit ends either by stopping the app.
+            return subview.sizeThatFits(width == 0 ? .zero : ProposedViewSize(width: width, height: nil))
+        }
+        cache[width] = sizes
+        return sizes
+    }
+    /// A group with nothing in it, such as a status with nothing to say, takes no spacing.
+    private func gaps(_ sizes: [CGSize]) -> CGFloat {
+        CGFloat(max(0, sizes.filter { $0.width > 0 || $0.height > 0 }.count - 1))
+    }
+    /// The width of the groups side by side, which is the least a single line can be.
+    private func line(_ ideal: [CGSize]) -> CGFloat {
+        ideal.reduce(0) { $0 + $1.width } + spacing * gaps(ideal)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout [CGFloat?: [CGSize]]) -> CGSize {
+        let ideal = sizes(subviews, in: nil, cache: &cache)
+        let line = line(ideal)
+        guard let width = proposal.width, width < line else {
+            // One line takes all the width it is offered, so the groups reach both edges.
+            return CGSize(width: max(proposal.width ?? line, line), height: ideal.map(\.height).max() ?? 0)
+        }
+        let stacked = sizes(subviews, in: width, cache: &cache)
+        return CGSize(width: stacked.map(\.width).max() ?? 0,
+                      height: stacked.reduce(0) { $0 + $1.height } + lineSpacing * gaps(stacked))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout [CGFloat?: [CGSize]]) {
+        let ideal = sizes(subviews, in: nil, cache: &cache)
+        if bounds.width >= line(ideal) {
+            // What is left of the line goes between the groups: two groups meet the two edges.
+            let free = bounds.width - ideal.reduce(0) { $0 + $1.width }
+            let gap = subviews.count > 1 ? free / CGFloat(subviews.count - 1) : 0
+            var x = bounds.minX
+            for (subview, size) in zip(subviews, ideal) {
+                subview.place(at: CGPoint(x: x, y: bounds.midY - size.height / 2), proposal: ProposedViewSize(size))
+                x += size.width + gap
+            }
+        } else {
+            var y = bounds.minY
+            for (subview, size) in zip(subviews, sizes(subviews, in: bounds.width, cache: &cache)) {
+                subview.place(at: CGPoint(x: bounds.midX - size.width / 2, y: y), proposal: ProposedViewSize(size))
+                if size.width > 0 || size.height > 0 { y += size.height + lineSpacing }
             }
         }
-        .frame(height: 20)
-        .animation(.linear(duration: 0.1), value: levels)
-        .accessibilityElement()
-        .accessibilityLabel(L("Input Level"))
     }
 }
 
+/// A dot that pulses while something is live. Core Animation runs the pulse in the window server, so it
+/// costs the app nothing per frame. An animation SwiftUI steps itself updates this window's layout on
+/// every frame, which kept half a processor core busy for as long as a recording lasted.
+struct PulsingDot: NSViewRepresentable {
+    var color: NSColor
+    var pulsing: Bool
+    var diameter: CGFloat = 9
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeNSView(context: Context) -> DotView { DotView() }
+    func updateNSView(_ view: DotView, context: Context) {
+        view.color = color
+        view.pulsing = pulsing && !reduceMotion
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: DotView, context: Context) -> CGSize? {
+        CGSize(width: diameter, height: diameter)
+    }
+
+    final class DotView: NSView {
+        private let dot = CALayer()
+        var color = NSColor.systemRed { didSet { if color != oldValue { needsDisplay = true } } }
+        var pulsing = false { didSet { if pulsing != oldValue { updatePulse() } } }
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            layer?.addSublayer(dot)
+            setAccessibilityElement(false)
+        }
+        required init?(coder: NSCoder) { nil }
+        override var wantsUpdateLayer: Bool { true }
+        override func updateLayer() {
+            // Resolved while AppKit draws, so the color follows the window's light or dark appearance.
+            dot.backgroundColor = color.cgColor
+        }
+        override func layout() {
+            super.layout()
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            dot.frame = bounds; dot.cornerRadius = bounds.height / 2
+            CATransaction.commit()
+        }
+        // A layer loses its animations when its view leaves a window, as recycled list rows do.
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updatePulse() }
+
+        private func updatePulse() {
+            dot.removeAnimation(forKey: "pulse")
+            guard pulsing, window != nil else { return }
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 1; pulse.toValue = 0.35
+            pulse.duration = 0.9; pulse.autoreverses = true; pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            pulse.isRemovedOnCompletion = false
+            dot.add(pulse, forKey: "pulse")
+        }
+    }
+}
+
+/// A symbol that shows work in progress by lighting its layers in turn. AppKit's image view runs the
+/// effect in Core Animation. The same effect on a SwiftUI image is stepped by SwiftUI, and each step
+/// lays this window out again: half a processor core for as long as the symbol is on screen.
+struct ActivitySymbol: NSViewRepresentable {
+    var name: String
+    var animating: Bool
+    var pointSize: CGFloat
+    var side: CGFloat
+
+    func makeNSView(context: Context) -> SymbolView { SymbolView() }
+    func updateNSView(_ view: SymbolView, context: Context) {
+        view.show(name, pointSize: pointSize)
+        view.animating = animating
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: SymbolView, context: Context) -> CGSize? {
+        CGSize(width: side, height: side)
+    }
+
+    final class SymbolView: NSImageView {
+        private var shown: (name: String, pointSize: CGFloat)?
+        var animating = false { didSet { if animating != oldValue { updateEffect() } } }
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            imageScaling = .scaleNone
+            contentTintColor = .tertiaryLabelColor
+            setAccessibilityElement(false)
+        }
+        required init?(coder: NSCoder) { nil }
+
+        func show(_ name: String, pointSize: CGFloat) {
+            guard shown?.name != name || shown?.pointSize != pointSize else { return }
+            let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular))
+            // One symbol gives way to the next; the first one, and a new size, simply appear.
+            if let image, shown != nil, shown?.name != name, window != nil { setSymbolImage(image, contentTransition: .replace) }
+            else { self.image = image }
+            shown = (name, pointSize)
+        }
+        // An effect stops when its view leaves a window, as a row of a lazy stack does.
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateEffect() }
+
+        private func updateEffect() {
+            removeAllSymbolEffects(animated: false)
+            if animating, window != nil { addSymbolEffect(.variableColor.iterative, options: .repeating) }
+        }
+    }
+}
+
+/// The last moments of input level, scrolling from right to left like the meter in Voice Memos.
+/// A level arrives with every audio buffer, about ten times a second for as long as a session lasts.
+/// The view follows the model itself and resizes its own layers, so a new level never becomes a SwiftUI
+/// update, each of which lays this window out again. Core Animation eases every bar to its new height.
+struct LevelMeter: NSViewRepresentable {
+    let model: AppModel
+
+    func makeNSView(context: Context) -> MeterView { MeterView(model: model) }
+    func updateNSView(_ view: MeterView, context: Context) { }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: MeterView, context: Context) -> CGSize? { MeterView.size }
+
+    final class MeterView: NSView {
+        private static let count = 26, bar: CGFloat = 2.5, gap: CGFloat = 2
+        static let size = CGSize(width: CGFloat(count) * (bar + gap) - gap, height: 20)
+
+        private let model: AppModel
+        private var levels = [Float](repeating: 0, count: count)
+        private let bars = (0..<count).map { _ in CALayer() }
+        private var following = false
+        private var visible = false
+        private var occlusion: NSObjectProtocol?
+
+        init(model: AppModel) {
+            self.model = model
+            super.init(frame: NSRect(origin: .zero, size: Self.size))
+            wantsLayer = true
+            for bar in bars { bar.cornerRadius = Self.bar / 2; layer?.addSublayer(bar) }
+            setAccessibilityElement(true)
+            setAccessibilityRole(.image)
+            setAccessibilityLabel(L("Input Level"))
+        }
+        required init?(coder: NSCoder) { nil }
+
+        override var wantsUpdateLayer: Bool { true }
+        override func updateLayer() {
+            // Resolved while AppKit draws, so the bars follow the window's light or dark appearance.
+            let color = NSColor.secondaryLabelColor.cgColor
+            for bar in bars { bar.backgroundColor = color }
+        }
+        override func layout() { super.layout(); arrange(animated: false) }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let occlusion { NotificationCenter.default.removeObserver(occlusion) }
+            occlusion = window.map { window in
+                NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.updateVisibility() }
+                }
+            }
+            updateVisibility()
+            follow()
+        }
+
+        /// A window that is hidden, minimized or covered needs no bars moved; it shows the latest ones when it returns.
+        private func updateVisibility() {
+            let visible = window?.occlusionState.contains(.visible) ?? false
+            guard visible != self.visible else { return }
+            self.visible = visible
+            if visible { arrange(animated: false) }
+        }
+
+        /// Observation reports the next change once, so ask again after each one, while in a window.
+        private func follow() {
+            guard !following, window != nil else { return }
+            following = true
+            withObservationTracking {
+                _ = model.meter; _ = model.phase
+            } onChange: { [weak self] in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.following = false
+                    self.advance()
+                    self.follow()
+                }
+            }
+        }
+
+        private func advance() {
+            if model.phase == .recording {
+                levels.removeFirst()
+                levels.append(model.meter)
+            } else {
+                levels = levels.map { _ in 0 }
+            }
+            if visible { arrange(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) }
+        }
+
+        private func arrange(animated: Bool) {
+            CATransaction.begin()
+            if animated {
+                CATransaction.setAnimationDuration(0.1)
+                CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .linear))
+            } else {
+                CATransaction.setDisableActions(true)
+            }
+            for (index, level) in levels.enumerated() {
+                let height = 3 + CGFloat(min(1, max(0, level))) * 17
+                bars[index].frame = CGRect(x: CGFloat(index) * (Self.bar + Self.gap), y: (bounds.height - height) / 2,
+                                           width: Self.bar, height: height)
+            }
+            CATransaction.commit()
+        }
+    }
+}
 /// The commands for one saved transcript, shared by its toolbar, the sidebar's context menu and the menu bar.
 struct RecordActions: View {
     let model: AppModel

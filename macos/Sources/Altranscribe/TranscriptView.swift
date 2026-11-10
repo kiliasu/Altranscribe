@@ -16,168 +16,137 @@ enum LiveState: Equatable {
 }
 
 /// A transcript laid out for reading: one measure-limited column of timestamped lines, each followed by its translation.
+///
+/// A growing transcript stays on its latest line by anchoring the scroll view's bottom edge. The position
+/// is settled in the same layout pass as the text, so the latest line never moves: earlier lines shift up
+/// as it grows. Nothing is queued, replayed or chased with scroll requests afterwards, however many lines
+/// arrive at once and whether the window is in front, behind another app, hidden or minimized.
 struct TranscriptScroll<Header: View>: View {
-    private struct Snapshot: Equatable {
-        var record: TranscriptRecord
-        var live: LiveState?
-    }
-    private let latest: Snapshot
+    let record: TranscriptRecord
+    var live: LiveState?
     private let header: (TranscriptRecord) -> Header
-    @State private var presented: Snapshot
     @AppStorage("transcriptTextSize") private var textSize = 15.0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.appearsActive) private var appearsActive
-    @State private var follow = true
-    @State private var scrollRevision = 0
+    /// Whether the view rests on the end of a transcript that is growing, or has just stopped growing.
+    /// Scrolling away by hand turns it off; reaching the end of a growing transcript turns it on.
+    @State private var follow: Bool
+    @State private var position = ScrollPosition()
     @State private var scrollPhase = ScrollPhase.idle
-    @State private var animateChanges = false
-    private let bottom = "bottom"
+    @State private var surroundings = Surroundings()
 
     init(record: TranscriptRecord, live: LiveState? = nil, @ViewBuilder header: @escaping (TranscriptRecord) -> Header) {
-        let snapshot = Snapshot(record: record, live: live)
-        latest = snapshot
-        _presented = State(initialValue: snapshot)
-        self.header = header
+        self.record = record; self.live = live; self.header = header
+        _follow = State(initialValue: live != nil)
     }
 
-    private var record: TranscriptRecord { presented.record }
-    private var live: LiveState? { presented.live }
+    private var following: Bool { live != nil && follow }
 
     private struct Metrics: Equatable {
         var offset: CGFloat, distance: CGFloat
-        var container: CGFloat, insets: EdgeInsets
+        var content: CGFloat, container: CGFloat, insets: EdgeInsets
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            List {
-                Group {
-                    header(record)
-                    if let summary = record.summary {
-                        SummaryCard(summary: summary, textSize: textSize)
-                            .padding(.bottom, 20)
-                            .transition(.rise)
-                    }
-                    ForEach(record.segments) { segment in
-                        SegmentRow(segment: segment, textSize: textSize,
-                                   streaming: live != nil && appearsActive && animateChanges && segment.id == record.segments.last?.id,
-                                   current: live == nil || !follow ? nil : segment.id == record.segments.last?.id).equatable()
-                    }
-                    if record.segments.isEmpty && live == nil {
-                        Text(L("No speech was transcribed."))
-                            .font(.system(size: textSize))
-                            .foregroundStyle(.tertiary)
-                            .padding(.top, 8)
-                    }
-                    if let live, live != .finishing {
-                        ListeningIndicator(state: live, textSize: textSize).transition(.rise)
-                    }
-                    Color.clear.frame(height: 1).id(bottom)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                header(record)
+                if let summary = record.summary {
+                    SummaryCard(summary: summary, textSize: textSize)
+                        .padding(.bottom, 20)
                 }
-                // Row text and sentence emphasis animate locally. Animating the entire List's diff
-                // lets offscreen row-height corrections replay when a long session returns to the front.
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                .frame(maxWidth: 760, alignment: .leading)
-                .padding(.horizontal, 36)
-                .frame(maxWidth: .infinity)
+                ForEach(record.segments) { segment in
+                    SegmentRow(segment: segment, textSize: textSize,
+                               streaming: live != nil && appearsActive && segment.id == record.segments.last?.id,
+                               current: following ? segment.id == record.segments.last?.id : nil).equatable()
+                }
+                if record.segments.isEmpty && live == nil {
+                    Text(L("No speech was transcribed."))
+                        .font(.system(size: textSize))
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 8)
+                }
+                if let live, live != .finishing {
+                    ListeningIndicator(state: live, textSize: textSize)
+                }
             }
-            .listStyle(.plain)
-            .defaultScrollAnchor(.top, for: .sizeChanges)
-            .scrollContentBackground(.hidden)
-            .contentMargins(.top, 28, for: .scrollContent)
-            .contentMargins(.bottom, 36, for: .scrollContent)
-            .background(TranscriptScrollInput { follow = false })
-            .transaction { transaction in
-                if !appearsActive || !animateChanges { transaction.animation = nil; transaction.disablesAnimations = true }
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.horizontal, 36)
+            .frame(maxWidth: .infinity)
+        }
+        .contentMargins(.top, 28, for: .scrollContent)
+        .contentMargins(.bottom, 36, for: .scrollContent)
+        .scrollPosition($position)
+        // While the view rests on the end, the bottom edge is the fixed point for every change of size:
+        // new text, a translation above the latest line, another text size, a resized window, the taller
+        // bar under a finished session. Once the reader has scrolled away, the top is, so the lines
+        // being read stay where they are.
+        .defaultScrollAnchor(live == nil ? .top : .bottom, for: .initialOffset)
+        .defaultScrollAnchor(follow ? .bottom : .top, for: .sizeChanges)
+        .defaultScrollAnchor(.top, for: .alignment)
+        .transaction { transaction in
+            if !appearsActive { transaction.animation = nil; transaction.disablesAnimations = true }
+        }
+        .onScrollGeometryChange(for: Metrics.self) { geometry in
+            Metrics(offset: geometry.contentOffset.y,
+                    distance: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY,
+                    content: geometry.contentSize.height, container: geometry.containerSize.height, insets: geometry.contentInsets)
+        } action: { old, new in
+            guard live != nil || follow else { return }
+            let handled = scrollPhase == .tracking || scrollPhase == .interacting || scrollPhase == .decelerating
+            let resized = new.container != old.container || new.insets != old.insets
+            if resized { surroundings.changed = .now }
+            let layoutChanged = resized || new.content != old.content
+            if new.distance < 8 {
+                if !follow { follow = true }
+            } else if follow, new.offset < old.offset - 0.5,
+                      handled || !layoutChanged && Date.now.timeIntervalSince(surroundings.changed) > 0.5 {
+                // Only the reader moves the view away from the end: with a gesture or the wheel, which
+                // report a phase, or with the scroll bar or an assistive app, which move the view while
+                // nothing else changes. Text that changes never does, and neither does a window that
+                // resizes: its layout settles over several passes, some of which move only the position.
+                follow = false
             }
-            .onScrollGeometryChange(for: Metrics.self) { geometry in
-                Metrics(offset: geometry.contentOffset.y,
-                        distance: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY,
-                        container: geometry.containerSize.height, insets: geometry.contentInsets)
-            } action: { old, new in
-                if new.container != old.container || new.insets != old.insets { scrollRevision += 1 }
-                if new.distance < 40 { follow = true }
-                else if (scrollPhase == .interacting || scrollPhase == .decelerating), new.offset < old.offset - 0.5 { follow = false }
+            // Only a view resting exactly on the end stays there as the text grows. Bring it back when
+            // it was resting a few points short.
+            if follow, layoutChanged, !handled, scrollPhase != .animating, new.distance > 0.5 {
+                position.scrollTo(edge: .bottom)
             }
-            .onScrollPhaseChange { _, phase in scrollPhase = phase }
-            // Actual content changes schedule one scroll. A List's estimated height changes while
-            // scrolling too; feeding those changes back into scrollTo creates a positioning loop.
-            // Capture and persistence keep their latest data. An inactive List keeps its last
-            // presented snapshot, instead of accumulating offscreen row/translation height changes.
-            .onChange(of: latest) { _, _ in presentLatest(animated: true) }
-            .onChange(of: appearsActive) { _, active in
-                if active { presentLatest(animated: false) }
-                else { animateChanges = false; scrollRevision += 1 }
+        }
+        .onScrollPhaseChange { _, phase, context in
+            scrollPhase = phase
+            // A gesture can end a few points short of the end, or past it and spring back short of new text.
+            let geometry = context.geometry
+            if phase == .idle, follow, geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY > 0.5 {
+                position.scrollTo(edge: .bottom)
             }
-            .onChange(of: textSize) { _, _ in scrollRevision += 1 }
-            .onChange(of: scrollRevision, initial: true) { _, _ in
-                guard appearsActive else { return }
-                followLatest(proxy, animateChanges ? .smooth(duration: 0.55) : nil)
-            }
-            .overlay(alignment: .bottom) {
+        }
+        // The initial anchor rests the last line on the window's edge, behind the bar below it.
+        .onAppear { if live != nil { position.scrollTo(edge: .bottom) } }
+        .onChange(of: live != nil) { _, growing in
+            if growing, !follow { follow = true; position.scrollTo(edge: .bottom) }
+        }
+        .overlay(alignment: .bottom) {
+            ZStack {
                 if live != nil && !follow {
-                    Button {
-                        follow = true
-                        scroll(proxy, Motion.content)
-                    } label: {
+                    // The latest line can be thousands of lines away, most of them never laid out: go there at once.
+                    Button { follow = true; position.scrollTo(edge: .bottom) } label: {
                         Label(L("Jump to Latest"), systemImage: "arrow.down")
                     }
                     .buttonStyle(.glass)
-                    .padding(.bottom, 14)
                     .transition(.rise)
                 }
             }
-            .animation(Motion.content, value: follow)
+            .padding(.bottom, 14)
+            // Only the button moves when the reader leaves the end or returns to it; the text does not.
+            .animation(Motion.content, value: live != nil && !follow)
         }
-    }
-
-    private func presentLatest(animated: Bool) {
-        guard appearsActive else { return }
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = !animated
-        withTransaction(transaction) {
-            animateChanges = animated
-            presented = latest
-            scrollRevision += 1
-        }
-    }
-
-    private func followLatest(_ proxy: ScrollViewProxy, _ animation: Animation?) {
-        guard live != nil, follow else { return }
-        scroll(proxy, animation)
-    }
-    private func scroll(_ proxy: ScrollViewProxy, _ animation: Animation?) {
-        if let animation, !reduceMotion, appearsActive { withAnimation(animation) { proxy.scrollTo(bottom, anchor: .bottom) } }
-        else { proxy.scrollTo(bottom, anchor: .bottom) }
     }
 }
 
-/// macOS List doesn't report a scrolling phase for every input device. Observe upward wheel
-/// input within this transcript, without consuming the event or treating layout corrections as input.
-private struct TranscriptScrollInput: NSViewRepresentable {
-    let onScrollUp: () -> Void
-    func makeNSView(context: Context) -> ObserverView {
-        let view = ObserverView()
-        view.monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak view] event in
-            guard let view, event.window === view.window,
-                  view.bounds.contains(view.convert(event.locationInWindow, from: nil)),
-                  event.scrollingDeltaY > 0 else { return event }
-            view.onScrollUp?()
-            return event
-        }
-        return view
-    }
-    func updateNSView(_ view: ObserverView, context: Context) { view.onScrollUp = onScrollUp }
-    static func dismantleNSView(_ view: ObserverView, coordinator: ()) {
-        if let monitor = view.monitor { NSEvent.removeMonitor(monitor); view.monitor = nil }
-    }
-    final class ObserverView: NSView {
-        var monitor: Any?
-        var onScrollUp: (() -> Void)?
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    }
+/// When the space around a transcript last changed: its window, the bar under it, the inspector beside it.
+/// A reference, so noting the time redraws nothing.
+private final class Surroundings {
+    var changed = Date.distantPast
 }
 
 struct SegmentRow: View, Equatable {
@@ -251,10 +220,8 @@ private struct ListeningIndicator: View {
         HStack(alignment: .firstTextBaseline, spacing: 18) {
             Color.clear.frame(width: 58, height: 1)
             HStack(spacing: 6) {
-                Image(systemName: symbol)
-                    .symbolEffect(.variableColor.iterative, isActive: appearsActive && !reduceMotion && state != .paused)
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: max(16, textSize), height: max(16, textSize))
+                ActivitySymbol(name: symbol, animating: appearsActive && !reduceMotion && state != .paused,
+                               pointSize: max(11, textSize - 2), side: max(16, textSize))
                 Text(title)
                     .contentTransition(.opacity)
                     .lineLimit(1)

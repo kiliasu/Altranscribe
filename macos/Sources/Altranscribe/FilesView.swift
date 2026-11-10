@@ -14,18 +14,12 @@ struct FilesView: View {
                 DropZone(targeted: targeted) { model.chooseFiles() }
                     .padding(24)
                     .transition(.page)
-            } else if model.queueRunning, let run = model.fileRun, let record = model.records.first(where: { $0.id == run.recordID }) {
-                FileProgressPage(model: model, run: run, record: record)
+            } else if model.queueRunning, let run = model.fileRun {
+                FileProgress(model: model, run: run)
                     .id(run.recordID)
                     .transition(.page)
             } else {
-                List {
-                    ForEach(model.queue) { QueueRow(model: model, item: $0) }
-                }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .animation(Motion.content, value: model.queue.map(\.id))
-                .transition(.page)
+                QueueList(model: model).transition(.page)
             }
         }
         .overlay {
@@ -62,6 +56,32 @@ struct FilesView: View {
             }
             ToolbarSpacer(.fixed)
             InspectorToggle(isPresented: $showInspector)
+        }
+    }
+}
+
+private struct QueueList: View {
+    let model: AppModel
+    var body: some View {
+        List {
+            ForEach(model.queue) { QueueRow(model: model, item: $0) }
+        }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .animation(Motion.content, value: model.queue.map(\.id))
+    }
+}
+
+/// Looks the file's transcript up here, so the text it gains re-evaluates this page and not the
+/// files page's bar, title and toolbar around it.
+private struct FileProgress: View {
+    let model: AppModel
+    let run: FileRun
+    var body: some View {
+        if let record = model.records.first(where: { $0.id == run.recordID }) {
+            FileProgressPage(model: model, run: run, record: record)
+        } else {
+            QueueList(model: model)
         }
     }
 }
@@ -333,16 +353,10 @@ private struct QueueBar: View {
     var body: some View {
         let waiting = model.queue.filter { $0.status == .waiting }.count
         let completed = model.queue.filter { $0.status == .completed }.count
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 16) {
-                progress(waiting: waiting)
-                Spacer(minLength: 16)
-                actions(waiting: waiting, completed: completed)
-            }
-            VStack(spacing: 12) {
-                progress(waiting: waiting)
-                actions(waiting: waiting, completed: completed)
-            }
+        // Progress at the leading edge and actions at the trailing edge; one above the other where narrow.
+        BarLayout {
+            HStack(spacing: 0) { progress(waiting: waiting) }
+            HStack(spacing: 0) { actions(waiting: waiting, completed: completed) }
         }
         .controlSize(.large)
         // The bar floats over content in the control layer, so its controls are Liquid Glass.

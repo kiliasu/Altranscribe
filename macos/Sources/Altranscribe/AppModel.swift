@@ -375,7 +375,11 @@ private actor RecordWriter {
                     recordingURL: configuration.keepsRecording ? activeRecord.map { paths.recording($0) } : nil) { [weak self] level, duration in
                     Task { @MainActor in
                         guard let self, self.phase == .recording else { return }
-                        self.meter = level; self.elapsed = duration
+                        self.meter = level
+                        // The clock shows whole seconds. Publishing every audio buffer would
+                        // re-evaluate each view that shows it about ten times a second.
+                        let seconds = duration.rounded(.down)
+                        if seconds != self.elapsed { self.elapsed = seconds }
                     }
                 }
                 try Task.checkCancellation()
