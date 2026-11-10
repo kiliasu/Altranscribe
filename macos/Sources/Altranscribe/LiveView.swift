@@ -373,12 +373,37 @@ struct TransportBar: View {
     }
 }
 
+/// Whether the next session keeps its audio. One of the choices about a session, so it sits with them:
+/// among the welcome page's controls and in the inspector.
+struct SaveRecordingToggle: View {
+    @Bindable var model: AppModel
+    var titled = false
+
+    var body: some View {
+        let isOn = Binding(get: { model.settings.keepsRecording }, set: { model.settings.saveRecording = $0 })
+        Group {
+            if titled {
+                Toggle(L("Save Recording"), isOn: isOn)
+            } else {
+                Toggle(isOn: isOn) { Label(L("Save Recording"), systemImage: "waveform") }
+                    .toggleStyle(.button)
+            }
+        }
+        .help(L("Keep an audio file alongside the transcript. Paused audio is excluded."))
+        .accessibilityIdentifier("saveRecording")
+    }
+}
+
 /// What discarding removes. A view of its own, so the bar itself never depends on the transcript's text.
 private struct DiscardMessage: View {
     let model: AppModel
     var body: some View {
-        Text(L(model.activeRecord?.hasRecording == true
-               ? "This deletes the transcript and its saved audio." : "This deletes the transcript from this recording."))
+        let recoverable = model.paths.trashesDeletedFiles
+        if model.activeRecord?.hasRecording == true {
+            Text(L(recoverable ? "The transcript and its saved audio move to the Trash." : "This deletes the transcript and its saved audio."))
+        } else {
+            Text(L(recoverable ? "The transcript moves to the Trash." : "This deletes the transcript."))
+        }
     }
 }
 

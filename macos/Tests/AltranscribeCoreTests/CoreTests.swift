@@ -171,8 +171,75 @@ final class CoreTests: XCTestCase {
             let result = TranscriptExport.render(record, as: format)
             XCTAssertTrue(result.contains("甲和乙"))
             XCTAssertTrue(result.contains("01:05"))
-            XCTAssertTrue(result.contains("≈"))
+            // A subtitle cue has only its times and its text.
+            XCTAssertEqual(result.contains("≈"), format != .subtitles, format.rawValue)
         }
+    }
+
+    func testSubtitlesNumberTheCuesAndKeepThemApart() {
+        var record = TranscriptRecord(title: "Lecture", source: .microphone, language: "en", speechModel: "tiny")
+        var first = TranscriptSegment(start: 0.1, end: 22.345, text: "A first line")
+        first.translation = "第一句"
+        // Ends after the next line starts: the cue gives way when that line begins.
+        let second = TranscriptSegment(start: 23, end: 40, text: "A second line\n\nwith a blank line inside")
+        // No known end: two seconds on screen.
+        let third = TranscriptSegment(start: 32.8, end: 32.8, text: "A third line")
+        let last = TranscriptSegment(start: 3_725.5, end: 3_730, text: "After an hour")
+        record.segments = [first, second, third, last]
+        XCTAssertEqual(TranscriptExport.render(record, as: .subtitles), """
+        1
+        00:00:00,100 --> 00:00:22,345
+        A first line
+        第一句
+
+        2
+        00:00:23,000 --> 00:00:32,800
+        A second line
+        with a blank line inside
+
+        3
+        00:00:32,800 --> 00:00:34,800
+        A third line
+
+        4
+        01:02:05,500 --> 01:02:10,000
+        After an hour
+
+        """)
+        XCTAssertEqual(TranscriptExport.render(TranscriptRecord(title: "Empty", source: .file, language: "en", speechModel: "tiny"), as: .subtitles), "")
+        XCTAssertEqual(ExportFormat.subtitles.rawValue, "srt")
+    }
+
+    func testDeletedFilesGoToTheTrashOnlyInThePersonsOwnLibrary() throws {
+        XCTAssertTrue(AppPaths().trashesDeletedFiles)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertFalse(AppPaths(root: root).trashesDeletedFiles, "A store in another place, as tests use, leaves nothing in the Trash")
+
+        func record(in store: RecordStore) throws -> (TranscriptRecord, [URL]) {
+            var record = TranscriptRecord(title: "Lecture", source: .microphone, language: "en", speechModel: "tiny")
+            record.hasRecording = true
+            record.recordingDirectory = store.paths.recordings.path
+            record.recordingFilename = AppPaths.recordingFilename(for: record)
+            try store.save(record)
+            try FileManager.default.createDirectory(at: store.paths.recordings, withIntermediateDirectories: true)
+            try Data("audio".utf8).write(to: store.paths.recording(record))
+            return (record, [store.paths.records.appendingPathComponent("\(record.id).json"), store.paths.recording(record)])
+        }
+        let plain = RecordStore(paths: AppPaths(root: root))
+        let (removed, removedFiles) = try record(in: plain)
+        XCTAssertEqual(try plain.delete(removed.id), [])
+        XCTAssertTrue(removedFiles.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+
+        let recoverable = RecordStore(paths: AppPaths(root: root, trashesDeletedFiles: true))
+        let (trashed, trashedFiles) = try record(in: recoverable)
+        let inTrash = try recoverable.delete(trashed.id)
+        defer { inTrash.forEach { try? FileManager.default.removeItem(at: $0) } }
+        XCTAssertEqual(inTrash.count, 2, "The transcript and its recording both go to the Trash")
+        XCTAssertTrue(trashedFiles.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+        XCTAssertTrue(inTrash.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+        XCTAssertEqual(try inTrash.first { $0.pathExtension == "m4a" }.map { try Data(contentsOf: $0) }, Data("audio".utf8))
+        XCTAssertTrue(try recoverable.load().records.isEmpty)
     }
 }
 

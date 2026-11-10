@@ -16,5 +16,12 @@
     <key>NSAudioCaptureUsageDescription</key><string>Altranscribe captures system audio only when you start system audio transcription.</string>
     <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
     <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+    <key>NSHumanReadableCopyright</key><string>Copyright © 2026 kiliasu. MIT License.</string>
     <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
+    <key>CFBundleDocumentTypes</key><array><dict>
+        <key>CFBundleTypeName</key><string>Audio or Video</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>public.audio</string><string>public.movie</string></array>
+    </dict></array>
 </dict></plist>

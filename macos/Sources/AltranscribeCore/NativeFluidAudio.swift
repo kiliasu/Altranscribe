@@ -27,9 +27,12 @@ public enum FluidAudioModel: String, CaseIterable, Identifiable, Sendable {
     public func isInstalled(in models: URL) -> Bool {
         AsrModels.modelsExist(at: directory(in: models), version: version)
     }
-    public func download(to models: URL) async throws {
+    /// `progress` receives the part of the model that has arrived, from 0 to 1.
+    public func download(to models: URL, progress: (@Sendable (Double) -> Void)? = nil) async throws {
         try Task.checkCancellation()
-        try await AsrModels.download(to: directory(in: models), version: version)
+        var handler: ProgressHandler?
+        if let progress { handler = { update in progress(update.fractionCompleted) } }
+        try await AsrModels.download(to: directory(in: models), version: version, progressHandler: handler)
         try Task.checkCancellation()
     }
     fileprivate func load(from models: URL) throws -> AsrModels {

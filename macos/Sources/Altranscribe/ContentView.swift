@@ -52,8 +52,7 @@ struct ContentView: View {
                             isPresented: Binding(get: { model.pendingDeletion != nil }, set: { if !$0 { model.pendingDeletion = nil } }),
                             presenting: model.pendingDeletion) { id in
             Button(L("Delete"), role: .destructive) { model.deleteRecord(id) }
-        } message: { id in Text(L(model.records.first(where: { $0.id == id })?.hasRecording == true
-            ? "This deletes the transcript and its saved audio." : "The original media file will be kept.")) }
+        } message: { id in Text(deletionMessage(model.records.first { $0.id == id })) }
         .onChange(of: model.destination) { _, destination in
             if destination == .settings { settingsHidInspector = .now }
         }
@@ -65,6 +64,16 @@ struct ContentView: View {
         .task(id: model.settings.appleSpeechLocale + model.settings.speechProvider.rawValue) {
             if model.settings.speechProvider == .appleSpeech { await model.refreshAppleSpeech() }
         }
+    }
+
+    /// What deleting removes, and where it goes: the Trash for the person's own library.
+    private func deletionMessage(_ record: TranscriptRecord?) -> String {
+        let recoverable = model.paths.trashesDeletedFiles
+        if record?.hasRecording == true {
+            return L(recoverable ? "The transcript and its saved audio move to the Trash." : "This deletes the transcript and its saved audio.")
+        }
+        let kept = record?.source == .file ? " " + L("The original media file will be kept.") : ""
+        return L(recoverable ? "The transcript moves to the Trash." : "This deletes the transcript.") + kept
     }
 
     /// A saved transcript shows its own facts; the capture pages show what the next session will use.

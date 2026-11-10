@@ -1,9 +1,16 @@
 import Foundation
 
 public enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
-    case text = "txt", markdown = "md", html = "html"
+    case text = "txt", markdown = "md", html = "html", subtitles = "srt"
     public var id: String { rawValue }
-    public var title: String { switch self { case .text: L("Plain text (TXT)"); case .markdown: "Markdown"; case .html: L("Web page (HTML)") } }
+    public var title: String {
+        switch self {
+        case .text: L("Plain text (TXT)")
+        case .markdown: "Markdown"
+        case .html: L("Web page (HTML)")
+        case .subtitles: L("Subtitles (SRT)")
+        }
+    }
 }
 
 public enum TranscriptExport {
@@ -36,7 +43,23 @@ public enum TranscriptExport {
             \(record.summary.map { "<aside><h2>\(escape(summaryHeading))</h2><p\(languageAttribute(record.summaryLanguage))>\(escape($0))</p></aside>" } ?? "")
             <h2>\(escape(transcriptHeading))</h2><main\(languageAttribute(record.language))>\(lines)</main><footer><p>\(escape(generatedBy))</p></footer></html>
             """
+        case .subtitles:
+            // One cue for each line, the translation under the original. A cue ends when its line does,
+            // or when the next line starts if that is sooner; a line whose end is unknown stays for two seconds.
+            return record.segments.enumerated().map { index, line in
+                let next = index + 1 < record.segments.count ? record.segments[index + 1].start : .infinity
+                let end = line.end > line.start ? line.end : line.start + 2
+                let text = ([line.text] + (line.translation.map { [$0] } ?? []))
+                    .flatMap { $0.split(whereSeparator: \.isNewline) }
+                    .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n")
+                return "\(index + 1)\n\(cueTime(line.start)) --> \(cueTime(max(line.start + 0.1, min(end, next))))\n\(text)\n"
+            }.joined(separator: "\n")
         }
+    }
+    /// Hours, minutes, seconds and milliseconds, as SubRip writes them: 00:01:02,345.
+    static func cueTime(_ seconds: Double) -> String {
+        let milliseconds = Int((max(0, seconds.isFinite ? seconds : 0) * 1000).rounded())
+        return String(format: "%02d:%02d:%02d,%03d", milliseconds / 3_600_000, milliseconds / 60_000 % 60, milliseconds / 1000 % 60, milliseconds % 1000)
     }
     private static func languageAttribute(_ language: String?) -> String {
         guard let language, !language.isEmpty, language != "auto" else { return "" }

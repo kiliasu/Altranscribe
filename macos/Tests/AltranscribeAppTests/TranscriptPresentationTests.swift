@@ -6,6 +6,7 @@ import AltranscribeCore
 @MainActor private final class TranscriptFixture: ObservableObject {
     @Published var active = true
     @Published var live: LiveState? = .recording
+    @Published var highlight = ""
     @Published var record = TranscriptRecord(title: "Rendering", source: .microphone, language: "en", speechModel: "fixture")
 
     /// One line arriving the way a session delivers it: the text, a provisional translation, the final one.
@@ -25,7 +26,7 @@ import AltranscribeCore
 private struct TranscriptFixtureView: View {
     @ObservedObject var fixture: TranscriptFixture
     var body: some View {
-        TranscriptScroll(record: fixture.record, live: fixture.live) { _ in EmptyView() }
+        TranscriptScroll(record: fixture.record, live: fixture.live, highlight: fixture.highlight) { _ in EmptyView() }
             .environment(\.appearsActive, fixture.active)
     }
 }
@@ -165,6 +166,37 @@ private struct TranscriptFixtureView: View {
             scroller.setAccessibilityValue(NSNumber(value: value)); wait(0.08)
         }
         XCTAssertEqual(offset, top, accuracy: 0.5)
+    }
+
+    func testSearchedWordsBringTheirFirstLineIntoView() throws {
+        _ = NSApplication.shared
+        let fixture = TranscriptFixture()
+        fixture.live = nil; fixture.record.status = .completed
+        fixture.record.segments = (0..<300).map {
+            TranscriptSegment(start: Double($0 * 4), end: Double($0 * 4 + 4), text: "Saved line \($0) of a transcript that is read from its beginning.")
+        }
+        fixture.record.segments[180].text = "Here the lecturer explains the Subnet mask."
+        fixture.record.segments[240].translation = "这里再次提到 subnet。"
+        // Opened from a search: the line with the words is already in view.
+        fixture.highlight = "subnet"
+        let host = NSHostingView(rootView: TranscriptFixtureView(fixture: fixture))
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host; window.orderFront(nil)
+        defer { window.close() }
+        wait(0.5)
+        scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first)
+        let line = height / 300, viewport = scroll.contentView.bounds.height
+        XCTAssertEqual(offset + viewport / 2, 180.5 * line, accuracy: line * 3, "The first line with the words rests in the middle of the view")
+        // Another search while the transcript is open goes to its own first line; clearing it moves nothing.
+        fixture.highlight = "line 42 "; wait(0.4)
+        XCTAssertEqual(offset + viewport / 2, 42.5 * line, accuracy: line * 3)
+        let place = offset
+        fixture.highlight = ""; wait(0.3)
+        XCTAssertEqual(offset, place, accuracy: 0.5)
+        fixture.highlight = "words that appear nowhere"; wait(0.3)
+        XCTAssertEqual(offset, place, accuracy: 0.5)
     }
 
     private func wait(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }

@@ -194,7 +194,6 @@
 "The original media file will be kept." = "原始媒体文件会保留。";
 "The request did not complete. It was not retried." = "请求未完成，未自动重试。";
 "The selected model is not downloaded yet." = "所选模型尚未下载。";
-"This deletes the transcript from this recording." = "此操作会删除本次转写文本。";
 "This file has no readable audio track." = "文件中没有可读取的音轨。";
 "This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe." = "此旧版 OpenAI 模型计划于 2027 年 2 月 26 日停用。新任务建议选择 gpt-transcribe。";
 "This model does not accept vocabulary hints. This app uses its text output without speaker labels." = "此模型不支持词汇提示。本应用使用其文本结果，不显示说话人标签。";
@@ -507,3 +506,8 @@
 "Recording could not be renamed: " = "录音无法重命名：";
 
 "Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text." = "开启“保存录音”时会保留音频文件。转写记录存放在本机，API 密钥保存在 macOS 钥匙串。选择在线服务时，相关音频或文本会发送到该服务。";
+
+"Subtitles (SRT)" = "字幕 (SRT)";
+"The transcript and its saved audio move to the Trash." = "文稿及其保存的录音将移到废纸篓。";
+"The transcript moves to the Trash." = "文稿将移到废纸篓。";
+"This deletes the transcript." = "这会删除该文稿。";

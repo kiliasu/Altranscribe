@@ -8,6 +8,10 @@ public struct AppPaths: Sendable {
     public var records: URL { root.appendingPathComponent("Records", isDirectory: true) }
     public var models: URL { root.appendingPathComponent("Models", isDirectory: true) }
     public let recordings: URL
+    /// Whether a deleted transcript and its recording go to the Trash, where a mistake can be undone.
+    /// True for the person's own data in its usual place; a store somewhere else, as tests use, removes
+    /// its files outright and leaves nothing behind in the Trash.
+    public let trashesDeletedFiles: Bool
     public func recording(_ record: TranscriptRecord) -> URL {
         let legacy = root.appendingPathComponent("Recordings/\(record.id).m4a")
         guard let filename = record.recordingFilename else { return legacy }
@@ -36,7 +40,8 @@ public struct AppPaths: Sendable {
         return "\(title) · \(date.string(from: record.createdAt)) \(record.id.uuidString.prefix(8)).m4a"
     }
     public var settings: URL { root.appendingPathComponent("settings.json") }
-    public init(root: URL? = nil, recordings: URL? = nil) {
+    public init(root: URL? = nil, recordings: URL? = nil, trashesDeletedFiles: Bool? = nil) {
+        self.trashesDeletedFiles = trashesDeletedFiles ?? (root == nil)
         self.root = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Altranscribe", isDirectory: true)
         self.recordings = recordings ?? (root.map { $0.appendingPathComponent("Recordings", isDirectory: true) }
@@ -135,14 +140,27 @@ public struct RecordStore: Sendable {
         try encoder.encode(snapshot).write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
-    public func delete(_ id: UUID) throws {
+    /// Removes a transcript and the recording saved with it. Returns where the files are in the Trash,
+    /// which is nowhere when they were removed outright.
+    @discardableResult public func delete(_ id: UUID) throws -> [URL] {
         let url = paths.records.appendingPathComponent("\(id).json")
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let record = try decoder.decode(TranscriptRecord.self, from: Data(contentsOf: url))
         let audio = paths.recording(record)
-        if FileManager.default.fileExists(atPath: audio.path) { try FileManager.default.removeItem(at: audio) }
-        try FileManager.default.removeItem(at: url)
+        var trashed: [URL] = []
+        for file in [audio, url] where FileManager.default.fileExists(atPath: file.path) {
+            if paths.trashesDeletedFiles {
+                // A volume without a Trash refuses; the file is then removed, as the person asked.
+                var moved: NSURL?
+                if (try? FileManager.default.trashItem(at: file, resultingItemURL: &moved)) != nil {
+                    if let moved { trashed.append(moved as URL) }
+                    continue
+                }
+            }
+            try FileManager.default.removeItem(at: file)
+        }
+        return trashed
     }
     public func loadSettings() throws -> AppSettings {
         guard FileManager.default.fileExists(atPath: paths.settings.path) else { return AppSettings() }
@@ -247,8 +265,12 @@ public struct WhisperModel: Identifiable, Sendable {
         WhisperModel(id: "large-v3-turbo", title: "Large v3 Turbo", bytes: 1624555275, sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"),
         WhisperModel(id: "large-v3", title: "Large v3", bytes: 3095033483, sha256: "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2")
     ]
-    public func download(to directory: URL) async throws -> URL {
-        let (temporary, response) = try await URLSession.shared.download(from: url)
+    /// `progress` receives the part of the file that has arrived, from 0 to 1.
+    public func download(to directory: URL, progress: (@Sendable (Double) -> Void)? = nil) async throws -> URL {
+        let expected = bytes
+        var received: (@Sendable (Int64) -> Void)?
+        if let progress { received = { bytes in progress(min(1, Double(bytes) / Double(expected))) } }
+        let (temporary, response) = try await FileDownload.fetch(url, expected: expected, received: received)
         defer { try? FileManager.default.removeItem(at: temporary) }
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw AppError("Model download failed. Please try again.")

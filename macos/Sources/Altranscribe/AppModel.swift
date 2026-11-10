@@ -69,6 +69,8 @@ private actor RecordWriter {
     var error: LocalizedText?
     var downloadID: String?
     var downloadTask: Task<Void, Never>?
+    /// How much of the model being downloaded has arrived, from 0 to 1; nil until the first report.
+    private(set) var downloadProgress: Double?
     var modelRevision = 0
     var appleSpeechLocales: [String] = []
     var appleSpeechStatus: AppleSpeechStatus = .checking
@@ -789,12 +791,26 @@ private actor RecordWriter {
         if panel.runModal() == .OK { addFiles(panel.urls) }
     }
     func addFiles(_ urls: [URL]) {
-        for url in urls where url.isFileURL {
+        for url in urls.flatMap(Self.mediaFiles) {
             if !queue.contains(where: { $0.url == url && ($0.status == .waiting || $0.status == .processing) }) {
                 queue.append(QueuedFile(url: url))
             }
         }
         destination = .files
+    }
+    /// A file stands for itself. A folder stands for the audio and video inside it, in the order Finder lists them.
+    static func mediaFiles(at url: URL) -> [URL] {
+        guard url.isFileURL else { return [] }
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        guard values?.isDirectory == true, values?.isPackage != true else { return [url] }
+        let contents = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.contentTypeKey],
+                                                      options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        var files: [URL] = []
+        while let file = contents?.nextObject() as? URL {
+            guard let type = try? file.resourceValues(forKeys: [.contentTypeKey]).contentType else { continue }
+            if type.conforms(to: .audio) || type.conforms(to: .movie) { files.append(file) }
+        }
+        return files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
     // The running queue addresses items by index, so it is only edited while idle.
     func retryQueued(_ id: UUID) {
@@ -908,38 +924,47 @@ private actor RecordWriter {
     }
     func download(_ model: WhisperModel) {
         guard downloadTask == nil else { return }
-        downloadID = model.id
+        downloadID = model.id; downloadProgress = nil
         downloadTask = Task {
             do {
-                let url = try await model.download(to: paths.models)
+                let url = try await model.download(to: paths.models, progress: downloadReport(model.id))
                 settings.modelPath = url.path; saveSettings(); modelRevision += 1
             } catch is CancellationError { }
             catch { if !Task.isCancelled { self.error = LocalizedText(error: error) } }
-            downloadID = nil; downloadTask = nil
+            downloadID = nil; downloadTask = nil; downloadProgress = nil
         }
     }
     func download(_ model: NemotronModel) {
         guard downloadTask == nil else { return }
-        downloadID = model.id
+        downloadID = model.id; downloadProgress = nil
         downloadTask = Task {
             do {
-                _ = try await model.download(to: paths.models)
+                _ = try await model.download(to: paths.models, progress: downloadReport(model.id))
                 settings.nemotronModelID = model.id; saveSettings(); modelRevision += 1
             } catch is CancellationError { }
             catch { if !Task.isCancelled { self.error = LocalizedText(error: error) } }
-            downloadID = nil; downloadTask = nil
+            downloadID = nil; downloadTask = nil; downloadProgress = nil
         }
     }
     func download(_ model: FluidAudioModel) {
         guard downloadTask == nil, !busy else { return }
-        downloadID = model.id
+        downloadID = model.id; downloadProgress = nil
         downloadTask = Task {
             do {
-                try await model.download(to: paths.models)
+                try await model.download(to: paths.models, progress: downloadReport(model.id))
                 settings.fluidAudioModelID = model.id; saveSettings(); modelRevision += 1
             } catch is CancellationError { }
             catch { if !Task.isCancelled { self.error = LocalizedText(error: error) } }
-            downloadID = nil; downloadTask = nil
+            downloadID = nil; downloadTask = nil; downloadProgress = nil
+        }
+    }
+    /// Reports arrive on the download's own thread, a percent at a time, and are shown from here.
+    private func downloadReport(_ id: String) -> @Sendable (Double) -> Void {
+        { [weak self] fraction in
+            Task { @MainActor in
+                guard let self, self.downloadID == id, fraction > self.downloadProgress ?? -1 else { return }
+                self.downloadProgress = fraction
+            }
         }
     }
 
@@ -978,8 +1003,13 @@ private actor RecordWriter {
         captions?.show()
     }
     func postProcess(_ record: TranscriptRecord, summary: Bool) {
-        guard !busy else { return }
+        guard !busy, !record.segments.isEmpty else { return }
         let configuration = settings
+        // Say what is missing here; asked without it, the service only answers with an error of its own.
+        guard !configuration.effectiveTextModel.isEmpty else {
+            error = LocalizedText("Translation or summary needs a text model."); return
+        }
+        if configuration.textProvider == .apple, let issue = NativeAppleText.availabilityIssue { error = issue; return }
         let summaryLanguage = InterfaceLanguage.current.speechCode
         isPostProcessing = true; postProcessingID = record.id
         status = summary ? LocalizedText("Creating summary…") : LocalizedText("Translating…")
@@ -988,6 +1018,9 @@ private actor RecordWriter {
             defer { isPostProcessing = false; postProcessingID = nil; work = nil; status = LocalizedText("Ready"); endActivity() }
             do {
                 let key = configuration.textProvider == .apple ? "" : try await KeychainStore.read(endpoint: configuration.textEndpoint)
+                if key.isEmpty, configuration.textProvider != .apple, try !APIEndpoint(configuration.textEndpoint).isLoopback {
+                    throw AppError("Save an API key for the text service.")
+                }
                 if summary {
                     let result = try await api.summarize(record.fullText, language: summaryLanguage, settings: configuration, key: key)
                     try Task.checkCancellation()

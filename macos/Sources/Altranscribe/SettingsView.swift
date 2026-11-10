@@ -224,8 +224,7 @@ struct SettingsView: View {
                 ModelRow(title: item.title, detail: Localization.byteCount(item.bytes), symbol: "waveform",
                          inUse: installed(item) && model.settings.modelPath == model.paths.models.appendingPathComponent(item.filename).path) {
                     if model.downloadID == item.id {
-                        ProgressView().controlSize(.small)
-                        Button(L("Cancel")) { model.downloadTask?.cancel() }
+                        DownloadStatus(model: model)
                     } else if installed(item) {
                         if model.settings.modelPath != model.paths.models.appendingPathComponent(item.filename).path {
                             Button(L("Use")) { model.settings.modelPath = model.paths.models.appendingPathComponent(item.filename).path }
@@ -256,8 +255,7 @@ struct SettingsView: View {
                          detail: Localization.byteCount(item.bytes), symbol: item.multilingual ? "globe" : "character.bubble",
                          link: item.modelCard, inUse: installed(item) && model.settings.nemotronModel.id == item.id) {
                     if model.downloadID == item.id {
-                        ProgressView().controlSize(.small)
-                        Button(L("Cancel")) { model.downloadTask?.cancel() }
+                        DownloadStatus(model: model)
                     } else if installed(item) {
                         if model.settings.nemotronModel.id != item.id {
                             Button(L("Use")) { model.settings.nemotronModelID = item.id }
@@ -286,8 +284,7 @@ struct SettingsView: View {
                 ModelRow(title: item.title, detail: "Parakeet TDT · 0.6B", symbol: "cpu", link: item.modelCard,
                          inUse: item.isInstalled(in: model.paths.models) && model.settings.fluidAudioModel == item) {
                     if model.downloadID == item.id {
-                        ProgressView().controlSize(.small)
-                        Button(L("Cancel")) { model.downloadTask?.cancel() }
+                        DownloadStatus(model: model)
                     } else if item.isInstalled(in: model.paths.models) {
                         if model.settings.fluidAudioModel != item {
                             Button(L("Use")) { model.settings.fluidAudioModelID = item.id }
@@ -580,6 +577,24 @@ private struct ModelChoice: View {
             Label(L("This model is not in the service's preset list. Fetch the model list to check it."), systemImage: "exclamationmark.triangle.fill")
                 .font(.caption).foregroundStyle(.orange)
         }
+    }
+}
+
+/// A download in progress: how far it has got, once the first part has arrived, and the way to stop it.
+private struct DownloadStatus: View {
+    let model: AppModel
+    var body: some View {
+        if let progress = model.downloadProgress {
+            Text(progress.formatted(.percent.precision(.fractionLength(0)).locale(InterfaceLanguage.current.locale)))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+            ProgressView(value: progress)
+                .progressViewStyle(.circular)
+                .controlSize(.small)
+        } else {
+            ProgressView().controlSize(.small)
+        }
+        Button(L("Cancel")) { model.downloadTask?.cancel() }
     }
 }
 

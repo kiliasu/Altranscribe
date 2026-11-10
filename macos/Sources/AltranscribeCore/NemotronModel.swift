@@ -47,16 +47,23 @@ public struct NemotronModel: Identifiable, Sendable {
         }
     }
 
-    public func download(to models: URL) async throws -> URL {
+    /// `progress` receives the part of the model's files that has arrived, from 0 to 1.
+    public func download(to models: URL, progress: (@Sendable (Double) -> Void)? = nil) async throws -> URL {
         let target = directory(in: models)
         if isComplete(at: target) { return target }
         let staging = models.appendingPathComponent(".\(id)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: staging) }
+        let total = Double(max(1, bytes))
+        var finished: Int64 = 0
         for file in files {
             try Task.checkCancellation()
             let url = URL(string: "https://huggingface.co/\(repository)/resolve/\(revision)/\(file.name)")!
-            let (temporary, response) = try await URLSession.shared.download(from: url)
+            let earlier = finished
+            var received: (@Sendable (Int64) -> Void)?
+            if let progress { received = { bytes in progress(min(1, Double(earlier + bytes) / total)) } }
+            let (temporary, response) = try await FileDownload.fetch(url, expected: file.bytes, received: received)
+            finished += file.bytes
             defer { try? FileManager.default.removeItem(at: temporary) }
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 throw AppError("Nemotron model download failed. Please try again.")

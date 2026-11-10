@@ -41,6 +41,14 @@ import AltranscribeCore
         }
     }
 
+    private var selectedTranscript: UUID? {
+        if case .transcript(let id) = model.destination { return id }
+        return nil
+    }
+    private func selectedRecord() -> TranscriptRecord? {
+        selectedTranscript.flatMap { id in model.records.first { $0.id == id } }
+    }
+
     var body: some Scene {
         Window(L("Altranscribe"), id: "main") {
             ContentView(model: model)
@@ -61,6 +69,34 @@ import AltranscribeCore
                 Button(L("Import Audio or Video…")) { model.chooseFiles() }
                     .keyboardShortcut("o")
             }
+            // The selected transcript's commands, as its toolbar and the sidebar's menu offer them. They are
+            // enabled by which transcript is selected; its text, which changes with every word of a running
+            // session, is only looked up when a command is chosen.
+            CommandGroup(replacing: .saveItem) {
+                Button(L("Copy Transcript")) { if let record = selectedRecord() { model.copy(record) } }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
+                    .disabled(selectedTranscript == nil)
+                Menu(L("Export")) {
+                    ForEach(ExportFormat.allCases) { format in
+                        Button(format.title + "…") { if let record = selectedRecord() { model.export(record, format: format) } }
+                    }
+                }
+                .disabled(selectedTranscript == nil)
+                Divider()
+                Button(L("Rename…")) { model.renamingRecordID = selectedTranscript }
+                    .disabled(selectedTranscript == nil || model.busy)
+                Button(L("Generate Summary")) { if let record = selectedRecord() { model.postProcess(record, summary: true) } }
+                    .disabled(selectedTranscript == nil || model.busy)
+                Button(L("Translate Transcript")) { if let record = selectedRecord() { model.postProcess(record, summary: false) } }
+                    .disabled(selectedTranscript == nil || model.busy)
+                Divider()
+                // No shortcut: ⌘⌫ belongs to the text being edited, a title or the search. The Delete key
+                // deletes the transcript selected in the sidebar.
+                Button(L("Delete Transcript…")) { model.pendingDeletion = selectedTranscript }
+                    .disabled(selectedTranscript == nil || model.busy)
+            }
+            // There is no help book; the Help menu keeps its search field.
+            CommandGroup(replacing: .help) { }
             CommandGroup(before: .toolbar) {
                 Button(L("Live Transcription")) { model.destination = .live }
                     .keyboardShortcut("1")

@@ -24,6 +24,8 @@ enum LiveState: Equatable {
 struct TranscriptScroll<Header: View>: View {
     let record: TranscriptRecord
     var live: LiveState?
+    /// Words from the sidebar's search: marked wherever the transcript has them, the first place brought into view.
+    var highlight = ""
     private let header: (TranscriptRecord) -> Header
     @AppStorage("transcriptTextSize") private var textSize = 15.0
     @Environment(\.appearsActive) private var appearsActive
@@ -34,8 +36,9 @@ struct TranscriptScroll<Header: View>: View {
     @State private var scrollPhase = ScrollPhase.idle
     @State private var surroundings = Surroundings()
 
-    init(record: TranscriptRecord, live: LiveState? = nil, @ViewBuilder header: @escaping (TranscriptRecord) -> Header) {
-        self.record = record; self.live = live; self.header = header
+    init(record: TranscriptRecord, live: LiveState? = nil, highlight: String = "",
+         @ViewBuilder header: @escaping (TranscriptRecord) -> Header) {
+        self.record = record; self.live = live; self.highlight = highlight; self.header = header
         _follow = State(initialValue: live != nil)
     }
 
@@ -47,17 +50,30 @@ struct TranscriptScroll<Header: View>: View {
     }
 
     var body: some View {
+        ScrollViewReader { reader in
+            transcript
+                // Opened from a search, or searched while open: the first line that has the words comes
+                // into view. A transcript that is still growing stays with its latest line.
+                .onChange(of: highlight, initial: true) { _, words in
+                    guard live == nil, let line = SearchHighlight.firstLine(with: words, in: record) else { return }
+                    Task { @MainActor in reader.scrollTo(line, anchor: .center) }
+                }
+        }
+    }
+
+    private var transcript: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 header(record)
                 if let summary = record.summary {
-                    SummaryCard(summary: summary, textSize: textSize)
+                    SummaryCard(summary: summary, textSize: textSize, highlight: highlight)
                         .padding(.bottom, 20)
                 }
                 ForEach(record.segments) { segment in
                     SegmentRow(segment: segment, textSize: textSize,
                                streaming: live != nil && appearsActive && segment.id == record.segments.last?.id,
-                               current: following ? segment.id == record.segments.last?.id : nil).equatable()
+                               current: following ? segment.id == record.segments.last?.id : nil,
+                               highlight: highlight).equatable()
                 }
                 if record.segments.isEmpty && live == nil {
                     Text(L("No speech was transcribed."))
@@ -154,6 +170,13 @@ struct SegmentRow: View, Equatable {
     let textSize: Double
     var streaming = false
     var current: Bool?
+    var highlight = ""
+
+    /// A line's words: settling in as they arrive, or with the searched words marked.
+    @ViewBuilder private func words(_ text: String) -> some View {
+        if highlight.isEmpty { StreamingText(text, active: streaming) }
+        else { Text(SearchHighlight.marked(text, highlight)) }
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 18) {
@@ -163,14 +186,14 @@ struct SegmentRow: View, Equatable {
                 .frame(width: 58, alignment: .trailing)
                 .help(segment.estimated ? L("This timestamp is estimated") : L("Audio timestamp"))
             VStack(alignment: .leading, spacing: textSize * 0.4) {
-                StreamingText(segment.text, active: streaming)
+                words(segment.text)
                     .font(.system(size: textSize))
                     .lineSpacing(textSize * 0.3)
                 if let translation = segment.translation {
                     if segment.translationIsProvisional == true {
                         Text(L("Provisional translation")).font(.caption).foregroundStyle(.tertiary)
                     }
-                    StreamingText(translation, active: streaming)
+                    words(translation)
                         .font(.system(size: textSize))
                         .lineSpacing(textSize * 0.3)
                         .foregroundStyle(.secondary)
@@ -234,15 +257,42 @@ private struct ListeningIndicator: View {
     }
 }
 
+/// Marks each place a text has the words being searched for. It finds them the way the sidebar's search
+/// finds a transcript: without regard to case, accents or character width.
+enum SearchHighlight {
+    static func marked(_ text: String, _ words: String) -> AttributedString {
+        var marked = AttributedString(text)
+        for range in ranges(of: words, in: text) {
+            if let place = Range(range, in: marked) { marked[place].backgroundColor = .yellow.opacity(0.45) }
+        }
+        return marked
+    }
+    static func ranges(of words: String, in text: String) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = [], start = text.startIndex
+        while !words.isEmpty, start < text.endIndex,
+              let range = text[start...].localizedStandardRange(of: words), !range.isEmpty {
+            ranges.append(range); start = range.upperBound
+        }
+        return ranges
+    }
+    static func firstLine(with words: String, in record: TranscriptRecord) -> UUID? {
+        guard !words.isEmpty else { return nil }
+        return record.segments.first {
+            $0.text.localizedStandardContains(words) || $0.translation?.localizedStandardContains(words) == true
+        }?.id
+    }
+}
+
 struct SummaryCard: View {
     let summary: String
     let textSize: Double
+    var highlight = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(L("Summary"), systemImage: "sparkles")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.tint)
-            Text(summary)
+            Text(SearchHighlight.marked(summary, highlight))
                 .font(.system(size: textSize))
                 .lineSpacing(textSize * 0.3)
                 .textSelection(.enabled)
@@ -350,7 +400,7 @@ struct TranscriptPage: View {
     }
 
     var body: some View {
-        TranscriptScroll(record: record, live: live) { record in
+        TranscriptScroll(record: record, live: live, highlight: model.search) { record in
             RecordHeader(model: model, record: record)
             if model.postProcessingID == record.id {
                 HStack(spacing: 10) {

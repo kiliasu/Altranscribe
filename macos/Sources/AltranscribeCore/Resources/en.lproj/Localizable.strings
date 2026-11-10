@@ -194,7 +194,6 @@
 "The original media file will be kept." = "The original media file will be kept.";
 "The request did not complete. It was not retried." = "The request did not complete. It was not retried.";
 "The selected model is not downloaded yet." = "The selected model is not downloaded yet.";
-"This deletes the transcript from this recording." = "This deletes the transcript from this recording.";
 "This file has no readable audio track." = "This file has no readable audio track.";
 "This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe." = "This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe.";
 "This model does not accept vocabulary hints. This app uses its text output without speaker labels." = "This model does not accept vocabulary hints. This app uses its text output without speaker labels.";
@@ -507,3 +506,8 @@
 "Recording could not be renamed: " = "Recording could not be renamed: ";
 
 "Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text." = "Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text.";
+
+"Subtitles (SRT)" = "Subtitles (SRT)";
+"The transcript and its saved audio move to the Trash." = "The transcript and its saved audio move to the Trash.";
+"The transcript moves to the Trash." = "The transcript moves to the Trash.";
+"This deletes the transcript." = "This deletes the transcript.";
