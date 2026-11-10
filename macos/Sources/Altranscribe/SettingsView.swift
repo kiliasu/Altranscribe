@@ -137,7 +137,7 @@ struct SettingsView: View {
                         .frame(width: 52, height: 52)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Altranscribe").font(.headline)
-                        Text((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.8.0") + " · macOS")
+                        Text((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0") + " · macOS")
                             .foregroundStyle(.secondary)
                     }
                 }
