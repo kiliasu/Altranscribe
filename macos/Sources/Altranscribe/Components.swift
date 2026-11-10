@@ -8,6 +8,8 @@ struct FlowLayout: Layout {
     var alignment: HorizontalAlignment = .leading
     var spacing: CGFloat = 8
     var lineSpacing: CGFloat = 8
+    /// Rows of about the same length, instead of full rows followed by a short one.
+    var balanced = false
 
     private struct Row { var items: [(index: Int, size: CGSize)] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
 
@@ -34,24 +36,48 @@ struct FlowLayout: Layout {
     }
 
     private func arrange(_ subviews: Subviews, in width: CGFloat) -> [Row] {
-        var rows = [Row()]
-        for index in subviews.indices {
-            var size = subviews[index].sizeThatFits(.unspecified)
+        let sizes = subviews.map { subview in
+            var size = subview.sizeThatFits(.unspecified)
             // A zero width is SwiftUI asking for the minimum size. Answering with text wrapped one word per
             // line demanded a towering minimum height; outside a scroll view that reached the window's
             // constraints and AppKit looped through layout passes. Keep each child whole on its own row.
             if width > 0, width.isFinite, size.width > width {
-                size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+                size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
                 size.width = min(size.width, width)
             }
-            if !rows[rows.count - 1].items.isEmpty && rows[rows.count - 1].width + spacing + size.width > width {
-                rows.append(Row())
-            }
-            rows[rows.count - 1].width += (rows[rows.count - 1].items.isEmpty ? 0 : spacing) + size.width
-            rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
-            rows[rows.count - 1].items.append((index, size))
+            return size
+        }
+        var rows: [Row] = [], index = 0
+        for count in Self.rowLengths(sizes.map(\.width), in: width, spacing: spacing, balanced: balanced) {
+            let items = sizes[index..<index + count]
+            rows.append(Row(items: items.enumerated().map { (index + $0.offset, $0.element) },
+                            width: items.reduce(0) { $0 + $1.width } + spacing * CGFloat(count - 1),
+                            height: items.map(\.height).max() ?? 0))
+            index += count
         }
         return rows
+    }
+
+    /// How many items each row holds. Rows fill up in turn; balanced rows are as narrow as they can be
+    /// without needing a further row, which makes them about as long as each other.
+    static func rowLengths(_ widths: [CGFloat], in width: CGFloat, spacing: CGFloat, balanced: Bool) -> [Int] {
+        func fill(_ width: CGFloat) -> [Int] {
+            var rows = [0], used: CGFloat = 0
+            for item in widths {
+                if rows[rows.count - 1] > 0 && used + spacing + item > width { rows.append(0); used = 0 }
+                used += (rows[rows.count - 1] > 0 ? spacing : 0) + item
+                rows[rows.count - 1] += 1
+            }
+            return rows
+        }
+        let rows = fill(width)
+        guard balanced, rows.count > 1, width.isFinite else { return rows }
+        var narrow = widths.max() ?? 0, wide = width
+        while wide - narrow > 1 {
+            let middle = (narrow + wide) / 2
+            if fill(middle).count > rows.count { narrow = middle } else { wide = middle }
+        }
+        return fill(wide)
     }
 }
 
@@ -60,6 +86,47 @@ struct FlowLayout: Layout {
 enum Radius {
     static let group: CGFloat = 12
     static let region: CGFloat = 18
+}
+
+/// Content dissolves where it passes under the window's toolbar and under a bar at the bottom of its page.
+/// Neither has a background of its own: a band across the window reads as a highlight, and the toolbar
+/// keeps to its glass controls. Without this, text scrolling beneath shows through the page's title, the
+/// session's clock and every other label that has no backing. The fade is a mask on the content, so it
+/// needs no colour that could differ from the window behind it.
+private struct BarFade: ViewModifier {
+    /// How far the fade reaches from a bar's edge: a little way under the bar, where its controls have not
+    /// begun yet, and further into the content.
+    private static let under: CGFloat = 8, beyond: CGFloat = 16
+
+    func body(content: Content) -> some View {
+        content.mask {
+            GeometryReader { geometry in
+                let insets = geometry.safeAreaInsets
+                VStack(spacing: 0) {
+                    Self.edge(insets.top, at: .top)
+                    Rectangle()
+                    Self.edge(insets.bottom, at: .bottom)
+                }
+                .ignoresSafeArea()
+            }
+        }
+    }
+
+    /// Clear under the bar, then opaque by a little way past its edge. With no bar, the content fades
+    /// over that little way at the edge of its own area: under a panel above it, or at the window's edge.
+    private static func edge(_ inset: CGFloat, at edge: VerticalEdge) -> some View {
+        let height = inset + beyond
+        return LinearGradient(stops: [.init(color: .clear, location: 0),
+                                      .init(color: .clear, location: max(0, inset - under) / height),
+                                      .init(color: .black, location: 1)],
+                              startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
+            .frame(height: height)
+    }
+}
+
+extension View {
+    /// For a scroll view, list or form that reaches under the toolbar or a bottom bar.
+    func fadesUnderBars() -> some View { modifier(BarFade()) }
 }
 
 /// A bar's two groups of controls: one at each edge of a line, or one above the other where the line is

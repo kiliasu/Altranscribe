@@ -120,6 +120,8 @@ private struct CaptionView: View {
                     .defaultScrollAnchor(.top, for: .sizeChanges)
                     .defaultScrollAnchor(.top, for: .alignment)
                     .scrollIndicators(.never)
+                    // Earlier sentences dissolve under the panel's controls instead of being cut off there.
+                    .fadesUnderBars()
                     .task(id: contentHeight) {
                         await Task.yield()
                         guard !Task.isCancelled else { return }

@@ -57,7 +57,7 @@ import AltranscribeCore
                 .onAppear { delegate.model = model }
                 .onOpenURL { model.addFiles([$0]) }
         }
-        .defaultSize(width: 1180, height: 780)
+        .defaultSize(width: 1240, height: 800)
         .windowResizability(.contentMinSize)
         .onChange(of: interfaceLanguage) { _, value in
             Self.updateSystemLanguage(value)

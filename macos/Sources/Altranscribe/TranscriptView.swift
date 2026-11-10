@@ -141,6 +141,7 @@ struct TranscriptScroll<Header: View>: View {
         .onChange(of: live != nil) { _, growing in
             if growing, !follow { follow = true; position.scrollTo(edge: .bottom) }
         }
+        .fadesUnderBars()
         .overlay(alignment: .bottom) {
             ZStack {
                 if live != nil && !follow {
@@ -152,7 +153,7 @@ struct TranscriptScroll<Header: View>: View {
                     .transition(.rise)
                 }
             }
-            .padding(.bottom, 14)
+            .padding(.bottom, 6)
             // Only the button moves when the reader leaves the end or returns to it; the text does not.
             .animation(Motion.content, value: live != nil && !follow)
         }

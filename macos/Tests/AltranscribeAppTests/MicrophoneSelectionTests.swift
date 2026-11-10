@@ -31,6 +31,16 @@ import AltranscribeCore
         let control = try XCTUnwrap(popup(in: picker.view), "Use the native microphone popup, including its title and keyboard support")
         XCTAssertFalse(control.title.isEmpty)
         XCTAssertGreaterThan(control.numberOfItems, 0)
+        if let device = MicrophoneDevice.available().first(where: { $0.audioID == MicrophoneDevice.defaultID }) {
+            // Closed, the control names the microphone in use; its menu says that the first entry follows the system.
+            let delegate = try XCTUnwrap(control.menu?.delegate)
+            let menu = try XCTUnwrap(control.menu)
+            XCTAssertEqual(control.title, device.name)
+            delegate.menuWillOpen?(menu)
+            XCTAssertEqual(menu.items.first?.title, L("System Default · %@", device.name))
+            delegate.menuDidClose?(menu)
+            XCTAssertEqual(control.title, device.name)
+        }
         XCTAssertFalse(control.isBordered, "The system glass effect must be the only background")
         let frame = control.frame
         XCTAssertEqual(frame.height, 28, "The entire large glass button must be clickable, including its vertical margins")

@@ -8,7 +8,9 @@ struct LiveView: View {
     var body: some View {
         LiveSession(model: model)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaBar(edge: .bottom) {
+        // A plain inset: `safeAreaBar` lightens the strip its bar stands on, a band across the page that
+        // the transcript's fade under the bar makes unnecessary.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             TransportBar(model: model)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
@@ -95,6 +97,7 @@ private struct LiveWelcome: View {
         // Content shorter than the page sits in the middle; taller content scrolls from the top.
         .defaultScrollAnchor(.center, for: .alignment)
         .scrollBounceBehavior(.basedOnSize)
+        .fadesUnderBars()
         .animation(Motion.content, value: model.source)
         .animation(Motion.content, value: model.phase == .preparing)
     }
@@ -110,7 +113,7 @@ private struct SessionSetup: View {
     var body: some View {
         let settings = model.settings
         VStack(spacing: 16) {
-            FlowLayout(alignment: .center, spacing: 8, lineSpacing: 8) {
+            FlowLayout(alignment: .center, spacing: 8, lineSpacing: 8, balanced: true) {
                 speech
                 if settings.offersLanguageChoice(live: true) { language.transition(.pop) }
                 translation
@@ -118,6 +121,7 @@ private struct SessionSetup: View {
                     .toggleStyle(.button)
                     .help(L("Creates a summary with the text model when the session ends."))
                 if settings.needsTextModel(live: true) { textModel.transition(.pop) }
+                SaveRecordingToggle(model: model)
             }
             if let notice { notice.transition(.rise) }
         }
@@ -296,17 +300,8 @@ struct TransportBar: View {
                 Label(L("Saved"), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) {
-                        AudioSourcePicker(selection: $model.source).fixedSize()
-                        saveRecording
-                    }
-                    VStack(spacing: 12) {
-                        AudioSourcePicker(selection: $model.source).fixedSize()
-                        saveRecording
-                    }
-                }
-                .disabled(model.busy)
+                AudioSourcePicker(selection: $model.source).fixedSize()
+                    .disabled(model.busy)
             }
         case .preparing, .finishing:
             HStack(spacing: 8) {
@@ -324,15 +319,6 @@ struct TransportBar: View {
         }
     }
 
-    private var saveRecording: some View {
-        Toggle(isOn: Binding(get: { model.settings.keepsRecording }, set: { model.settings.saveRecording = $0 })) {
-            Label(L("Save Recording"), systemImage: "waveform")
-        }
-        .toggleStyle(.button)
-        .help(L("Keep an audio file alongside the transcript. Paused audio is excluded."))
-        .accessibilityIdentifier("saveRecording")
-    }
-
     @ViewBuilder private var actions: some View {
         switch stage {
         case .idle:
@@ -347,6 +333,8 @@ struct TransportBar: View {
                     .tint(.red)
                     .disabled(model.busy || !model.canStart(live: true))
                     .help(L("Start Transcription") + " ⇧⌘R")
+                    // In a narrow column the microphone's name gives way before the button's title does.
+                    .layoutPriority(1)
             }
             .animation(reduceMotion ? .easeInOut(duration: 0.1) : Motion.quick, value: model.source)
         case .preparing, .finishing:

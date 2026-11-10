@@ -37,7 +37,8 @@ struct FilesView: View {
             model.addFiles(urls)
             return !urls.isEmpty
         } isTargeted: { targeted = $0 }
-        .safeAreaBar(edge: .bottom) {
+        // A plain inset, as on the live page: the queue fades out under the bar instead.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if !model.queue.isEmpty {
                 QueueBar(model: model)
                     .padding(.horizontal, 20)
@@ -68,6 +69,7 @@ private struct QueueList: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        .fadesUnderBars()
         .animation(Motion.content, value: model.queue.map(\.id))
     }
 }

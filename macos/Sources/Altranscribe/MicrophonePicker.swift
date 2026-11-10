@@ -89,10 +89,11 @@ struct MicrophonePicker: View {
     @State private var microphones = MicrophoneList()
     @Environment(\.isEnabled) private var isEnabled
 
+    private var defaultName: String? {
+        microphones.devices.first { $0.audioID == microphones.defaultID }?.name
+    }
     private var defaultTitle: String {
-        if let device = microphones.devices.first(where: { $0.audioID == microphones.defaultID }) {
-            L("System Default · %@", device.name)
-        } else { L("System Default") }
+        defaultName.map { L("System Default · %@", $0) } ?? L("System Default")
     }
     private var title: String {
         guard let selection else { return defaultTitle }
@@ -100,9 +101,11 @@ struct MicrophonePicker: View {
     }
 
     var body: some View {
+        // Closed, the control names the microphone in use, which fits; its menu says which entry follows the system.
         MicrophonePopup(selection: $selection, devices: microphones.devices, defaultTitle: defaultTitle,
-                        help: L("Microphone: %@", title))
-            .frame(width: 180, height: 28)
+                        closedDefaultTitle: defaultName ?? L("System Default"), help: L("Microphone: %@", title))
+            // Wide enough for a built-in microphone's name; narrower only where the bar has no room left.
+            .frame(minWidth: 120, idealWidth: 212, maxWidth: 212, minHeight: 28, maxHeight: 28)
             .glassEffect(.regular.interactive(isEnabled), in: .capsule)
     }
 }
@@ -110,7 +113,9 @@ struct MicrophonePicker: View {
 struct MicrophonePopup: NSViewRepresentable {
     @Binding var selection: String?
     let devices: [MicrophoneDevice]
+    /// The first entry's title in the open menu, and the shorter one the closed control shows for it.
     let defaultTitle: String
+    let closedDefaultTitle: String
     let help: String
 
     func makeCoordinator() -> Coordinator { Coordinator(selection: $selection) }
@@ -124,12 +129,14 @@ struct MicrophonePopup: NSViewRepresentable {
         control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         control.target = context.coordinator
         control.action = #selector(Coordinator.selectMicrophone(_:))
+        context.coordinator.control = control
         return control
     }
     func updateNSView(_ control: NSPopUpButton, context: Context) {
         context.coordinator.selection = $selection
         context.coordinator.reduceMotion = context.environment.accessibilityReduceMotion
-        var items = [("", defaultTitle)] + devices.map { ($0.id, $0.name) }
+        context.coordinator.defaultTitles = (defaultTitle, closedDefaultTitle)
+        var items = [("", context.coordinator.menuIsOpen ? defaultTitle : closedDefaultTitle)] + devices.map { ($0.id, $0.name) }
         let missing = selection != nil && !devices.contains { $0.id == selection }
         if let selection, missing { items.append((selection, L("Unavailable Microphone"))) }
         let index = items.firstIndex { $0.0 == (selection ?? "") } ?? 0
@@ -147,6 +154,7 @@ struct MicrophonePopup: NSViewRepresentable {
             }
             control.menu?.autoenablesItems = false
         }
+        control.menu?.delegate = context.coordinator
         for item in control.itemArray { item.isEnabled = !(missing && item.representedObject as? String == selection) }
         control.selectItem(at: index)
         control.isEnabled = context.environment.isEnabled
@@ -154,10 +162,24 @@ struct MicrophonePopup: NSViewRepresentable {
         control.setAccessibilityLabel(help)
     }
 
-    @MainActor final class Coordinator: NSObject {
+    @MainActor final class Coordinator: NSObject, NSMenuDelegate {
         var selection: Binding<String?>
         var reduceMotion = false
+        var defaultTitles = (open: "", closed: "")
+        weak var control: NSPopUpButton?
+        private(set) var menuIsOpen = false
         init(selection: Binding<String?>) { self.selection = selection }
+
+        // The first entry reads "System Default · name" while the menu is open and "name" on the closed control.
+        func menuWillOpen(_ menu: NSMenu) {
+            menuIsOpen = true
+            menu.items.first?.title = defaultTitles.open
+        }
+        func menuDidClose(_ menu: NSMenu) {
+            menuIsOpen = false
+            menu.items.first?.title = defaultTitles.closed
+            control?.synchronizeTitleAndSelectedItem()
+        }
         @objc func selectMicrophone(_ control: NSPopUpButton) {
             guard let uid = control.selectedItem?.representedObject as? String else { return }
             let selected = uid.isEmpty ? nil : uid

@@ -322,7 +322,8 @@ struct SessionInspector: View {
         let settings = model.settings
         Form {
             Section(L("Recognition")) {
-                Picker(L("Speech Engine"), selection: $model.settings.speechProvider) {
+                // The section's title says what the engine is for; the short label leaves room for its name.
+                Picker(L("Engine"), selection: $model.settings.speechProvider) {
                     ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
                 }
                 speechModel
@@ -347,6 +348,14 @@ struct SessionInspector: View {
                 }
                 OpenSettingsButton(title: settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…"),
                                    page: .speech, model: model)
+            }
+            if live {
+                Section {
+                    SaveRecordingToggle(model: model, titled: true)
+                } footer: {
+                    Text(L("Keep an audio file alongside the transcript. Paused audio is excluded."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             if !live && settings.speechProvider.isLocal {
                 Section {
@@ -390,6 +399,7 @@ struct SessionInspector: View {
             }
         }
         .formStyle(.grouped)
+        .fadesUnderBars()
         .disabled(model.busy)
         .animation(Motion.content, value: model.modelReady)
         .animation(Motion.content, value: settings.translate || settings.summarize)
@@ -416,14 +426,6 @@ struct SessionInspector: View {
                 }
                 ForEach(choices) { Text($0.title).tag($0.id) }
             }
-        }
-    }
-
-    private var compute: String {
-        switch model.settings.speechProvider {
-        case .fluidAudio: "Core ML · CPU + Neural Engine"
-        case .appleSpeech: L("Managed by macOS")
-        default: model.settings.speechProvider == .whisper && model.settings.useGPU ? "Metal GPU" : "CPU"
         }
     }
 }
@@ -461,6 +463,7 @@ struct RecordInspector: View {
             }
         }
         .formStyle(.grouped)
+        .fadesUnderBars()
         .disabled(model.busy)
     }
 }

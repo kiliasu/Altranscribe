@@ -18,6 +18,7 @@ struct SettingsView: View {
         // only the sections inside rise into place.
         Form { pane }
         .formStyle(.grouped)
+        .fadesUnderBars()
         .frame(width: embedded ? nil : 600, height: embedded ? nil : 620)
         .background { if !embedded { UnifiedToolbarWindow() } }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -663,6 +664,7 @@ struct CredentialEditor: View {
             HStack(spacing: 8) {
                 SecureField("", text: $key, prompt: Text(configured ? L("Enter a new key to replace the saved one") : L("Paste the key for this service")))
                     .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.leading)
                     .frame(maxWidth: 360)
                     .onSubmit(save)
                 Button(L("Save Key"), action: save)
