@@ -53,5 +53,26 @@ final class CloudSpeechTests: XCTestCase {
         let config = try XCTUnwrap(asr["inputAudioTranscription"] as? [String: Any])
         XCTAssertEqual(config["languageCodes"] as? [String], ["cmn-Hans-CN"])
         XCTAssertEqual(config["customVocabulary"] as? [String], ["Swift"])
+        for provider in [SpeechProvider.compatible, .gemini] {
+            settings.speechProvider = provider; settings.translate = true
+            settings.vocabulary = Array(repeating: "term", count: 1001).joined(separator: ",")
+            XCTAssertFalse(settings.supportsVocabulary(live: true))
+            XCTAssertFalse(settings.offersLanguageChoice(live: true))
+            XCTAssertTrue(settings.supportsVocabulary(live: false))
+            XCTAssertTrue(settings.offersLanguageChoice(live: false))
+            XCTAssertNoThrow(try settings.cloudSetup(), "Hidden, unused terms must not block direct translation")
+            settings.translate = false
+            XCTAssertTrue(settings.supportsVocabulary(live: true))
+            if provider == .gemini { XCTAssertThrowsError(try settings.cloudSetup()) }
+        }
+        settings.speechProvider = .compatible; settings.speechModel = OpenAITranscriptionModel.diarize.id
+        XCTAssertFalse(settings.supportsVocabulary(live: false))
+        XCTAssertTrue(settings.supportsVocabulary(live: true), "A file model must not hide the live model's supported terms")
+        for provider in [SpeechProvider.nemotron, .fluidAudio, .whisper, .appleSpeech] {
+            settings.speechProvider = provider
+            let supported = provider == .whisper || provider == .appleSpeech
+            XCTAssertEqual(settings.supportsVocabulary(live: false), supported)
+            XCTAssertEqual(settings.supportsVocabulary(live: true), supported)
+        }
     }
 }

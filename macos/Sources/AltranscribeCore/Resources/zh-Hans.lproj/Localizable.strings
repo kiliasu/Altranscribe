@@ -296,7 +296,9 @@
 
 "The preview translation service did not confirm the final output. Review the last sentence." = "预览版翻译服务未确认最终输出，请核对最后一句。";
 
-"Vocabulary hints apply to transcription, not direct speech translation." = "词汇提示用于转录，不适用于直接语音翻译。";
+"File Transcription Language" = "文件转写语言";
+"Used for live transcription only with the selected models." = "当前模型组合仅在实时转录时使用这些术语。";
+"Used for file transcription. The selected live translation mode does not use these terms." = "用于文件转写。当前的实时直接翻译模式不会使用这些术语。";
 
 "The service timed out. The request was not retried; try again later or choose another model." = "服务响应超时。请求未自动重试，请稍后再试或选择其他模型。";
 

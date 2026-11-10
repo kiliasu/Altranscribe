@@ -34,7 +34,7 @@ extension AppSettings {
             return ["type": "session.update", "session": ["type": "transcription", "audio": ["input": [
                 "format": ["type": "audio/pcm", "rate": 24000], "transcription": transcription, "turn_detection": NSNull()]]]]
         }
-        guard vocabularyTerms.count <= 1000 else { throw AppError("Gemini accepts up to 1,000 vocabulary terms.") }
+        guard direct || vocabularyTerms.count <= 1000 else { throw AppError("Gemini accepts up to 1,000 vocabulary terms.") }
         var transcription: [String: Any] = ["languageCodes": sourceLanguage == "auto" ? [] : [geminiLanguage]]
         if !vocabularyTerms.isEmpty { transcription["customVocabulary"] = vocabularyTerms }
         var setup: [String: Any] = ["model": "models/\(liveSpeechModel)",

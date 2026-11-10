@@ -296,7 +296,9 @@
 
 "The preview translation service did not confirm the final output. Review the last sentence." = "The preview translation service did not confirm the final output. Review the last sentence.";
 
-"Vocabulary hints apply to transcription, not direct speech translation." = "Vocabulary hints apply to transcription, not direct speech translation.";
+"File Transcription Language" = "File Transcription Language";
+"Used for live transcription only with the selected models." = "Used for live transcription only with the selected models.";
+"Used for file transcription. The selected live translation mode does not use these terms." = "Used for file transcription. The selected live translation mode does not use these terms.";
 
 "The service timed out. The request was not retried; try again later or choose another model." = "The service timed out. The request was not retried; try again later or choose another model.";
 

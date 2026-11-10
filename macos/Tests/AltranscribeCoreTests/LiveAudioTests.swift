@@ -16,6 +16,21 @@ final class LiveAudioTests: XCTestCase {
         XCTAssertTrue(SpeechSentenceBoundary.shouldMerge(fragment, nextStart: 2.3))
         XCTAssertFalse(SpeechSentenceBoundary.shouldMerge(fragment, nextStart: 7))
         XCTAssertFalse(SpeechSentenceBoundary.shouldMerge(TranscriptSegment(start: 0, end: 2, text: "That is correct."), nextStart: 2.3))
+        let explanation = TranscriptSegment(start: 0, end: 5, text: "Since the transistor itself is a nonlinear device we need")
+        XCTAssertTrue(SpeechSentenceBoundary.shouldMerge(explanation, nextStart: 5.2),
+                      "A longer unfinished clause still needs the continuation after a short pause")
+        XCTAssertFalse(SpeechSentenceBoundary.shouldMerge(explanation, nextStart: 8), "Keep meaningful pauses")
+        XCTAssertFalse(SpeechSentenceBoundary.shouldMerge(explanation, nextStart: 13), "Bound a growing caption")
+        var assembler = LiveSentenceAssembler()
+        _ = assembler.update([explanation], partial: nil)
+        var conclusion = TranscriptSegment(start: 5.2, end: 8, text: "an equivalent circuit.")
+        XCTAssertEqual(assembler.update([], partial: conclusion).partial?.id, explanation.id)
+        conclusion.text = "an equivalent circuit to calculate the gain."
+        let joined = assembler.update([conclusion], partial: nil)
+        XCTAssertNil(joined.partial)
+        XCTAssertEqual(joined.finalized.map(\.text), [explanation.text + " " + conclusion.text])
+        var revision = explanation; revision.text = "Since the transistor is a nonlinear device we need"
+        XCTAssertEqual(assembler.update([revision], partial: nil).finalized.first?.text, revision.text + " " + conclusion.text)
         XCTAssertFalse(SpeechSentenceBoundary.isComplete("Ask Dr."))
         let continuous = ["We"] + Array(repeating: " continue", count: 70)
         let cut = SpeechSentenceBoundary.cut(tokens: continuous[...], times: continuous.indices.map { Double($0) * 0.3 }[...], quiet: 0, closing: false)

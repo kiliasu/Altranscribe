@@ -155,6 +155,12 @@ public struct AppSettings: Codable, Equatable, Sendable {
         default: true
         }
     }
+    /// A live cloud session has its own model: it takes terms when it transcribes and none when it
+    /// translates speech directly, whatever the model chosen for files can do.
+    public func supportsVocabulary(live: Bool) -> Bool {
+        if live && usesCloudLive { return !usesDirectSpeechTranslation }
+        return supportsVocabulary
+    }
 
     public var effectiveModelPath: String { modelPath }
 
@@ -230,6 +236,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Engines whose spoken language the user picks; the others fix it through the chosen model or locale.
     public var offersLanguageChoice: Bool {
         speechProvider == .whisper || !speechProvider.isLocal || (speechProvider == .nemotron && nemotronModel.multilingual)
+    }
+    /// Direct speech translation is not told the source language, so a live session has none to choose.
+    public func offersLanguageChoice(live: Bool) -> Bool {
+        offersLanguageChoice && !(live && usesDirectSpeechTranslation)
     }
     /// Translation of files and summaries always need the text service; live direct translation does not.
     public func needsTextModel(live: Bool) -> Bool { (translate && !(live && usesDirectSpeechTranslation)) || summarize }

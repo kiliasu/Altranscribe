@@ -147,6 +147,16 @@ struct SettingsView: View {
 
     // MARK: - Speech
 
+    /// This page serves live sessions and files alike, and the two can use different models. Say which
+    /// of them the terms reach when it is only one.
+    private var vocabularyNote: String {
+        if !model.settings.supportsVocabulary { return L("Used for live transcription only with the selected models.") }
+        if !model.settings.supportsVocabulary(live: true) {
+            return L("Used for file transcription. The selected live translation mode does not use these terms.")
+        }
+        return L("Helps recognize names and terms without rewriting the original text.")
+    }
+
     private var speech: some View {
         Group {
             Section {
@@ -154,7 +164,8 @@ struct SettingsView: View {
                     ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
                 }
                 if model.settings.offersLanguageChoice {
-                    Picker(L("Language"), selection: $model.settings.sourceLanguage) {
+                    Picker(model.settings.offersLanguageChoice(live: true) ? L("Language") : L("File Transcription Language"),
+                           selection: $model.settings.sourceLanguage) {
                         ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
                     }
                 }
@@ -184,12 +195,12 @@ struct SettingsView: View {
             case .appleSpeech: appleSpeech
             case .compatible, .gemini: cloudSpeech
             }
-            if model.settings.supportsVocabulary {
+            if model.settings.supportsVocabulary || model.settings.supportsVocabulary(live: true) {
                 Section {
                     SettingsTextField(L("Vocabulary"), text: $model.settings.vocabulary,
                                       prompt: L("Names and terms, separated by commas"), multiline: true)
                 } header: { Text(L("Vocabulary")) }
-                  footer: { Text(L("Helps recognize names and terms without rewriting the original text.")) }
+                  footer: { Text(vocabularyNote) }
             }
         }
         .disabled(model.busy)

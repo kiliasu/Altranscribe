@@ -319,7 +319,7 @@ struct SessionInspector: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                if settings.offersLanguageChoice {
+                if settings.offersLanguageChoice(live: live) {
                     Picker(L("Language"), selection: $model.settings.sourceLanguage) {
                         ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
                     }
@@ -361,7 +361,7 @@ struct SessionInspector: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if settings.supportsVocabulary {
+            if settings.supportsVocabulary(live: live) {
                 Section {
                     TextField(L("Names and terms, separated by commas"), text: $model.settings.vocabulary, axis: .vertical)
                         .lineLimit(3...6)
@@ -369,9 +369,7 @@ struct SessionInspector: View {
                 } header: {
                     Text(L("Vocabulary"))
                 } footer: {
-                    Text(live && settings.usesDirectSpeechTranslation ?
-                         L("Vocabulary hints apply to transcription, not direct speech translation.") :
-                         L("Helps recognize names and terms without rewriting the original text."))
+                    Text(L("Helps recognize names and terms without rewriting the original text."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

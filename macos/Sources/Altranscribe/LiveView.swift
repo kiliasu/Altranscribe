@@ -112,7 +112,7 @@ private struct SessionSetup: View {
         VStack(spacing: 16) {
             FlowLayout(alignment: .center, spacing: 8, lineSpacing: 8) {
                 speech
-                if settings.offersLanguageChoice { language.transition(.pop) }
+                if settings.offersLanguageChoice(live: true) { language.transition(.pop) }
                 translation
                 Toggle(isOn: $model.settings.summarize) { Label(L("Summary"), systemImage: "sparkles") }
                     .toggleStyle(.button)
