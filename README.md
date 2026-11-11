@@ -63,7 +63,7 @@ Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a 
 
 ![A saved transcript with its AI title and summary](docs/images/record-en.png)
 
-Recognition and translation can contain errors, and timestamps marked "≈" are estimates. Speaker labels, WebVTT export and playback inside the app are not available. Caption settings are remembered; on Windows and Android the interface language and theme reset when the app closes.
+Recognition and translation can contain errors, and timestamps marked "≈" are estimates. Speaker labels, WebVTT export and playback inside the app are not available. The app opens the way it was left: the interface language (the system's on a first run), theme, text size, languages, audio sources and options are remembered, like the caption settings.
 
 ## macOS
 

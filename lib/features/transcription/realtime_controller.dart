@@ -3,6 +3,7 @@ import 'package:altranscribe/data/services/logging/app_log.dart';
 
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -751,42 +752,67 @@ class RealtimeController extends ChangeNotifier {
     unawaited(estimateSharedGpu());
   }
 
+  /// What the interface remembers between runs: its language and look, and
+  /// the languages, sources and options last chosen. Read before the first
+  /// frame, so the app opens the way it was left.
+  late final Map<String, Object?> interface = Map<String, Object?>.of(
+    (store.loadSettingsSync()['interface'] as Map?)?.cast<String, Object?>() ??
+        const {},
+  );
+
+  /// Keeps one of the interface's choices. It is written with the other
+  /// settings once those have been loaded; earlier it would replace them
+  /// with defaults, so it waits for the next save.
+  void remember(String key, Object? value) {
+    if (jsonEncode(interface[key]) == jsonEncode(value)) return;
+    interface[key] = value;
+    if (!initialized || _disposed) return;
+    unawaited(
+      store.saveSettings(_settings()).catchError((Object e) {
+        AppLog.instance.warn('settings', 'Interface choice not saved: $e');
+      }),
+    );
+  }
+
   Future<void> saveSettings() async {
-    await store.saveSettings({
-      'executable': executable,
-      'model': model,
-      'computeMode': computeMode.name,
-      'nemotronModel': nemotronModel,
-      'transcribeModel': transcribeModel,
-      'transcribeExecutable': transcribeExecutable,
-      'liveLocalLlm': liveLocalLlm,
-      'translationAddress': translationAddress,
-      'translationModel': translationModel,
-      'llmProvider': llmProvider.name,
-      'compatibleKeysScoped': true,
-      'generateSummary': generateSummary,
-      'captions': captionPreferences.toJson(),
-      'translationContext': translationContext.toJson(),
-      'translationRules': translationRules,
-      'microphoneDevice': microphoneDevice,
-      'systemDevice': systemDevice,
-      'microphoneDenoise': microphoneDenoise,
-      'microphoneAutoGain': microphoneAutoGain,
-      'systemDenoise': systemDenoise,
-      'systemAutoGain': systemAutoGain,
-      'speechProvider': speechProvider.name,
-      'cloudDirectTranslation': cloudDirectTranslation,
-      'cloudAutoLanguage': cloudAutoLanguage,
-      'useRemote': useRemote,
-      'hostLlm': hostLlm,
-      'remoteLlmModel': remoteLlmModel,
-      'remoteAddress': remoteConnection.address,
-      'remoteName': remoteConnection.name,
-      'remoteHostId': remoteConnection.hostId,
-    });
+    await store.saveSettings(_settings());
     _notify();
     unawaited(estimateSharedGpu());
   }
+
+  Map<String, Object?> _settings() => {
+    'interface': interface,
+    'executable': executable,
+    'model': model,
+    'computeMode': computeMode.name,
+    'nemotronModel': nemotronModel,
+    'transcribeModel': transcribeModel,
+    'transcribeExecutable': transcribeExecutable,
+    'liveLocalLlm': liveLocalLlm,
+    'translationAddress': translationAddress,
+    'translationModel': translationModel,
+    'llmProvider': llmProvider.name,
+    'compatibleKeysScoped': true,
+    'generateSummary': generateSummary,
+    'captions': captionPreferences.toJson(),
+    'translationContext': translationContext.toJson(),
+    'translationRules': translationRules,
+    'microphoneDevice': microphoneDevice,
+    'systemDevice': systemDevice,
+    'microphoneDenoise': microphoneDenoise,
+    'microphoneAutoGain': microphoneAutoGain,
+    'systemDenoise': systemDenoise,
+    'systemAutoGain': systemAutoGain,
+    'speechProvider': speechProvider.name,
+    'cloudDirectTranslation': cloudDirectTranslation,
+    'cloudAutoLanguage': cloudAutoLanguage,
+    'useRemote': useRemote,
+    'hostLlm': hostLlm,
+    'remoteLlmModel': remoteLlmModel,
+    'remoteAddress': remoteConnection.address,
+    'remoteName': remoteConnection.name,
+    'remoteHostId': remoteConnection.hostId,
+  };
 
   Future<void> setGenerateSummary(bool value) async {
     if (active) return;

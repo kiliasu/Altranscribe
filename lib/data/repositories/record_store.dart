@@ -33,6 +33,19 @@ class RecordStore {
         : {};
   }
 
+  /// The settings as last saved, read at once: for what the first frame
+  /// needs, such as the interface language. Anything unreadable counts as
+  /// nothing saved.
+  Map<String, dynamic> loadSettingsSync() {
+    try {
+      final file = File('${directory.path}/settings.json');
+      if (!file.existsSync()) return {};
+      return jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+    } on Object {
+      return {};
+    }
+  }
+
   Future<void> saveSettings(Map<String, Object?> value) => _write(
     'settings.json',
     Future.value(

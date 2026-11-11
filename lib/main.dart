@@ -12,7 +12,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await MobilePlatform.initialize();
   await startLogging();
-  runApp(const AltranscribeApp());
+  runApp(const AltranscribeApp(followSystemLanguage: true));
 }
 
 /// Diagnostics go to a folder the user can open; framework errors are logged

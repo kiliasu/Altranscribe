@@ -6,8 +6,16 @@ import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:altranscribe/features/captions/caption_host.dart';
 
 class AltranscribeApp extends StatefulWidget {
-  const AltranscribeApp({super.key, this.realtime});
+  const AltranscribeApp({
+    super.key,
+    this.realtime,
+    this.followSystemLanguage = false,
+  });
   final RealtimeController? realtime;
+
+  /// Until a language is chosen, use English unless the system's language
+  /// is Chinese. Off, the app starts in Chinese.
+  final bool followSystemLanguage;
 
   @override
   State<AltranscribeApp> createState() => _AltranscribeAppState();
@@ -20,6 +28,22 @@ class _AltranscribeAppState extends State<AltranscribeApp> {
   void initState() {
     super.initState();
     realtime = widget.realtime ?? RealtimeController.local();
+    // The saved look is read at once, so the first frame already has it.
+    final saved = realtime.interface;
+    english =
+        saved['english'] as bool? ??
+        (widget.followSystemLanguage &&
+            WidgetsBinding.instance.platformDispatcher.locale.languageCode !=
+                'zh');
+    themeMode =
+        ThemeMode.values.where((m) => m.name == saved['theme']).firstOrNull ??
+        ThemeMode.system;
+    palette =
+        AppPalette.values
+            .where((p) => p.name == saved['palette'])
+            .firstOrNull ??
+        AppPalette.amber;
+    reduceMotion = saved['reduceMotion'] == true;
     if (!realtime.initialized) realtime.initialize();
   }
 
@@ -29,10 +53,10 @@ class _AltranscribeAppState extends State<AltranscribeApp> {
     super.dispose();
   }
 
-  bool english = false;
-  ThemeMode themeMode = ThemeMode.system;
-  AppPalette palette = AppPalette.amber;
-  bool reduceMotion = false;
+  late bool english;
+  late ThemeMode themeMode;
+  late AppPalette palette;
+  late bool reduceMotion;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -65,10 +89,22 @@ class _AltranscribeAppState extends State<AltranscribeApp> {
       themeMode: themeMode,
       palette: palette,
       reduceMotion: reduceMotion,
-      onLocale: (value) => setState(() => english = value),
-      onTheme: (value) => setState(() => themeMode = value),
-      onPalette: (value) => setState(() => palette = value),
-      onMotion: (value) => setState(() => reduceMotion = value),
+      onLocale: (value) {
+        setState(() => english = value);
+        realtime.remember('english', value);
+      },
+      onTheme: (value) {
+        setState(() => themeMode = value);
+        realtime.remember('theme', value.name);
+      },
+      onPalette: (value) {
+        setState(() => palette = value);
+        realtime.remember('palette', value.name);
+      },
+      onMotion: (value) {
+        setState(() => reduceMotion = value);
+        realtime.remember('reduceMotion', value);
+      },
     ),
   );
 }

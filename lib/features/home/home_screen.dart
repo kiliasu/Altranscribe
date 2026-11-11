@@ -135,12 +135,58 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   @override
   void initState() {
     super.initState();
+    restoreChoices();
     live.addListener(refresh);
     live.sharedHost.addListener(refresh);
     MobilePlatform.importedFiles.addListener(importMobileFiles);
     WidgetsBinding.instance.addPostFrameCallback((_) => importMobileFiles());
     wasSession = session;
     scheduleFollow();
+  }
+
+  static String languageName(Object? code, String fallback) =>
+      languageCodes.entries
+          .where((entry) => entry.value == code)
+          .map((entry) => entry.key)
+          .firstOrNull ??
+      fallback;
+
+  /// The screen opens with what was chosen last time.
+  void restoreChoices() {
+    final saved = live.interface;
+    fileMode = saved['fileMode'] == true;
+    microphone = saved['microphone'] as bool? ?? true;
+    systemAudio = saved['systemAudio'] as bool? ?? false;
+    translate = saved['translate'] as bool? ?? true;
+    sourceLanguage = languageName(saved['source'], 'English');
+    targetLanguage = languageName(saved['target'], '简体中文');
+    captionSize = ((saved['textSize'] as num?)?.toDouble() ?? 22)
+        .clamp(16, 36)
+        .toDouble();
+    final options = saved['fileOptions'];
+    if (options is List && options.length == fileOptions.length) {
+      for (var i = 0; i < options.length; i++) {
+        fileOptions[i] = options[i] == true;
+      }
+    }
+    preferredSpellings = saved['spellings'] as String? ?? '';
+  }
+
+  /// Every choice made on this screen is kept for the next run. Nothing is
+  /// written while they are unchanged.
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    live
+      ..remember('fileMode', fileMode)
+      ..remember('microphone', microphone)
+      ..remember('systemAudio', systemAudio)
+      ..remember('translate', translate)
+      ..remember('source', languageCodes[sourceLanguage])
+      ..remember('target', languageCodes[targetLanguage])
+      ..remember('textSize', captionSize)
+      ..remember('fileOptions', fileOptions)
+      ..remember('spellings', preferredSpellings);
   }
 
   void refresh() {
