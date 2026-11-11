@@ -107,12 +107,20 @@ void main() {
       expect((controller.store as MemoryStore).values.containsKey(id), false);
       expect(controller.records.single.id, saved.id);
       await tap('nav-1');
-      expect(find.textContaining(saved.dateTimeLabel), findsOneWidget);
-      await tap('delete-${saved.id}');
+      // The library says when it was made the way one would say it.
+      expect(find.text('9月12日 10:20 · 0 段'), findsOneWidget);
+      // On a phone, deleting is in the row's menu.
+      Future<void> delete() async {
+        await tap('more-${saved.id}');
+        await tester.tap(find.text('删除记录'));
+        await tester.pumpAndSettle();
+      }
+
+      await delete();
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       expect(controller.records.single.id, saved.id);
-      await tap('delete-${saved.id}');
+      await delete();
       await tap('confirm-delete');
       expect(controller.records, isEmpty);
       expect((controller.store as MemoryStore).values, isEmpty);

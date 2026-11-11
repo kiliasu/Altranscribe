@@ -565,6 +565,7 @@ const strings = <String, List<String>>{
     "Too much audio is waiting. Capture has stopped; accepted chunks will finish. Use a faster backend or smaller model.",
   ],
   "segments": ["段", "segments"],
+  "moreActions": ["更多操作", "More actions"],
   "recordStatus_completed": ["已保存", "Saved"],
   "recordStatus_recording": ["转录中", "Recording"],
   "recordStatus_finishing": ["已保存，后台收尾中", "Saved · finishing in background"],

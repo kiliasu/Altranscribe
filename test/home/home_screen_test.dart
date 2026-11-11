@@ -183,9 +183,10 @@ void main() {
     await tap('stop');
     await tester.tap(find.text('Library').last);
     await tester.pumpAndSettle();
-    expect(find.textContaining('1 segments · Saved'), findsOneWidget);
+    // A saved transcript needs no word for it; its day, length and lines.
+    expect(find.textContaining('Saved'), findsNothing);
     expect(
-      find.textContaining(controller.record!.dateTimeLabel),
+      find.textContaining(RegExp(r'^Today \d\d:\d\d · .*1 segments$')),
       findsOneWidget,
     );
     expect(find.text('测试标题'), findsOneWidget);
@@ -586,14 +587,17 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('记录').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('summarize-session-42')));
+      // A phone's row keeps what can be done with it behind one button.
+      expect(find.byKey(const Key('summarize-session-42')), findsNothing);
+      expect(find.byKey(const Key('rename-session-42')), findsNothing);
+      await tester.tap(find.byKey(const Key('more-session-42')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('生成标题与摘要'));
       await tester.pump();
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('summarize-session-42')))
-            .onPressed,
-        isNull,
-      );
+      await tester.pump(const Duration(milliseconds: 500));
+      // While the summary is written, the row shows it at work.
+      expect(find.byKey(const Key('more-session-42')), findsNothing);
+      expect(llm.summaryCalls, hasLength(1));
       await tester.tap(find.text(record.displayTitle));
       await tester.pump(const Duration(milliseconds: 300));
       llm.summaryResponse!.complete(const RecordSummary('会议标题', '简洁的会议摘要'));
@@ -617,6 +621,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.records.single.title, '我的新标题');
       expect((await controller.store.loadRecords()).single.summary, '简洁的会议摘要');
+      // With its summary written, the menu no longer offers one.
+      await tester.tap(find.byKey(const Key('more-session-42')));
+      await tester.pumpAndSettle();
+      expect(find.text('生成标题与摘要'), findsNothing);
+      expect(find.text('重命名标题'), findsOneWidget);
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),

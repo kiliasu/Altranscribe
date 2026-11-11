@@ -8,6 +8,7 @@ import 'package:altranscribe/shared/ui/notice.dart';
 import 'package:altranscribe/shared/ui/transcript_tile.dart';
 import 'package:altranscribe/shared/ui/transcript_scroll_controller.dart';
 import 'package:altranscribe/features/records/records_screen.dart';
+import 'package:altranscribe/features/records/record_labels.dart';
 import 'package:altranscribe/features/remote/devices_screen.dart';
 import 'package:altranscribe/features/settings/settings_screen.dart';
 import 'package:altranscribe/data/models/transcript_record.dart';
@@ -1250,7 +1251,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                         ? AltIcons.description
                         : AltIcons.autoAwesome,
                     record.displayTitle,
-                    '${record.dateTimeLabel} · ${record.lines.length} ${t('segments')}',
+                    recordLine(record, widget.english),
                     () => showRecord(record),
                   ),
                 ),
