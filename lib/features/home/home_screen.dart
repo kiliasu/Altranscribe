@@ -1878,7 +1878,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                   !confirmingDiscard
               ? discardSession
               : null,
-          icon: const Icon(Icons.delete_outline_rounded),
+          icon: const Icon(AltIcons.delete),
         ),
       ],
     ],
@@ -2122,11 +2122,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
               shadowColor: colors.shadow,
             ),
             onPressed: jumpToLatest,
-            // The set's own arrow, turned to point down.
-            icon: const RotatedBox(
-              quarterTurns: 3,
-              child: Icon(AltIcons.arrowBack, size: 18),
-            ),
+            icon: const Icon(AltIcons.arrowDownward, size: 18),
             label: Text(t('jumpToLatest')),
           ),
   );

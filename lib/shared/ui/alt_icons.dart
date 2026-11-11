@@ -155,4 +155,39 @@ abstract final class AltIcons {
     0xe8ce,
     fontFamily: 'MaterialSymbolsRounded',
   );
+  static const delete = IconData(0xe92e, fontFamily: 'MaterialSymbolsRounded');
+  static const phoneAndroid = IconData(
+    0xf2db,
+    fontFamily: 'MaterialSymbolsRounded',
+  );
+  static const qrCode = IconData(0xe00a, fontFamily: 'MaterialSymbolsRounded');
+  static const qrCodeScanner = IconData(
+    0xf206,
+    fontFamily: 'MaterialSymbolsRounded',
+  );
+  static const linkOff = IconData(0xe16f, fontFamily: 'MaterialSymbolsRounded');
+  static const contentCopy = IconData(
+    0xe14d,
+    fontFamily: 'MaterialSymbolsRounded',
+  );
+  static const cloudOff = IconData(
+    0xe2c1,
+    fontFamily: 'MaterialSymbolsRounded',
+  );
+  static const openInNew = IconData(
+    0xe89e,
+    fontFamily: 'MaterialSymbolsRounded',
+  );
+  static const moreHoriz = IconData(
+    0xe5d3,
+    fontFamily: 'MaterialSymbolsRounded',
+  );
+  static const southEast = IconData(
+    0xf1e4,
+    fontFamily: 'MaterialSymbolsRounded',
+  );
+  static const arrowDownward = IconData(
+    0xe5db,
+    fontFamily: 'MaterialSymbolsRounded',
+  );
 }

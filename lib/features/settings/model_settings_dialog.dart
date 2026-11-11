@@ -233,7 +233,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                               key: Key('remove-${model.id}'),
                               tooltip: t('removeModel'),
                               onPressed: editable ? () => remove(model) : null,
-                              icon: const Icon(Icons.delete_outline_rounded),
+                              icon: const Icon(AltIcons.delete),
                             ),
                           ),
                       ],
@@ -269,7 +269,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                   sourceUrl,
                 ]);
               }),
-              icon: const Icon(Icons.open_in_new_rounded),
+              icon: const Icon(AltIcons.openInNew),
               label: Text(t('modelSource')),
             ),
           TextButton.icon(

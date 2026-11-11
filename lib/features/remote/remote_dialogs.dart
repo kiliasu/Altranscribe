@@ -356,7 +356,7 @@ class _SharedHostState extends State<SharedHostDialog> {
             ),
             TextButton.icon(
               onPressed: () => copyInvite(code),
-              icon: const Icon(Icons.copy_rounded, size: 18),
+              icon: const Icon(AltIcons.contentCopy, size: 18),
               label: Text(t('copyInvite')),
             ),
           ],

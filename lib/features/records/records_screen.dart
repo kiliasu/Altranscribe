@@ -248,7 +248,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
                 key: ValueKey('delete-${record.id}'),
                 tooltip: t('deleteRecord'),
                 onPressed: editable ? () => deleteRecord(record) : null,
-                icon: const Icon(Icons.delete_outline_rounded, size: 24),
+                icon: const Icon(AltIcons.delete, size: 24),
               ),
             ],
           ],

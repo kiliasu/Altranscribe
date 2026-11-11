@@ -208,7 +208,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
           children: [
             AltBlob(
               icon: MobilePlatform.android
-                  ? Icons.phone_android_rounded
+                  ? AltIcons.phoneAndroid
                   : AltIcons.desktopWindows,
               background: colors.secondary,
               foreground: colors.onSecondary,
@@ -300,7 +300,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
               TextButton.icon(
                 key: const Key('add-device'),
                 onPressed: sharingDialog,
-                icon: const Icon(Icons.qr_code_2_rounded, size: 20),
+                icon: const Icon(AltIcons.qrCode, size: 20),
                 label: Text(t('addDevice')),
               ),
             ],
@@ -318,7 +318,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
               contentPadding: const EdgeInsets.only(left: 16, right: 8),
               leading: Icon(
                 device.platform == 'android'
-                    ? Icons.phone_android_rounded
+                    ? AltIcons.phoneAndroid
                     : AltIcons.desktopWindows,
                 color: colors.onSurfaceVariant,
               ),
@@ -327,7 +327,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
               trailing: IconButton(
                 tooltip: t('removeDevice'),
                 onPressed: () => revoke(device),
-                icon: const Icon(Icons.delete_outline_rounded),
+                icon: const Icon(AltIcons.delete),
               ),
             ),
         const SizedBox(height: 4),
@@ -412,8 +412,8 @@ class _DevicesScreenState extends State<DevicesScreen> {
                           connected
                               ? AltIcons.checkCircle
                               : live.hostStatus == HostStatus.offline
-                              ? Icons.cloud_off_rounded
-                              : Icons.more_horiz_rounded,
+                              ? AltIcons.cloudOff
+                              : AltIcons.moreHoriz,
                           size: 16,
                           color: ink,
                         ),
@@ -445,7 +445,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
                 tooltip: t('forgetHost'),
                 color: foreground,
                 onPressed: live.active ? null : forget,
-                icon: const Icon(Icons.link_off_rounded),
+                icon: const Icon(AltIcons.linkOff),
               ),
               if (!connected)
                 IconButton(
@@ -507,7 +507,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
                       minimumSize: const Size.fromHeight(48),
                     ),
                     onPressed: pairing ? null : scan,
-                    icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                    icon: const Icon(AltIcons.qrCodeScanner, size: 20),
                     label: Text(t('scanToPair')),
                   ),
                 ),

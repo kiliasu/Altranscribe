@@ -518,7 +518,7 @@ class _CaptionPanelState extends State<CaptionPanel> {
                   tooltip: t('discardSession'),
                   onPressed: canPause ? () => run('discard') : null,
                   icon: Icon(
-                    Icons.delete_outline_rounded,
+                    AltIcons.delete,
                     color: canPause ? colors.error : null,
                     size: 22,
                   ),
@@ -536,7 +536,7 @@ class _CaptionPanelState extends State<CaptionPanel> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 4, 8, 0),
                     child: Icon(
-                      Icons.south_east_rounded,
+                      AltIcons.southEast,
                       size: 18,
                       color: colors.outline,
                     ),
