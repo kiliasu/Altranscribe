@@ -57,3 +57,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Flutter takes macos/ for its own macOS runner and writes these into the
+# native app's folder on every pub get; the Swift package never reads them.
+/macos/Flutter/
