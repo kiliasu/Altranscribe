@@ -13,6 +13,7 @@ import 'package:altranscribe/shared/ui/expressive.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
 
 import 'package:altranscribe/shared/ui/page_layout.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
 import 'package:altranscribe/app/l10n/localized_issue.dart';
 import 'package:altranscribe/shared/ui/transcript_tile.dart';
 
@@ -47,129 +48,143 @@ class RecordDetailDialog extends StatelessWidget {
             maxWidth: 560,
             maxHeight: MediaQuery.sizeOf(context).height * .85,
           ),
-          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 4),
           contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-          actionsPadding: const EdgeInsets.all(24),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
           title: Text(record.displayTitle),
           content: SizedBox(
             width: 512,
             // Lines are built as they scroll into view, so a transcript of
             // an hour opens as quickly as a short one. A short one keeps the
-            // dialog no taller than it needs.
-            child: CustomScrollView(
-              shrinkWrap: record.lines.length < 40,
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          Chip(
-                            visualDensity: altChipDensity,
-                            avatarBoxConstraints: altChipIconBounds,
-                            avatar: const Icon(AltIcons.check, size: 18),
-                            label: Text(t('recordStatus_${record.status}')),
-                          ),
-                          Chip(
-                            visualDensity: altChipDensity,
-                            avatarBoxConstraints: altChipIconBounds,
-                            avatar: const Icon(AltIcons.schedule, size: 18),
-                            label: Text(record.dateTimeLabel),
-                          ),
-                          Chip(
-                            visualDensity: altChipDensity,
-                            avatarBoxConstraints: altChipIconBounds,
-                            avatar: const Icon(AltIcons.segment, size: 18),
-                            label: Text(
-                              '${record.lines.length} ${t('segments')}',
+            // dialog no taller than it needs. The text fades out under the
+            // title and above the buttons instead of being cut by them.
+            child: EdgeFade(
+              top: 12,
+              bottom: 20,
+              color: DialogTheme.of(context).backgroundColor,
+              child: CustomScrollView(
+                shrinkWrap: record.lines.length < 40,
+                slivers: [
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                  SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            Chip(
+                              visualDensity: altChipDensity,
+                              avatarBoxConstraints: altChipIconBounds,
+                              // A tick only for what is simply saved.
+                              avatar: Icon(switch (record.status) {
+                                'completed' => AltIcons.check,
+                                'error' || 'interrupted' => AltIcons.warning,
+                                _ => AltIcons.schedule,
+                              }, size: 18),
+                              label: Text(t('recordStatus_${record.status}')),
                             ),
-                          ),
-                        ],
-                      ),
-                      if (record.cleanupStatus != 'none') ...[
-                        const SizedBox(height: 12),
-                        Text(t('cleanup_${record.cleanupStatus}')),
-                        if (record.cleanupError != null)
-                          Text(issue(record.cleanupError!)),
-                      ],
-                      if (record.summary != null) ...[
-                        const SizedBox(height: 16),
-                        pagePanel(
-                          context,
-                          pageStack([
-                            Row(
-                              children: [
-                                Icon(
-                                  AltIcons.autoAwesome,
-                                  size: 18,
-                                  color: colors.onTertiaryContainer,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  t('generatedSummary'),
-                                  style: text.labelLarge?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    color: colors.onTertiaryContainer,
-                                  ),
-                                ),
-                              ],
+                            Chip(
+                              visualDensity: altChipDensity,
+                              avatarBoxConstraints: altChipIconBounds,
+                              avatar: const Icon(AltIcons.schedule, size: 18),
+                              label: Text(record.dateTimeLabel),
                             ),
-                            SelectableText(
-                              record.summary!,
-                              style: text.bodyMedium?.copyWith(
-                                color: colors.onTertiaryContainer,
+                            Chip(
+                              visualDensity: altChipDensity,
+                              avatarBoxConstraints: altChipIconBounds,
+                              avatar: const Icon(AltIcons.segment, size: 18),
+                              label: Text(
+                                '${record.lines.length} ${t('segments')}',
                               ),
                             ),
-                          ], gap: 6),
-                          radius: 16,
-                          padding: const EdgeInsets.all(16),
-                          color: colors.tertiaryContainer,
+                          ],
                         ),
-                        const SizedBox(height: 16),
+                        if (record.cleanupStatus != 'none') ...[
+                          const SizedBox(height: 12),
+                          Text(t('cleanup_${record.cleanupStatus}')),
+                          if (record.cleanupError != null)
+                            Text(issue(record.cleanupError!)),
+                        ],
+                        if (record.summary != null) ...[
+                          const SizedBox(height: 16),
+                          pagePanel(
+                            context,
+                            pageStack([
+                              Row(
+                                children: [
+                                  Icon(
+                                    AltIcons.autoAwesome,
+                                    size: 18,
+                                    color: colors.onTertiaryContainer,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    t('generatedSummary'),
+                                    style: text.labelLarge?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: colors.onTertiaryContainer,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SelectableText(
+                                record.summary!,
+                                style: text.bodyMedium?.copyWith(
+                                  color: colors.onTertiaryContainer,
+                                ),
+                              ),
+                            ], gap: 6),
+                            radius: altInnerRadius,
+                            padding: const EdgeInsets.all(16),
+                            color: colors.tertiaryContainer,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (record.summaryStatus != 'none' &&
+                            record.summaryStatus != 'done') ...[
+                          const SizedBox(height: 12),
+                          Text(t('summary_${record.summaryStatus}')),
+                          if (record.summaryError != null)
+                            Text(issue(record.summaryError!)),
+                        ],
+                        if (record.error != null) ...[
+                          AltNotice.error(issue(record.error!)),
+                          const SizedBox(height: 12),
+                        ],
+                        if (record.lines.isEmpty) Text(t('noSpeechRecorded')),
                       ],
-                      if (record.summaryStatus != 'none' &&
-                          record.summaryStatus != 'done') ...[
-                        const SizedBox(height: 12),
-                        Text(t('summary_${record.summaryStatus}')),
-                        if (record.summaryError != null)
-                          Text(issue(record.summaryError!)),
-                      ],
-                      if (record.error != null) ...[
-                        AltNotice.error(issue(record.error!)),
-                        const SizedBox(height: 12),
-                      ],
-                      if (record.lines.isEmpty) Text(t('noSpeechRecorded')),
-                    ],
+                    ),
                   ),
-                ),
-                SliverList.separated(
-                  itemCount: record.lines.length,
-                  separatorBuilder: (context, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) => TranscriptTile(
-                    line: record.lines[index],
-                    english: english,
-                    compact: true,
+                  SliverList.separated(
+                    itemCount: record.lines.length,
+                    separatorBuilder: (context, _) =>
+                        const SizedBox(height: 12),
+                    itemBuilder: (context, index) => TranscriptTile(
+                      line: record.lines[index],
+                      english: english,
+                      compact: true,
+                    ),
                   ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Tooltip(
-                      message: '${live.store.directory.path}/${record.id}.json',
-                      child: Text(
-                        t('storedLocally'),
-                        style: text.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 16, bottom: 20),
+                      child: Tooltip(
+                        message:
+                            '${live.store.directory.path}/${record.id}.json',
+                        child: Text(
+                          t('storedLocally'),
+                          style: text.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [
