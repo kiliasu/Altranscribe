@@ -453,15 +453,18 @@ class _AltLoadingState extends State<AltLoading>
     label: Localizations.localeOf(context).languageCode == 'zh'
         ? '正在处理'
         : 'Processing',
-    child: SizedBox.square(
-      dimension: widget.size,
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (_, _) => CustomPaint(
-          painter: _LoadingPainter(
-            animation.value,
-            Theme.of(context).colorScheme.primary,
-            widget.shape,
+    // Its own layer: the turning shape never repaints the page around it.
+    child: RepaintBoundary(
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: AnimatedBuilder(
+          animation: animation,
+          builder: (_, _) => CustomPaint(
+            painter: _LoadingPainter(
+              animation.value,
+              Theme.of(context).colorScheme.primary,
+              widget.shape,
+            ),
           ),
         ),
       ),

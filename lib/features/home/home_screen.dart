@@ -120,6 +120,11 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   int shownLines = 0;
   String? shownRecord;
 
+  /// The live panel has scrolled out of view. Its shapes and waves then
+  /// stop moving, so a long session draws frames only when text changes.
+  final panelHidden = ValueNotifier<bool>(false);
+  final panelKey = GlobalKey();
+
   /// The transcript a session just saved, acknowledged for a moment.
   TranscriptRecord? acknowledged;
   Timer? acknowledgeTimer;
@@ -161,6 +166,20 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     setState(() {});
     if (contentChanged) scheduleFollow();
     if (ended) acknowledgeSession();
+    // Following moves the view during layout, which reports no scroll.
+    WidgetsBinding.instance.addPostFrameCallback((_) => checkPanel());
+  }
+
+  void checkPanel() {
+    if (!mounted || !showSession || !sessionScroll.hasClients) {
+      panelHidden.value = false;
+      return;
+    }
+    final box = panelKey.currentContext?.findRenderObject();
+    final height = box is RenderBox && box.hasSize
+        ? box.size.height
+        : double.infinity;
+    panelHidden.value = sessionScroll.offset > height + 24;
   }
 
   /// A finished session or file run ends with a checkmark where its bar
@@ -288,6 +307,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   /// direction.
   bool onScroll(ScrollNotification notification) {
     if (notification.depth != 0) return false;
+    if (notification is ScrollUpdateNotification) checkPanel();
     if (notification is UserScrollNotification) {
       sessionScroll.releaseAnchor();
       userScrolling = notification.direction != ScrollDirection.idle;
@@ -318,6 +338,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     MobilePlatform.importedFiles.removeListener(importMobileFiles);
     swapAnimation.dispose();
     sessionScroll.dispose();
+    panelHidden.dispose();
     acknowledgeTimer?.cancel();
     super.dispose();
   }
@@ -1604,32 +1625,44 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           ),
           if (!narrow) ...[
             const SizedBox(width: 14),
-            LevelMeter(
-              samples: paused ? const [] : levelSamples,
-              color: foreground.withValues(alpha: .7),
+            ListenableBuilder(
+              listenable: live.levelRevision,
+              builder: (context, _) => LevelMeter(
+                samples: paused ? const [] : levelSamples,
+                color: foreground.withValues(alpha: .7),
+              ),
             ),
           ],
-          AnimatedSize(
-            duration: AltMotion.quick,
-            curve: AltMotion.quickCurve,
-            child: pending > 0 && translate
-                ? Tooltip(
+          // Lines waiting for their translation show only as a backlog:
+          // one in flight comes and goes with every sentence. The count
+          // keeps its place, so the bar and its buttons never shift. A
+          // phone's bar has no room for it; the lines say it themselves.
+          if (!narrow && translate && live.record?.directTranslation != true)
+            Padding(
+              padding: const EdgeInsets.only(left: 14),
+              child: SizedBox(
+                width: 42,
+                child: AnimatedOpacity(
+                  key: const Key('pending-translations'),
+                  opacity: pending >= 2 ? 1 : 0,
+                  duration: AltMotion.reduced(context)
+                      ? AltMotion.fade
+                      : AltMotion.quick,
+                  child: Tooltip(
                     message: t('pendingCount')
                         .replaceFirst('{count}', '$pending'),
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 14),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(AltIcons.translate, size: 16, color: foreground),
-                          const SizedBox(width: 4),
-                          RollingText('$pending', style: label),
-                        ],
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(AltIcons.translate, size: 16, color: foreground),
+                        const SizedBox(width: 4),
+                        RollingText('${math.max(pending, 2)}', style: label),
+                      ],
                     ),
-                  )
-                : const SizedBox.shrink(),
-          ),
+                  ),
+                ),
+              ),
+            ),
         ],
       );
     }
@@ -2118,7 +2151,15 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
               SliverPadding(
                 // Clear of the fade at the top edge until it scrolls.
                 padding: EdgeInsets.fromLTRB(side, 16, side, 0),
-                sliver: SliverToBoxAdapter(child: sessionPanel()),
+                sliver: SliverToBoxAdapter(
+                  child: ValueListenableBuilder<bool>(
+                    key: panelKey,
+                    valueListenable: panelHidden,
+                    builder: (context, hidden, child) =>
+                        TickerMode(enabled: !hidden, child: child!),
+                    child: sessionPanel(),
+                  ),
+                ),
               ),
             SliverPadding(
               padding: EdgeInsets.fromLTRB(
@@ -2357,15 +2398,18 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: AudioLevelHistory(
-                  key: ValueKey('level-history-$source'),
-                  samples: live.levelHistory[source] ?? const [],
-                  running: live.phase == SessionPhase.listening,
-                  label:
-                      '${t(source == 'system' ? 'systemAudio' : 'microphone')} · ${t('volumeHistory')}',
-                  color: source == 'microphone'
-                      ? colors.primary
-                      : colors.tertiary,
+                child: ListenableBuilder(
+                  listenable: live.levelRevision,
+                  builder: (context, _) => AudioLevelHistory(
+                    key: ValueKey('level-history-$source'),
+                    samples: live.levelHistory[source] ?? const [],
+                    running: live.phase == SessionPhase.listening,
+                    label:
+                        '${t(source == 'system' ? 'systemAudio' : 'microphone')} · ${t('volumeHistory')}',
+                    color: source == 'microphone'
+                        ? colors.primary
+                        : colors.tertiary,
+                  ),
                 ),
               ),
             ],

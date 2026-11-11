@@ -530,6 +530,11 @@ class RealtimeController extends ChangeNotifier {
   // Native meters report RMS every 200 ms: 76 points span about 15 seconds.
   static const levelHistorySamples = 76;
   final levelHistory = <String, List<double>>{};
+
+  /// Counts level updates. Input levels arrive many times a second for as
+  /// long as a session lasts; the meters listen here, so a new level never
+  /// rebuilds the rest of the screen.
+  final levelRevision = ValueNotifier<int>(0);
   final readySources = <String>{};
   List<TranscriptRecord> records = [];
   TranscriptRecord? record;
@@ -1755,6 +1760,7 @@ class RealtimeController extends ChangeNotifier {
   void _events(List<Map<String, Object?>> events) {
     if (events.isEmpty || _discarding) return;
     var changed = false;
+    var levelsChanged = false;
     for (final event in events) {
       final source = event['source'] as String;
       switch (event['type']) {
@@ -1762,7 +1768,7 @@ class RealtimeController extends ChangeNotifier {
           changed = true;
           readySources.add(source);
         case 'level':
-          changed = true;
+          levelsChanged = true;
           levels[source] = (event['level'] as num).toDouble();
           if (phase == SessionPhase.listening) {
             final history = [...?levelHistory[source], levels[source]!];
@@ -1832,8 +1838,9 @@ class RealtimeController extends ChangeNotifier {
           }
       }
     }
-    // Raw streaming audio has no visible state. Its text callbacks and the
-    // native level events notify when there is something new to display.
+    // Raw streaming audio has no visible state. Its text callbacks notify
+    // when there is something new to display, and levels tell the meters.
+    if (levelsChanged) levelRevision.value++;
     if (changed) _notify();
   }
 
@@ -2416,6 +2423,7 @@ class RealtimeController extends ChangeNotifier {
     _timer?.cancel();
     _hostTimer?.cancel();
     unawaited(stop());
+    levelRevision.dispose();
     super.dispose();
   }
 }

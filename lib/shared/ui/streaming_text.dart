@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'motion.dart';
@@ -39,58 +41,79 @@ class StreamingText extends StatefulWidget {
   State<StreamingText> createState() => _StreamingTextState();
 }
 
-class _StreamingTextState extends State<StreamingText>
-    with SingleTickerProviderStateMixin {
-  late final controller = AnimationController(
-    vsync: this,
-    duration: StreamingText.duration,
-    value: 1,
-  );
-  int settled = 0;
+class _StreamingTextState extends State<StreamingText> {
+  /// A live line changes about once a second. Its fade takes a handful of
+  /// steps on a timer rather than a ticker's frame at the display's rate:
+  /// an opacity looks the same either way, and a long session draws a
+  /// fraction of the frames.
+  static const _step = Duration(milliseconds: 33);
+  Timer? _timer;
+  final _clock = Stopwatch();
+  double _amount = 1;
+  int _settled = 0;
 
   @override
   void didUpdateWidget(StreamingText old) {
     super.didUpdateWidget(old);
     if (old.text == widget.text) return;
     if (!widget.active || AltMotion.reduced(context)) {
-      controller.value = 1;
+      _settle();
       return;
     }
-    settled = StreamingText.commonPrefix(old.text, widget.text);
-    if (settled < widget.text.length) controller.forward(from: 0);
+    _settled = StreamingText.commonPrefix(old.text, widget.text);
+    if (_settled >= widget.text.length) {
+      _settle();
+      return;
+    }
+    _amount = 0;
+    _clock
+      ..reset()
+      ..start();
+    _timer ??= Timer.periodic(_step, (_) {
+      final amount =
+          _clock.elapsedMilliseconds / StreamingText.duration.inMilliseconds;
+      if (amount >= 1) {
+        setState(_settle);
+      } else {
+        setState(() => _amount = amount);
+      }
+    });
+  }
+
+  void _settle() {
+    _timer?.cancel();
+    _timer = null;
+    _amount = 1;
   }
 
   @override
   void dispose() {
-    controller.dispose();
+    _timer?.cancel();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: controller,
-    builder: (context, _) {
-      final text = widget.text;
-      if (controller.value >= 1 || settled >= text.length) {
-        return SelectableText(text, style: widget.style);
-      }
-      final color =
-          widget.style.color ?? DefaultTextStyle.of(context).style.color!;
-      final amount = Curves.easeOut.transform(controller.value);
-      return SelectableText.rich(
-        TextSpan(
-          style: widget.style,
-          children: [
-            TextSpan(text: text.substring(0, settled)),
-            TextSpan(
-              text: text.substring(settled),
-              style: TextStyle(
-                color: color.withValues(alpha: color.a * (.45 + .55 * amount)),
-              ),
+  Widget build(BuildContext context) {
+    final text = widget.text;
+    if (_amount >= 1 || _settled >= text.length) {
+      return SelectableText(text, style: widget.style);
+    }
+    final color =
+        widget.style.color ?? DefaultTextStyle.of(context).style.color!;
+    final amount = Curves.easeOut.transform(_amount);
+    return SelectableText.rich(
+      TextSpan(
+        style: widget.style,
+        children: [
+          TextSpan(text: text.substring(0, _settled)),
+          TextSpan(
+            text: text.substring(_settled),
+            style: TextStyle(
+              color: color.withValues(alpha: color.a * (.45 + .55 * amount)),
             ),
-          ],
-        ),
-      );
-    },
-  );
+          ),
+        ],
+      ),
+    );
+  }
 }

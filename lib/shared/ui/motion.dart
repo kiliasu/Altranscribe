@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter, PathMetric;
 
@@ -252,52 +253,64 @@ class PulsingDot extends StatefulWidget {
   State<PulsingDot> createState() => _PulsingDotState();
 }
 
-class _PulsingDotState extends State<PulsingDot>
-    with SingleTickerProviderStateMixin {
-  late final controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  );
-  late final opacity = Tween<double>(
-    begin: 1,
-    end: .35,
-  ).animate(CurvedAnimation(parent: controller, curve: Curves.easeInOut));
+class _PulsingDotState extends State<PulsingDot> {
+  /// The dot is on screen for as long as a session lasts. A ticker would
+  /// draw the whole window at the display's rate for it; fifteen steps a
+  /// second are as smooth for a slow fade and leave the screen at rest
+  /// between them.
+  static const _step = Duration(milliseconds: 66);
+  static const _period = 1800;
+  Timer? _timer;
+  final _clock = Stopwatch();
+  double _opacity = 1;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    update();
+    _update();
   }
 
   @override
   void didUpdateWidget(PulsingDot oldWidget) {
     super.didUpdateWidget(oldWidget);
-    update();
+    _update();
   }
 
-  void update() {
-    if (widget.pulsing && !AltMotion.reduced(context)) {
-      if (!controller.isAnimating) controller.repeat(reverse: true);
-    } else {
-      controller.value = 0;
+  void _update() {
+    final pulse = widget.pulsing && !AltMotion.reduced(context);
+    if (pulse && _timer == null) {
+      _clock
+        ..reset()
+        ..start();
+      _timer = Timer.periodic(_step, (_) {
+        final phase = _clock.elapsedMilliseconds % _period / _period;
+        // Down to 35 % and back, easing at both ends.
+        setState(() => _opacity = .675 + .325 * math.cos(2 * math.pi * phase));
+      });
+    } else if (!pulse && _timer != null) {
+      _timer!.cancel();
+      _timer = null;
+      _opacity = 1;
     }
   }
 
   @override
   void dispose() {
-    controller.dispose();
+    _timer?.cancel();
     super.dispose();
   }
 
+  // A plain box: an implicitly animated one would start a new animation
+  // at every step and run at the display's rate after all.
   @override
   Widget build(BuildContext context) => RepaintBoundary(
-    child: FadeTransition(
-      opacity: opacity,
-      child: AnimatedContainer(
-        duration: AltMotion.quick,
-        width: widget.size,
-        height: widget.size,
-        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+    child: SizedBox.square(
+      dimension: widget.size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: widget.color.withValues(alpha: widget.color.a * _opacity),
+          shape: BoxShape.circle,
+        ),
       ),
     ),
   );

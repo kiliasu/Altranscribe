@@ -52,10 +52,13 @@ void main() {
     await until(() => live.record!.lines.isNotEmpty);
     expect(notifications, greaterThan(0));
     expect(live.record!.lines.single.text, 'A visible update.');
+    // A level reaches the meters on its own channel, not the whole screen.
     notifications = 0;
+    final levels = live.levelRevision.value;
     audio.events.add({'type': 'level', 'source': 'microphone', 'level': .5});
     await until(() => live.levels['microphone'] == .5);
-    expect(notifications, 1);
+    expect(notifications, 0);
+    expect(live.levelRevision.value, levels + 1);
     await live.stop();
     expect(live.records.single.lines.single.text, 'A visible update.');
   });
