@@ -1,0 +1,513 @@
+/* Application-owned strings. Keep keys in sync between languages. */
+"%@ waiting" = "%@ waiting";
+"3.5 Multilingual" = "3.5 Multilingual";
+"A task is still running" = "A task is still running";
+"API Base URL" = "API Base URL";
+"Add Files…" = "Add Files…";
+"Allow Altranscribe in System Settings → Privacy & Security → Microphone." = "Allow Altranscribe in System Settings → Privacy & Security → Microphone.";
+"Allow Altranscribe in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen the app." = "Allow Altranscribe in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen the app.";
+"Altranscribe" = "Altranscribe";
+"Altranscribe Captions" = "Altranscribe Captions";
+"App text changes immediately. Reopen the app to update macOS menus and system dialogs." = "App text changes immediately. Reopen the app to update macOS menus and system dialogs.";
+"Appearance" = "Appearance";
+"Attention" = "Attention";
+"Audio Source" = "Audio Source";
+"Audio conversion failed." = "Audio conversion failed.";
+"Audio timestamp" = "Audio timestamp";
+"Bring in a recording" = "Bring in a recording";
+"Cancel" = "Cancel";
+"Captions appear here when transcription starts." = "Captions appear here when transcription starts.";
+"Capture a lecture, a meeting, or a thought. Choose an audio source to begin." = "Capture a lecture, a meeting, or a thought. Choose an audio source to begin.";
+"Check the API key and model access." = "Check the API key and model access.";
+"Check the endpoint and model name." = "Check the endpoint and model name.";
+"Choose Existing Model…" = "Choose Existing Model…";
+"Choose Files…" = "Choose Files…";
+"Clear Completed" = "Clear Completed";
+"Close" = "Close";
+"Completed" = "Completed";
+"Compute" = "Compute";
+"Configure a text model in Settings." = "Configure a text model in Settings.";
+"Copy Transcript" = "Copy Transcript";
+"Could not connect. Check the API URL, network and local server." = "Could not connect. Check the API URL, network and local server.";
+"Could not convert the input audio format." = "Could not convert the input audio format.";
+"Could not create a Nemotron audio stream." = "Could not create a Nemotron audio stream.";
+"Could not load Nemotron. Download the model again and retry." = "Could not load Nemotron. Download the model again and retry.";
+"Could not load the Whisper model. Check the file, or try disabling Metal." = "Could not load the Whisper model. Check the file, or try disabling Metal.";
+"Could not read system audio." = "Could not read system audio.";
+"Could not read the API key from Keychain." = "Could not read the API key from Keychain.";
+"Could not remove the API key." = "Could not remove the API key.";
+"Could not save to Keychain." = "Could not save to Keychain.";
+"Could not update the API key." = "Could not update the API key.";
+"Creating summary…" = "Creating summary…";
+"Current Model" = "Current Model";
+"Custom Model Name" = "Custom Model Name";
+"Dark" = "Dark";
+"Data & Privacy" = "Data & Privacy";
+"Delete" = "Delete";
+"Delete Model" = "Delete Model";
+"Delete Transcript…" = "Delete Transcript…";
+"Delete the downloaded model?" = "Delete the downloaded model?";
+"Delete this transcript?" = "Delete this transcript?";
+"Detect Automatically" = "Detect Automatically";
+"Discard" = "Discard";
+"Discard Recording…" = "Discard Recording…";
+"Discard this recording?" = "Discard this recording?";
+"Download" = "Download";
+"Download a Local Model" = "Download a Local Model";
+"Download or select a Whisper model in Settings first." = "Download or select a Whisper model in Settings first.";
+"Download the selected Nemotron model in Settings first." = "Download the selected Nemotron model in Settings first.";
+"Drop audio or video here, or choose files from your Mac. Files are processed in order." = "Drop audio or video here, or choose files from your Mac. Files are processed in order.";
+"Engine" = "Engine";
+"English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline." = "English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline.";
+"English · Default" = "English · Default";
+"Enter a complete API URL without credentials, query parameters or a username." = "Enter a complete API URL without credentials, query parameters or a username.";
+"Enter a text model name in Settings." = "Enter a text model name in Settings.";
+"Export" = "Export";
+"Exported from Altranscribe" = "Exported from Altranscribe";
+"Failed" = "Failed";
+"Fetch Models" = "Fetch Models";
+"File Transcription" = "File Transcription";
+"Finishing remaining audio…" = "Finishing remaining audio…";
+"Floating Captions" = "Floating Captions";
+"Gemini did not return a complete text result." = "Gemini did not return a complete text result.";
+"General" = "General";
+"Generate Summary" = "Generate Summary";
+"HTTP %@. Check the API key and model access." = "HTTP %@. Check the API key and model access.";
+"HTTP %@. Check the endpoint and model name." = "HTTP %@. Check the endpoint and model name.";
+"HTTP %@. Rate limit or quota exceeded." = "HTTP %@. Rate limit or quota exceeded.";
+"HTTP %@. The request did not complete. It was not retried." = "HTTP %@. The request did not complete. It was not retried.";
+"Helps recognize names and terms without rewriting the original text." = "Helps recognize names and terms without rewriting the original text.";
+"Hide Caption Window" = "Hide Caption Window";
+"Hide Transcription Options" = "Hide Transcription Options";
+"Import" = "Import";
+"Import Audio or Video…" = "Import Audio or Video…";
+"Import audio or video ⌘O" = "Import audio or video ⌘O";
+"In Progress" = "In Progress";
+"Input Level" = "Input Level";
+"Interrupted" = "Interrupted";
+"Invalid API URL." = "Invalid API URL.";
+"Invalid model name." = "Invalid model name.";
+"Jump to Latest" = "Jump to Latest";
+"Keep Working" = "Keep Working";
+"Language" = "Language";
+"Light" = "Light";
+"Listening" = "Listening";
+"Live Transcription" = "Live Transcription";
+"Live audio is sent in approximately 8-second chunks; files in 20-second chunks. Timestamps are estimates. Paid inference requests are not retried automatically." = "Live audio is sent in approximately 8-second chunks; files in 20-second chunks. Timestamps are estimates. Paid inference requests are not retried automatically.";
+"Local transcription failed. Earlier text was retained." = "Local transcription failed. Earlier text was retained.";
+"Make Text Bigger" = "Make Text Bigger";
+"Make Text Normal Size" = "Make Text Normal Size";
+"Make Text Smaller" = "Make Text Smaller";
+"Manage Models…" = "Manage Models…";
+"Media File" = "Media File";
+"Microphone" = "Microphone";
+"Model" = "Model";
+"Model Card & License" = "Model Card & License";
+"Model checksum failed. The download was not installed." = "Model checksum failed. The download was not installed.";
+"Model download failed. Please try again." = "Model download failed. Please try again.";
+"Models found: %@" = "Models found: %@";
+"More" = "More";
+"Multilingual Whisper Models" = "Multilingual Whisper Models";
+"Names and terms, separated by commas" = "Names and terms, separated by commas";
+"Nemotron 3.5 · Multilingual" = "Nemotron 3.5 · Multilingual";
+"Nemotron Models" = "Nemotron Models";
+"Nemotron is not loaded." = "Nemotron is not loaded.";
+"Nemotron model checksum failed. The download was not installed." = "Nemotron model checksum failed. The download was not installed.";
+"Nemotron model download failed. Please try again." = "Nemotron model download failed. Please try again.";
+"Nemotron · English" = "Nemotron · English";
+"Nemotron · On Device" = "Nemotron · On Device";
+"No Results" = "No Results";
+"No display is available for system audio capture." = "No display is available for system audio capture.";
+"No microphone is available." = "No microphone is available.";
+"No speech was transcribed." = "No speech was transcribed.";
+"No transcripts yet" = "No transcripts yet";
+"OK" = "OK";
+"On-device Compute" = "On-device Compute";
+"On-device Streaming" = "On-device Streaming";
+"Online APIs require HTTPS. HTTP is allowed only for loopback addresses." = "Online APIs require HTTPS. HTTP is allowed only for loopback addresses.";
+"Open Transcript" = "Open Transcript";
+"Open in Finder" = "Open in Finder";
+"OpenAI / Ollama / Compatible" = "OpenAI / Ollama / Compatible";
+"Pause" = "Pause";
+"Pause / Resume" = "Pause / Resume";
+"Paused" = "Paused";
+"Pending translations: %@" = "Pending translations: %@";
+"Plain text (TXT)" = "Plain text (TXT)";
+"Preparing…" = "Preparing…";
+"Previous 30 Days" = "Previous 30 Days";
+"Previous 7 Days" = "Previous 7 Days";
+"Processing Failed" = "Processing Failed";
+"Quitting stops processing. Text already saved will be retained." = "Quitting stops processing. Text already saved will be retained.";
+"Rate limit or quota exceeded." = "Rate limit or quota exceeded.";
+"Ready" = "Ready";
+"Recognition" = "Recognition";
+"Remove from Queue" = "Remove from Queue";
+"Rename…" = "Rename…";
+"Resume" = "Resume";
+"Retry" = "Retry";
+"Save" = "Save";
+"Save As:" = "Save As:";
+"Save Key" = "Save Key";
+"Save an API key for the speech service." = "Save an API key for the speech service.";
+"Save an API key for the text service." = "Save an API key for the text service.";
+"Save an API key for this service in Settings first." = "Save an API key for this service in Settings first.";
+"Saved" = "Saved";
+"Saved to Keychain" = "Saved to Keychain";
+"Search Transcripts" = "Search Transcripts";
+"Select Model" = "Select Model";
+"Select a transcript to read its text, translation and summary." = "Select a transcript to read its text, translation and summary.";
+"Selected" = "Selected";
+"Service" = "Service";
+"Settings could not be read. Defaults are in use; the original settings file was retained." = "Settings could not be read. Defaults are in use; the original settings file was retained.";
+"Show Caption Window" = "Show Caption Window";
+"Show Source in Finder" = "Show Source in Finder";
+"Show Transcription Options" = "Show Transcription Options";
+"Show in Finder" = "Show in Finder";
+"Show only translation when available" = "Show only translation when available";
+"Speech" = "Speech";
+"Speech Engine" = "Speech Engine";
+"Start Queue" = "Start Queue";
+"Start Transcription" = "Start Transcription";
+"Stop & Save" = "Stop & Save";
+"Stop Queue" = "Stop Queue";
+"Stop and Quit" = "Stop and Quit";
+"Stop and Save" = "Stop and Save";
+"Stopped; partial transcript retained" = "Stopped; partial transcript retained";
+"Stopping…" = "Stopping…";
+"Summarize when finished" = "Summarize when finished";
+"Summary" = "Summary";
+"Summary failed: " = "Summary failed: ";
+"Supports audio and video that macOS can decode" = "Supports audio and video that macOS can decode";
+"System" = "System";
+"System Audio" = "System Audio";
+"System audio capture stopped. Check Screen Recording permission." = "System audio capture stopped. Check Screen Recording permission.";
+"Target Language" = "Target Language";
+"Text Models" = "Text Models";
+"Text Processing" = "Text Processing";
+"Text Service" = "Text Service";
+"Text Size" = "Text Size";
+"The API did not return a complete text result." = "The API did not return a complete text result.";
+"The API returned an invalid response." = "The API returned an invalid response.";
+"The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation." = "The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation.";
+"The local model is not loaded." = "The local model is not loaded.";
+"The model output was truncated. Use a larger output limit or shorter input." = "The model output was truncated. Use a larger output limit or shorter input.";
+"The original media file will be kept." = "The original media file will be kept.";
+"The request did not complete. It was not retried." = "The request did not complete. It was not retried.";
+"The selected model is not downloaded yet." = "The selected model is not downloaded yet.";
+"This file has no readable audio track." = "This file has no readable audio track.";
+"This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe." = "This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe.";
+"This model does not accept vocabulary hints. This app uses its text output without speaker labels." = "This model does not accept vocabulary hints. This app uses its text output without speaker labels.";
+"This model requires Realtime transcription. Choose a file transcription model instead." = "This model requires Realtime transcription. Choose a file transcription model instead.";
+"This timestamp is estimated" = "This timestamp is estimated";
+"Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster." = "Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster.";
+"Title" = "Title";
+"Titles and summaries use the app language at task start, independently of the translation language." = "Titles and summaries use the app language at task start, independently of the translation language.";
+"Today" = "Today";
+"Transcribing" = "Transcribing";
+"Transcribing %@ of %@" = "Transcribing %@ of %@";
+"Transcribing audio" = "Transcribing audio";
+"Transcript" = "Transcript";
+"Transcript Location" = "Transcript Location";
+"Transcription" = "Transcription";
+"Transcription Options" = "Transcription Options";
+"Transcription could not keep up. Capture stopped and text was retained. Try a smaller model." = "Transcription could not keep up. Capture stopped and text was retained. Try a smaller model.";
+"Transcripts" = "Transcripts";
+"Translate" = "Translate";
+"Translate Transcript" = "Translate Transcript";
+"Translating %@/%@" = "Translating %@/%@";
+"Translating…" = "Translating…";
+"Translation" = "Translation";
+"Translation and summary use the same text model. For local services, fetch the installed models or use an override." = "Translation and summary use the same text model. For local services, fetch the installed models or use an override.";
+"Translation is falling behind. The original text was saved; translate it later from Library." = "Translation is falling behind. The original text was saved; translate it later from the transcript's menu.";
+"The text model did not return a translation of this line. The original text was saved; translate it again from Library." = "The text model did not return a translation of this line. The original text was saved; translate it again from the transcript's menu.";
+"Translation or summary is enabled. Configure a text model in Settings first." = "Translation or summary is enabled. Configure a text model in Settings first.";
+"Turn sound into words" = "Turn sound into words";
+"Unreadable record files: %@. The files were retained." = "Unreadable record files: %@. The files were retained.";
+"Use OpenAI Endpoint" = "Use OpenAI Endpoint";
+"Use" = "Use";
+"Use Metal GPU Acceleration" = "Use Metal GPU Acceleration";
+"View" = "View";
+"Vocabulary hints for this model cannot contain < or >." = "Vocabulary hints for this model cannot contain < or >.";
+"Vocabulary" = "Vocabulary";
+"Waiting" = "Waiting";
+"Web page (HTML)" = "Web page (HTML)";
+"Whisper · On Device" = "Whisper · On Device";
+"Yesterday" = "Yesterday";
+"Your words, kept close" = "Your words, kept close";
+"macOS could not decode this media file. Convert it to WAV, M4A or MP4 first." = "macOS could not decode this media file. Convert it to WAV, M4A or MP4 first.";
+
+"Apple SpeechTranscriber could not select an audio format." = "Apple SpeechTranscriber could not select an audio format.";
+"Apple SpeechTranscriber is unavailable on this Mac." = "Apple SpeechTranscriber is unavailable on this Mac.";
+"Checking availability…" = "Checking availability…";
+"Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed." = "Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed.";
+"Download a FluidAudio model in Settings first." = "Download a FluidAudio model in Settings first.";
+"Downloading…" = "Downloading…";
+"FluidAudio Models" = "FluidAudio Models";
+"FluidAudio · On Device" = "FluidAudio · On Device";
+"Install Language Model" = "Install Language Model";
+"Install the Apple language model in Settings first." = "Install the Apple language model in Settings first.";
+"Language model download required" = "Language model download required";
+"Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac." = "Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac.";
+"Managed by macOS" = "Managed by macOS";
+"Model Status" = "Model Status";
+"Parakeet v2 recognizes English. V3 and Ultra detect 25 European languages automatically; Chinese is not supported. Ultra uses further-trained v3 weights." = "Parakeet v2 recognizes English. V3 and Ultra detect 25 European languages automatically; Chinese is not supported. Ultra uses further-trained v3 weights.";
+"Parakeet v2 · English" = "Parakeet v2 · English";
+"Parakeet v3 · Multilingual" = "Parakeet v3 · Multilingual";
+"Parakeet Ultra · Multilingual" = "Parakeet Ultra · Multilingual";
+"Boost quiet audio" = "Boost quiet audio";
+"Checks the whole file and raises quiet audio by up to 25 dB without changing the original. Background noise also gets louder. Leave off for normal recordings." = "Checks the whole file and raises quiet audio by up to 25 dB without changing the original. Background noise also gets louder. Leave off for normal recordings.";
+"Ready for offline transcription" = "Ready for offline transcription";
+"Refresh Status" = "Refresh Status";
+"Settings" = "Settings";
+"System Language Model" = "System Language Model";
+"This language is not supported by Apple SpeechTranscriber." = "This language is not supported by Apple SpeechTranscriber.";
+
+"Split cloud audio into chunks of ten minutes or less." = "Split cloud audio into chunks of ten minutes or less.";
+
+"Gemini accepts up to 1,000 vocabulary terms." = "Gemini accepts up to 1,000 vocabulary terms.";
+
+"The uploaded audio did not finish processing." = "The uploaded audio did not finish processing.";
+
+"The transcript was retained, but the temporary Gemini upload could not be deleted." = "The transcript was retained, but the temporary Gemini upload could not be deleted.";
+
+"File Transcription Model" = "File Transcription Model";
+
+"Workspace ID (optional)" = "Workspace ID (optional)";
+
+"A renewed cloud connection ended before its final text was confirmed. Review the text around that point." = "A renewed cloud connection ended before its final text was confirmed. Review the text around that point.";
+"Cloud speech ended before all audio was confirmed. The received text was retained." = "Cloud speech ended before all audio was confirmed. The received text was retained.";
+
+"Cloud transcription could not keep up. The received text was retained." = "Cloud transcription could not keep up. The received text was retained.";
+
+"Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically." = "Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically.";
+
+"Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence." = "Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence.";
+
+"Live Speech" = "Live Speech";
+
+"The cloud speech connection did not become ready." = "The cloud speech connection did not become ready.";
+
+"The cloud speech connection was lost. The received text was retained." = "The cloud speech connection was lost. The received text was retained.";
+
+"The cloud speech service rejected the request. Check the model, language and credentials." = "The cloud speech service rejected the request. Check the model, language and credentials.";
+
+"The cloud speech session could not be renewed before expiry. The received text was retained." = "The cloud speech session could not be renewed before expiry. The received text was retained.";
+
+"The preview translation service did not confirm the final output. Review the last sentence." = "The preview translation service did not confirm the final output. Review the last sentence.";
+
+"File Transcription Language" = "File Transcription Language";
+"Used for live transcription only with the selected models." = "Used for live transcription only with the selected models.";
+"Used for file transcription. The selected live translation mode does not use these terms." = "Used for file transcription. The selected live translation mode does not use these terms.";
+
+"The service timed out. The request was not retried; try again later or choose another model." = "The service timed out. The request was not retried; try again later or choose another model.";
+
+"HTTP %@. The service is temporarily unavailable. Try again later or choose another model." = "HTTP %@. The service is temporarily unavailable. Try again later or choose another model.";
+
+"Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files." = "Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files.";
+
+/* Settings, home summary and inspector wording (2026-10-26). */
+"A custom endpoint must implement audio/transcriptions. Live audio is sent to it in 8-second chunks; Realtime transcription is OpenAI only." = "A custom endpoint must implement audio/transcriptions. Live audio is sent to it in 8-second chunks; Realtime transcription is OpenAI only.";
+
+"A custom model name is in use. The app has not checked it against the service." = "A custom model name is in use. The app has not checked it against the service.";
+
+"A session is running. Speech and text settings unlock when it ends." = "A session is running. Speech and text settings unlock when it ends.";
+
+"API Key" = "API Key";
+
+"Compatible Service" = "Compatible Service";
+
+"Created" = "Created";
+
+"Custom Name…" = "Custom Name…";
+
+"Direct from audio" = "Direct from audio";
+
+"Duration" = "Duration";
+
+"Enter a new key to replace the saved one" = "Enter a new key to replace the saved one";
+
+"Exactly as the service names it" = "Exactly as the service names it";
+
+"File translation and summaries use this text model; live direct speech translation uses the speech service. Keys are saved separately for each API base URL. Fetching the model list does not run inference." = "File translation and summaries use this text model; live direct speech translation uses the speech service. Keys are saved separately for each API base URL. Fetching the model list does not run inference.";
+
+"File translation and summaries use this text model; live direct speech translation uses the speech service. Ollama must be running with a text model installed; a local model list loads automatically. Online services use HTTPS, and keys are saved separately for each API base URL." = "File translation and summaries use this text model; live direct speech translation uses the speech service. Ollama must be running with a text model installed; a local model list loads automatically. Online services use HTTPS, and keys are saved separately for each API base URL.";
+
+"In Effect" = "In Effect";
+
+"legacy" = "legacy";
+
+"Live Mode" = "Live Mode";
+
+"Local Service" = "Local Service";
+
+"Model List" = "Model List";
+
+"Model list unavailable: %@" = "Model list unavailable: %@";
+
+"No key saved. Local services can go without one." = "No key saved. Local services can go without one.";
+
+"No model selected" = "No model selected";
+
+"Not configured" = "Not configured";
+
+"Paste the key for this service" = "Paste the key for this service";
+
+"Quick Fill" = "Quick Fill";
+
+"Remove" = "Remove";
+
+"Saved in Keychain for this API address." = "Saved in Keychain for this API address.";
+
+"Service URL" = "Service URL";
+
+"Source" = "Source";
+
+"Speech Model" = "Speech Model";
+
+"Speech Settings…" = "Speech Settings…";
+
+"Status" = "Status";
+
+"Text Model" = "Text Model";
+
+"Text Model Settings…" = "Text Model Settings…";
+
+"The saved key was removed." = "The saved key was removed.";
+
+"This model is not in the service's preset list. Fetch the model list to check it." = "This model is not in the service's preset list. Fetch the model list to check it.";
+
+"This Transcript" = "This Transcript";
+
+"Transcribe" = "Transcribe";
+
+"Translate or Summarize Again" = "Translate or Summarize Again";
+
+"Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio." = "Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio.";
+
+"Translation or summary needs a text model." = "Translation or summary needs a text model.";
+
+"Turn On Translate" = "Turn On Translate";
+
+/* Home session setup and live mode (2026-10-26). */
+"Choose a Text Model" = "Choose a Text Model";
+
+"Choose a Text Model…" = "Choose a Text Model…";
+
+"Creates a summary with the text model when the session ends." = "Creates a summary with the text model when the session ends.";
+
+"Directly from audio" = "Directly from audio";
+
+"Live Translation" = "Live Translation";
+
+"No Translation" = "No Translation";
+
+"Spoken Language" = "Spoken Language";
+
+"Transcribe, then use the text model" = "Transcribe, then use the text model";
+
+"Transcription uses %@. Direct translation uses %@, returns both the original and translated text, and needs only the speech key. Generated audio is never played, but the service still bills it." = "Transcription uses %@. Direct translation uses %@, returns both the original and translated text, and needs only the speech key. Generated audio is never played, but the service still bills it.";
+
+"Translate Directly" = "Translate Directly";
+
+"Translate to %@" = "Translate to %@";
+"No Whisper model is selected." = "No Whisper model is selected.";
+
+"The selected Whisper model file is missing." = "The selected Whisper model file is missing.";
+"Text" = "Text";
+
+/* File progress (2026-10-26). */
+"Translating" = "Translating";
+
+"File %@ of %@" = "File %@ of %@";
+
+"Processed %@ of %@" = "Processed %@ of %@";
+
+"Processed %@" = "Processed %@";
+
+"Elapsed %@" = "Elapsed %@";
+
+"%@× real time" = "%@× real time";
+
+"About %@ left" = "About %@ left";
+
+"Translated %@ of %@" = "Translated %@ of %@";
+
+/* In-place adjustments (2026-10-26). */
+"Not downloaded" = "Not downloaded";
+
+"Live translation uses %@." = "Live translation uses %@.";
+"These use the text model above and replace this transcript's existing translation or summary." = "These use the text model above and replace this transcript's existing translation or summary.";
+
+// Apple on-device text model
+"Apple Intelligence · On Device" = "Apple Intelligence · On Device";
+"This Mac does not support Apple Intelligence." = "This Mac does not support Apple Intelligence.";
+"Enable Apple Intelligence in System Settings to use the on-device text model." = "Enable Apple Intelligence in System Settings to use the on-device text model.";
+"Apple's on-device model is not ready. Check Apple Intelligence in System Settings and use the same language for Mac and Siri." = "Apple's on-device model is not ready. Check Apple Intelligence in System Settings and use the same language for Mac and Siri.";
+"Apple's on-device text model is unavailable." = "Apple's on-device text model is unavailable.";
+"Apple's on-device model does not support the language: %@." = "Apple's on-device model does not support the language: %@.";
+"Apple's on-device model could not condense this transcript. Choose another text service for its summary." = "Apple's on-device model could not condense this transcript. Choose another text service for its summary.";
+"Apple's on-device model does not support a language in this request." = "Apple's on-device model does not support a language in this request.";
+"Apple's on-device model could not finish this request. Try again or choose another text service." = "Apple's on-device model could not finish this request. Try again or choose another text service.";
+"Apple's on-device model declined this content. Choose another text service to process it." = "Apple's on-device model declined this content. Choose another text service to process it.";
+"Apple's content checks can reject ordinary quotations or sensitive topics. Translation and summaries may be refused; if this happens often, choose another text service." = "Apple's content checks can reject ordinary quotations or sensitive topics. Translation and summaries may be refused; if this happens often, choose another text service.";
+"The request exceeds Apple's on-device context limit. Shorten vocabulary hints or choose another text service." = "The request exceeds Apple's on-device context limit. Shorten vocabulary hints or choose another text service.";
+"The model did not return a complete text result." = "The model did not return a complete text result.";
+"Ready on this Mac" = "Ready on this Mac";
+"Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready." = "Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready.";
+
+// Live audio and caption controls
+"Automatic" = "Automatic";
+"2 seconds · Faster" = "2 seconds · Faster";
+"4 seconds · Balanced" = "4 seconds · Balanced";
+"8 seconds · More context" = "8 seconds · More context";
+"Live Audio" = "Live Audio";
+"Live Audio Chunks" = "Live Audio Chunks";
+"Automatic cuts at pauses and waits at most 4 seconds. Shorter chunks respond faster but have less context." = "Automatic cuts at pauses and waits at most 4 seconds. Shorter chunks respond faster but have less context.";
+"Continuous streaming · No audio slicing" = "Continuous streaming · No audio slicing";
+"Adaptive gain for quiet speech" = "Adaptive gain for quiet speech";
+"Apple microphone voice processing" = "Apple microphone voice processing";
+"Gain helps quiet or distant voices. Apple's microphone processing reduces noise but may suppress distant speakers; leave it off for lectures or virtual inputs. It only processes microphone input and may lower other apps' audio." = "Gain helps quiet or distant voices. Apple's microphone processing reduces noise but may suppress distant speakers; leave it off for lectures or virtual inputs. It only processes microphone input and may lower other apps' audio.";
+"Apple voice processing is unavailable for this input. Turn it off or select another microphone." = "Apple voice processing is unavailable for this input. Turn it off or select another microphone.";
+"Live audio follows the chunk setting above. Files use 20-second chunks. Stopping retains the final audio. Recognition stays on this Mac." = "Live audio follows the chunk setting above. Files use 20-second chunks. Stopping retains the final audio. Recognition stays on this Mac.";
+"Apple Speech streams words as you speak. Stable phrases are translated without waiting for a long pause; stopping finalizes the last words." = "Apple Speech streams words as you speak. Stable phrases are translated without waiting for a long pause; stopping finalizes the last words.";
+"A custom endpoint must implement audio/transcriptions. Live audio follows the chunk setting above; Realtime transcription is OpenAI only." = "A custom endpoint must implement audio/transcriptions. Live audio follows the chunk setting above; Realtime transcription is OpenAI only.";
+"Custom endpoints use the live chunk setting above and chunks of up to ten minutes for files." = "Custom endpoints use the live chunk setting above and chunks of up to ten minutes for files.";
+"Caption Settings" = "Caption Settings";
+"Visible Sentences" = "Visible Sentences";
+"Provisional translation" = "Provisional translation";
+
+"Starting audio capture…" = "Starting audio capture…";
+"Save Recording" = "Save Recording";
+"Keep an audio file alongside the transcript. Paused audio is excluded." = "Keep an audio file alongside the transcript. Paused audio is excluded.";
+"Show Recording in Finder" = "Show Recording in Finder";
+"This deletes the transcript and its saved audio." = "This deletes the transcript and its saved audio.";
+"Could not save the recording. Capture stopped; the transcript and any recorded audio were retained." = "Could not save the recording. Capture stopped; the transcript and any recorded audio were retained.";
+"System Default" = "System Default";
+"System Default · %@" = "System Default · %@";
+"Unavailable Microphone" = "Unavailable Microphone";
+"Microphone: %@" = "Microphone: %@";
+"The selected microphone is unavailable. Connect it or choose another microphone." = "The selected microphone is unavailable. Connect it or choose another microphone.";
+"The microphone changed or disconnected. Select a microphone and start a new recording." = "The microphone changed or disconnected. Select a microphone and start a new recording.";
+"Could not use the selected microphone. Choose another microphone or turn off Apple voice processing." = "Could not use the selected microphone. Choose another microphone or turn off Apple voice processing.";
+
+"Recording Location" = "Recording Location";
+"Recordings could not be moved. Existing audio is still available at its original location." = "Recordings could not be moved. Existing audio is still available at its original location.";
+
+"Choose Folder" = "Choose Folder";
+
+"Choose Folder…" = "Choose Folder…";
+
+"Use Default Location" = "Use Default Location";
+
+"New recordings use this folder. Existing recordings stay at their saved locations." = "New recordings use this folder. Existing recordings stay at their saved locations.";
+
+"The recording is unavailable. Reconnect its drive before renaming." = "The recording is unavailable. Reconnect its drive before renaming.";
+
+"Recording could not be renamed: " = "Recording could not be renamed: ";
+
+"Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text." = "Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text.";
+
+"Subtitles (SRT)" = "Subtitles (SRT)";
+"The transcript and its saved audio move to the Trash." = "The transcript and its saved audio move to the Trash.";
+"The transcript moves to the Trash." = "The transcript moves to the Trash.";
+"This deletes the transcript." = "This deletes the transcript.";

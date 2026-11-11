@@ -4,6 +4,8 @@
 
 Real-time transcription and translation for Windows and Android. Microphone input, system audio and media files become transcripts, with floating bilingual captions.
 
+A separate **native macOS app** is available for local development in [`macos/`](macos/README.md): SwiftUI, on-device Whisper with Metal, microphone/system audio, file transcription, API translation, captions and a local library. Requires macOS 26 or later; build instructions and migration scope are in the macOS guide.
+
 [简体中文](README.zh-CN.md)
 
 ![Altranscribe transcribing an English lecture into Chinese](docs/images/live-light-en.png)

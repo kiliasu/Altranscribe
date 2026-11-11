@@ -1,0 +1,469 @@
+import SwiftUI
+import AltranscribeCore
+
+struct ContentView: View {
+    @Bindable var model: AppModel
+    @AppStorage("showInspector") private var showInspector = true
+    /// When Settings last hid the inspector. Hiding finishes after a short animation and SwiftUI then reports the
+    /// inspector as closed; if the person has left Settings by then, that report is not their choice, and the
+    /// inspector opens again instead (closed for one update, then open).
+    @State private var settingsHidInspector = Date.distantPast
+    @State private var reopeningInspector = false
+    @Environment(\.appearsActive) private var appearsActive
+
+    var body: some View {
+        // The window has to hold the sidebar's width twice, the inspector's once and the least the detail
+        // column asks for. When that came to more than the window's minimum size below, AppKit looped
+        // through Update Constraints passes and stopped the app: showing the inspector in a narrow
+        // window did it, and so did dragging the sidebar wider. So the detail column asks for nothing
+        // (its pages fit the 270 points that are left at the least), and the widest sidebar and
+        // inspector add up to the window's minimum: 2 × 270 + 320 = 860.
+        NavigationSplitView {
+            Sidebar(model: model)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 270)
+        } detail: {
+            // Pages give way to one another the way the welcome page gives way to a transcript.
+            ZStack {
+                detail
+                    .id(model.destination ?? .live)
+                    .transition(.page)
+            }
+            .animation(Motion.content, value: model.destination)
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .inspector(isPresented: Binding(get: {
+                showInspector && model.destination != .settings && !reopeningInspector
+            }, set: { shown in
+                guard model.destination != .settings, !reopeningInspector else { return }
+                if !shown && Date.now.timeIntervalSince(settingsHidInspector) < 1 { reopeningInspector = true; return }
+                showInspector = shown
+            })) {
+                inspector
+                    .inspectorColumnWidth(min: 250, ideal: 280, max: 320)
+            }
+        }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .frame(minWidth: 860, minHeight: 560)
+        // With Settings open beside it, only the window in front shows an error.
+        .alert(L("Attention"), isPresented: Binding(get: { model.error != nil && appearsActive },
+                                                    set: { if !$0 && appearsActive { model.error = nil } })) {
+            Button(L("OK"), role: .cancel) { model.error = nil }
+        } message: { Text(model.error?.text ?? "") }
+        .confirmationDialog(L("Delete this transcript?"),
+                            isPresented: Binding(get: { model.pendingDeletion != nil }, set: { if !$0 { model.pendingDeletion = nil } }),
+                            presenting: model.pendingDeletion) { id in
+            Button(L("Delete"), role: .destructive) { model.deleteRecord(id) }
+        } message: { id in Text(deletionMessage(model.records.first { $0.id == id })) }
+        .onChange(of: model.destination) { _, destination in
+            if destination == .settings { settingsHidInspector = .now }
+        }
+        .onChange(of: reopeningInspector) { _, reopening in
+            if reopening { reopeningInspector = false }
+        }
+        .onChange(of: model.settings) { _, _ in model.saveSettings() }
+        .task { await model.prepareRecordingLocation() }
+        .task(id: model.settings.appleSpeechLocale + model.settings.speechProvider.rawValue) {
+            if model.settings.speechProvider == .appleSpeech { await model.refreshAppleSpeech() }
+        }
+    }
+
+    /// What deleting removes, and where it goes: the Trash for the person's own library.
+    private func deletionMessage(_ record: TranscriptRecord?) -> String {
+        let recoverable = model.paths.trashesDeletedFiles
+        if record?.hasRecording == true {
+            return L(recoverable ? "The transcript and its saved audio move to the Trash." : "This deletes the transcript and its saved audio.")
+        }
+        let kept = record?.source == .file ? " " + L("The original media file will be kept.") : ""
+        return L(recoverable ? "The transcript moves to the Trash." : "This deletes the transcript.") + kept
+    }
+
+    /// A saved transcript shows its own facts; the capture pages show what the next session will use.
+    @ViewBuilder private var inspector: some View {
+        if case .transcript(let id) = model.destination {
+            TranscriptInspector(model: model, id: id).id(id)
+        } else {
+            SessionInspector(model: model)
+        }
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch model.destination ?? .live {
+        case .live: LiveView(model: model)
+        case .files: FilesView(model: model)
+        case .settings: SettingsView(model: model, embedded: true).navigationTitle(L("Settings"))
+        case .transcript(let id): TranscriptDestination(model: model, id: id).id(id)
+        }
+    }
+}
+
+/// A saved transcript's page. A session that is running changes the records with every recognized word;
+/// looking the record up here keeps those changes from re-evaluating the whole window.
+private struct TranscriptDestination: View {
+    let model: AppModel
+    let id: UUID
+    var body: some View {
+        if let record = model.records.first(where: { $0.id == id }) {
+            TranscriptPage(model: model, record: record)
+        } else {
+            ContentUnavailableView(L("Your words, kept close"), systemImage: "text.page",
+                                   description: Text(L("Select a transcript to read its text, translation and summary.")))
+        }
+    }
+}
+
+private struct TranscriptInspector: View {
+    let model: AppModel
+    let id: UUID
+    var body: some View {
+        if let record = model.records.first(where: { $0.id == id }) {
+            RecordInspector(model: model, record: record)
+        } else {
+            SessionInspector(model: model)
+        }
+    }
+}
+
+// MARK: - Sidebar
+
+private struct Sidebar: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        List(selection: $model.destination) {
+            Section {
+                LiveRow(model: model).tag(Destination.live)
+                FilesRow(model: model).tag(Destination.files)
+                Label(L("Settings"), systemImage: "gearshape").tag(Destination.settings)
+            }
+            let groups = RecordGroup.make(model.filteredRecords)
+            ForEach(groups) { group in
+                Section(group.title) {
+                    ForEach(group.records) { record in
+                        RecordRow(record: record, kind: group.kind,
+                                  isLive: record.id == model.activeRecordID && (model.isCapturing || model.phase == .finishing))
+                            .equatable()
+                            .tag(Destination.transcript(record.id))
+                            .contextMenu { RecordActions(model: model, record: record) }
+                    }
+                }
+            }
+            if groups.isEmpty {
+                Section(L("Transcripts")) {
+                    Text(model.search.isEmpty ? L("No transcripts yet") : L("No Results"))
+                        .foregroundStyle(.secondary)
+                        .selectionDisabled()
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        // Transcripts slide into and out of the list as they are recorded, deleted or filtered.
+        .animation(Motion.content, value: model.filteredRecords.map(\.id))
+        .searchable(text: $model.search, placement: .sidebar, prompt: Text(L("Search Transcripts")))
+        .onDeleteCommand {
+            if case .transcript(let id) = model.destination, !model.busy { model.pendingDeletion = id }
+        }
+    }
+}
+
+private struct LiveRow: View {
+    let model: AppModel
+    var body: some View {
+        let active = model.isCapturing || model.phase == .finishing
+        Label {
+            HStack(spacing: 6) {
+                Text(L("Live Transcription"))
+                Spacer(minLength: 4)
+                if active {
+                    HStack(spacing: 6) {
+                        // The clock ticks like the one in the bar. Rolling its digits redrew them on every
+                        // frame of the roll: a third of a processor core for as long as a session lasted.
+                        Text(timestamp(model.elapsed))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        PulsingDot(color: model.phase == .recording ? .systemRed : .systemOrange,
+                                   pulsing: model.phase == .recording, diameter: 7)
+                    }
+                    .transition(.opacity)
+                }
+            }
+        } icon: {
+            // A symbol effect inside a sidebar row updates the window's layout on every frame for as long
+            // as it runs. The pulsing dot beside the clock shows that the session is live instead.
+            Image(systemName: "waveform")
+        }
+        .tint(active ? .red : nil)
+        .animation(Motion.quick, value: active)
+        .animation(Motion.quick, value: model.phase == .paused)
+    }
+}
+
+private struct FilesRow: View {
+    let model: AppModel
+    var body: some View {
+        let pending = model.queue.filter { $0.status == .waiting || $0.status == .processing }.count
+        Label {
+            HStack(spacing: 6) {
+                Text(L("File Transcription"))
+                Spacer(minLength: 4)
+                if let current = model.queue.first(where: { $0.status == .processing }) {
+                    ProgressView(value: current.progress)
+                        .progressViewStyle(.circular)
+                        .controlSize(.mini)
+                        .animation(Motion.content, value: current.progress)
+                        .transition(.opacity)
+                }
+            }
+        } icon: {
+            Image(systemName: "tray.and.arrow.down")
+        }
+        .badge(pending)
+        .animation(Motion.quick, value: model.queue.contains { $0.status == .processing })
+    }
+}
+
+/// One transcript in the sidebar. It keeps only what it shows and compares by that, so the words a
+/// running session adds to its transcript do not redraw the row.
+private struct RecordRow: View, Equatable {
+    let title: String
+    let createdAt: Date
+    let duration: Int
+    let status: RecordStatus
+    let source: AudioSource
+    let kind: RecordGroup.Kind
+    let isLive: Bool
+
+    init(record: TranscriptRecord, kind: RecordGroup.Kind, isLive: Bool) {
+        title = record.title; createdAt = record.createdAt; status = record.status; source = record.source
+        // The clock in the row above already counts a running session.
+        duration = isLive ? 0 : Int(record.duration)
+        self.kind = kind; self.isLive = isLive
+    }
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(detail)
+                    if status == .interrupted || status == .failed {
+                        Text("·")
+                        Text(status.title).foregroundStyle(status == .failed ? .red : .orange)
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+        } icon: {
+            // While recording the row shows a red record mark; once saved it becomes its source's symbol.
+            Image(systemName: isLive ? "record.circle" : source.symbol)
+                .foregroundStyle(isLive ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .padding(.vertical, 2)
+        .animation(Motion.quick, value: isLive)
+    }
+
+    private var detail: String {
+        let locale = InterfaceLanguage.current.locale
+        let date: String = switch kind {
+        case .today, .yesterday: createdAt.formatted(.dateTime.hour().minute().locale(locale))
+        case .week: createdAt.formatted(.dateTime.weekday(.wide).locale(locale))
+        case .month, .earlier: createdAt.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+        }
+        return duration > 0 ? date + " · " + durationText(Double(duration)) : date
+    }
+}
+
+/// Transcripts grouped the way Notes groups notes: today, yesterday, the past week and month, then by month.
+struct RecordGroup: Identifiable {
+    enum Kind: Hashable { case today, yesterday, week, month, earlier(Date) }
+    let kind: Kind
+    var records: [TranscriptRecord]
+    var id: Kind { kind }
+
+    var title: String {
+        switch kind {
+        case .today: L("Today")
+        case .yesterday: L("Yesterday")
+        case .week: L("Previous 7 Days")
+        case .month: L("Previous 30 Days")
+        case .earlier(let month): month.formatted(.dateTime.year().month(.wide).locale(InterfaceLanguage.current.locale))
+        }
+    }
+
+    static func make(_ records: [TranscriptRecord], now: Date = .now, calendar: Calendar = .current) -> [RecordGroup] {
+        let today = calendar.startOfDay(for: now)
+        var groups: [RecordGroup] = []
+        for record in records {
+            let day = calendar.startOfDay(for: record.createdAt)
+            let age = calendar.dateComponents([.day], from: day, to: today).day ?? 0
+            let kind: Kind = switch age {
+            case ...0: .today
+            case 1: .yesterday
+            case 2..<7: .week
+            case 7..<30: .month
+            default: .earlier(calendar.dateInterval(of: .month, for: day)?.start ?? day)
+            }
+            if groups.last?.kind == kind { groups[groups.count - 1].records.append(record) }
+            else { groups.append(RecordGroup(kind: kind, records: [record])) }
+        }
+        return groups
+    }
+}
+
+// MARK: - Inspector
+
+struct SessionInspector: View {
+    @Bindable var model: AppModel
+    /// The live page shows the live model; the files page shows the model files use.
+    private var live: Bool { model.destination != .files }
+
+    var body: some View {
+        let settings = model.settings
+        Form {
+            Section(L("Recognition")) {
+                // The section's title says what the engine is for; the short label leaves room for its name.
+                Picker(L("Engine"), selection: $model.settings.speechProvider) {
+                    ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) }
+                }
+                speechModel
+                if settings.usesCloudLive && live {
+                    Picker(L("Live Mode"), selection: Binding(get: { settings.cloudDirectTranslation ?? true },
+                                                              set: { model.settings.cloudDirectTranslation = $0 })) {
+                        Text(L("Transcribe")).tag(false)
+                        Text(L("Translate Directly")).tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                if settings.offersLanguageChoice(live: live) {
+                    Picker(L("Language"), selection: $model.settings.sourceLanguage) {
+                        ForEach(AppSettings.languages, id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                }
+                if let issue = model.modelIssue {
+                    Label(issue.text, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .transition(.rise)
+                }
+                OpenSettingsButton(title: settings.speechProvider.isLocal ? L("Manage Models…") : L("Speech Settings…"),
+                                   page: .speech, model: model)
+            }
+            if live {
+                Section {
+                    SaveRecordingToggle(model: model, titled: true)
+                } footer: {
+                    Text(L("Keep an audio file alongside the transcript. Paused audio is excluded."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if !live && settings.speechProvider.isLocal {
+                Section {
+                    Toggle(L("Boost quiet audio"), isOn: Binding(get: { model.settings.boostQuietFiles ?? false },
+                        set: { model.settings.boostQuietFiles = $0 }))
+                } footer: {
+                    Text(L("Checks the whole file and raises quiet audio by up to 25 dB without changing the original. Background noise also gets louder. Leave off for normal recordings."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Toggle(L("Translate"), isOn: $model.settings.translate)
+                Picker(L("Target Language"), selection: $model.settings.targetLanguage) {
+                    ForEach(AppSettings.languages.filter { $0.0 != "auto" }, id: \.0) { Text($0.1).tag($0.0) }
+                }
+                Toggle(L("Summarize when finished"), isOn: $model.settings.summarize)
+                    .help(L("Titles and summaries use the app language at task start, independently of the translation language."))
+                if settings.needsTextModel(live: live) {
+                    TextModelPicker(model: model)
+                    OpenSettingsButton(title: L("Text Model Settings…"), page: .text, model: model)
+                }
+            } header: {
+                Text(L("Text Processing"))
+            } footer: {
+                if live && settings.usesDirectSpeechTranslation {
+                    Text(L("Live translation uses %@.", settings.liveSpeechModel))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if settings.supportsVocabulary(live: live) {
+                Section {
+                    TextField(L("Names and terms, separated by commas"), text: $model.settings.vocabulary, axis: .vertical)
+                        .lineLimit(3...6)
+                        .labelsHidden()
+                } header: {
+                    Text(L("Vocabulary"))
+                } footer: {
+                    Text(L("Helps recognize names and terms without rewriting the original text."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .fadesUnderBars()
+        .disabled(model.busy)
+        .animation(Motion.content, value: model.modelReady)
+        .animation(Motion.content, value: settings.translate || settings.summarize)
+        .animation(Motion.content, value: settings.speechProvider)
+    }
+
+    /// The engine's model, switchable among what is installed; a live cloud session's model follows its mode.
+    @ViewBuilder private var speechModel: some View {
+        let settings = model.settings
+        if settings.usesCloudLive && live {
+            LabeledContent(L("Model"), value: settings.liveSpeechModel)
+        } else if model.speechModelChoices.isEmpty {
+            LabeledContent(settings.speechProvider == .appleSpeech ? L("Language") : L("Model")) {
+                Text(settings.speechProvider == .appleSpeech ? settings.speechModelTitle(live: live) : L("Not downloaded"))
+                    .foregroundStyle(settings.speechProvider == .appleSpeech ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+            }
+        } else {
+            let choices = model.speechModelChoices
+            Picker(settings.speechProvider == .appleSpeech ? L("Language") : L("Model"),
+                   selection: Binding(get: { model.selectedSpeechModel }, set: { model.selectedSpeechModel = $0 })) {
+                if !choices.contains(where: { $0.id == model.selectedSpeechModel }) {
+                    // Nothing chosen yet reads differently from a chosen model whose files are gone.
+                    Text(model.selectedSpeechModel.isEmpty ? L("Select Model") : L("Not downloaded")).tag(model.selectedSpeechModel)
+                }
+                ForEach(choices) { Text($0.title).tag($0.id) }
+            }
+        }
+    }
+}
+
+/// A saved transcript's own facts, instead of the session settings that only apply to a new session.
+struct RecordInspector: View {
+    @Bindable var model: AppModel
+    let record: TranscriptRecord
+
+    var body: some View {
+        Form {
+            Section(L("This Transcript")) {
+                LabeledContent(L("Source"), value: record.source.title)
+                LabeledContent(L("Created"), value: Localization.date(record.createdAt))
+                if record.duration > 0 { LabeledContent(L("Duration"), value: durationText(record.duration)) }
+                LabeledContent(L("Language"), value: languageName(record.language) + (record.targetLanguage.map { " → " + languageName($0) } ?? ""))
+                LabeledContent(L("Speech Model"), value: AppSettings.speechModelDisplayName(record.speechModel))
+                LabeledContent(L("Status"), value: record.status.title)
+                if let path = record.sourcePath {
+                    Button(L("Show Source in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                }
+            }
+            Section {
+                TextModelPicker(model: model)
+                Picker(L("Target Language"), selection: $model.settings.targetLanguage) {
+                    ForEach(AppSettings.languages.filter { $0.0 != "auto" }, id: \.0) { Text($0.1).tag($0.0) }
+                }
+                Button(L("Translate Transcript")) { model.postProcess(record, summary: false) }
+                    .disabled(model.busy || record.segments.isEmpty || model.settings.effectiveTextModel.isEmpty)
+                Button(L("Generate Summary")) { model.postProcess(record, summary: true) }
+                    .disabled(model.busy || record.segments.isEmpty || model.settings.effectiveTextModel.isEmpty)
+                OpenSettingsButton(title: L("Text Model Settings…"), page: .text, model: model)
+            } header: { Text(L("Translate or Summarize Again")) } footer: {
+                Text(L("These use the text model above and replace this transcript's existing translation or summary."))
+            }
+        }
+        .formStyle(.grouped)
+        .fadesUnderBars()
+        .disabled(model.busy)
+    }
+}

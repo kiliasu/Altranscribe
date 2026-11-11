@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "开始录音后，Altranscribe 使用麦克风将语音转为文字。";
+"NSAudioCaptureUsageDescription" = "仅在你开始系统声音转写时，Altranscribe 才会采集系统音频。";
+"Audio or Video" = "音频或视频";
+"NSHumanReadableCopyright" = "Copyright © 2026 kiliasu。MIT 许可。";

@@ -1,0 +1,513 @@
+/* Application-owned strings. Keep keys in sync between languages. */
+"%@ waiting" = "%@ 个等待处理";
+"3.5 Multilingual" = "3.5 多语言版";
+"A task is still running" = "仍有任务正在处理";
+"API Base URL" = "API 地址";
+"Add Files…" = "添加文件…";
+"Allow Altranscribe in System Settings → Privacy & Security → Microphone." = "请在系统设置 → 隐私与安全性 → 麦克风中允许 Altranscribe。";
+"Allow Altranscribe in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen the app." = "请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许 Altranscribe，然后重新打开应用。";
+"Altranscribe" = "Altranscribe";
+"Altranscribe Captions" = "Altranscribe 字幕";
+"App text changes immediately. Reopen the app to update macOS menus and system dialogs." = "应用文案立即切换；macOS 标准菜单与系统对话框在重新打开应用后更新。";
+"Appearance" = "外观";
+"Attention" = "需要注意";
+"Audio Source" = "音频来源";
+"Audio conversion failed." = "音频转换失败。";
+"Audio timestamp" = "音频时间";
+"Bring in a recording" = "导入一段录音";
+"Cancel" = "取消";
+"Captions appear here when transcription starts." = "开始转写后，字幕会显示在这里。";
+"Capture a lecture, a meeting, or a thought. Choose an audio source to begin." = "记录课堂、会议与灵感。选择音频来源后开始。";
+"Check the API key and model access." = "请检查 API 密钥和模型访问权限。";
+"Check the endpoint and model name." = "请检查地址和模型名称。";
+"Choose Existing Model…" = "选择已有模型…";
+"Choose Files…" = "选择文件…";
+"Clear Completed" = "清除已完成";
+"Close" = "关闭";
+"Completed" = "已完成";
+"Compute" = "计算";
+"Configure a text model in Settings." = "请在设置中配置文本模型。";
+"Copy Transcript" = "复制文本";
+"Could not connect. Check the API URL, network and local server." = "无法连接 API，请检查地址、网络和本机服务是否已启动。";
+"Could not convert the input audio format." = "无法转换输入音频格式。";
+"Could not create a Nemotron audio stream." = "无法创建 Nemotron 音频流。";
+"Could not load Nemotron. Download the model again and retry." = "无法加载 Nemotron 模型，请重新下载后重试。";
+"Could not load the Whisper model. Check the file, or try disabling Metal." = "无法加载 Whisper 模型。请检查文件；也可关闭 Metal 后重试。";
+"Could not read system audio." = "无法读取系统音频。";
+"Could not read the API key from Keychain." = "无法读取钥匙串中的 API 密钥。";
+"Could not remove the API key." = "无法删除 API 密钥。";
+"Could not save to Keychain." = "无法保存到钥匙串。";
+"Could not update the API key." = "无法更新 API 密钥。";
+"Creating summary…" = "正在生成摘要…";
+"Current Model" = "当前模型";
+"Custom Model Name" = "自定义模型名称";
+"Dark" = "深色";
+"Data & Privacy" = "数据与隐私";
+"Delete" = "删除";
+"Delete Model" = "删除模型";
+"Delete Transcript…" = "删除记录…";
+"Delete the downloaded model?" = "删除下载的模型？";
+"Delete this transcript?" = "删除这条记录？";
+"Detect Automatically" = "自动检测";
+"Discard" = "丢弃";
+"Discard Recording…" = "丢弃本次记录…";
+"Discard this recording?" = "丢弃本次记录？";
+"Download" = "下载";
+"Download a Local Model" = "下载本地模型";
+"Download or select a Whisper model in Settings first." = "请先在设置中下载或选择 Whisper 模型。";
+"Download the selected Nemotron model in Settings first." = "请先在设置中下载所选 Nemotron 模型。";
+"Drop audio or video here, or choose files from your Mac. Files are processed in order." = "拖入音频或视频，或从 Mac 中选择文件。多个文件将依次处理。";
+"Engine" = "引擎";
+"English is the default. Captions update as you speak, settle after a pause, and finish the last sentence when stopped. Recognition runs offline." = "默认采用英语版。字幕随讲话更新，停顿后定稿；停止时会补齐最后一句。识别过程无需联网。";
+"English · Default" = "英语版 · 默认";
+"Enter a complete API URL without credentials, query parameters or a username." = "请输入完整 API 地址，不含密钥、查询参数或用户名。";
+"Enter a text model name in Settings." = "请在设置中填写文本模型名称。";
+"Export" = "导出";
+"Exported from Altranscribe" = "由 Altranscribe 导出";
+"Failed" = "失败";
+"Fetch Models" = "获取模型列表";
+"File Transcription" = "文件转写";
+"Finishing remaining audio…" = "正在完成剩余转写…";
+"Floating Captions" = "悬浮字幕";
+"Gemini did not return a complete text result." = "Gemini 未返回完整的文本结果。";
+"General" = "通用";
+"Generate Summary" = "生成摘要";
+"HTTP %@. Check the API key and model access." = "HTTP %@。请检查 API 密钥和模型访问权限。";
+"HTTP %@. Check the endpoint and model name." = "HTTP %@。请检查地址和模型名称。";
+"HTTP %@. Rate limit or quota exceeded." = "HTTP %@。请求限流或额度不足。";
+"HTTP %@. The request did not complete. It was not retried." = "HTTP %@。请求未完成，未自动重试。";
+"Helps recognize names and terms without rewriting the original text." = "帮助识别专有名词，不会自动修改原文。";
+"Hide Caption Window" = "隐藏字幕窗口";
+"Hide Transcription Options" = "隐藏转写选项";
+"Import" = "导入";
+"Import Audio or Video…" = "导入音频或视频…";
+"Import audio or video ⌘O" = "导入音频或视频 ⌘O";
+"In Progress" = "处理中";
+"Input Level" = "输入音量";
+"Interrupted" = "已中断";
+"Invalid API URL." = "API 地址无效。";
+"Invalid model name." = "模型名称无效。";
+"Jump to Latest" = "跳到最新";
+"Keep Working" = "继续处理";
+"Language" = "语言";
+"Light" = "浅色";
+"Listening" = "正在聆听";
+"Live Transcription" = "实时转写";
+"Live audio is sent in approximately 8-second chunks; files in 20-second chunks. Timestamps are estimates. Paid inference requests are not retried automatically." = "实时音频按约 8 秒分段提交；文件按 20 秒分段。时间戳为估计值。不会自动重试付费推理请求。";
+"Local transcription failed. Earlier text was retained." = "本地转写失败，已保留之前的文本。";
+"Make Text Bigger" = "放大文字";
+"Make Text Normal Size" = "默认文字大小";
+"Make Text Smaller" = "缩小文字";
+"Manage Models…" = "管理模型…";
+"Media File" = "媒体文件";
+"Microphone" = "麦克风";
+"Model" = "模型";
+"Model Card & License" = "模型说明与许可";
+"Model checksum failed. The download was not installed." = "模型校验失败，未安装下载内容。";
+"Model download failed. Please try again." = "模型下载失败，请稍后重试。";
+"Models found: %@" = "找到 %@ 个模型";
+"More" = "更多";
+"Multilingual Whisper Models" = "多语言 Whisper 模型";
+"Names and terms, separated by commas" = "姓名、术语，用逗号分隔";
+"Nemotron 3.5 · Multilingual" = "Nemotron 3.5 · 多语言";
+"Nemotron Models" = "Nemotron 模型";
+"Nemotron is not loaded." = "Nemotron 尚未加载。";
+"Nemotron model checksum failed. The download was not installed." = "Nemotron 模型校验失败，未安装下载内容。";
+"Nemotron model download failed. Please try again." = "Nemotron 模型下载失败，请重试。";
+"Nemotron · English" = "Nemotron · 英语";
+"Nemotron · On Device" = "Nemotron · 本机";
+"No Results" = "无结果";
+"No display is available for system audio capture." = "没有可捕获的显示器。";
+"No microphone is available." = "没有可用的麦克风。";
+"No speech was transcribed." = "没有转写出文字。";
+"No transcripts yet" = "还没有记录";
+"OK" = "好";
+"On-device Compute" = "本机计算";
+"On-device Streaming" = "本机流式识别";
+"Online APIs require HTTPS. HTTP is allowed only for loopback addresses." = "在线 API 必须使用 HTTPS；HTTP 仅限本机地址。";
+"Open Transcript" = "打开记录";
+"Open in Finder" = "在访达中打开";
+"OpenAI / Ollama / Compatible" = "OpenAI / Ollama / 兼容服务";
+"Pause" = "暂停";
+"Pause / Resume" = "暂停 / 继续";
+"Paused" = "已暂停";
+"Pending translations: %@" = "待翻译 %@ 段";
+"Plain text (TXT)" = "纯文本 (TXT)";
+"Preparing…" = "正在加载模型…";
+"Previous 30 Days" = "过去 30 天";
+"Previous 7 Days" = "过去 7 天";
+"Processing Failed" = "处理失败";
+"Quitting stops processing. Text already saved will be retained." = "退出将停止处理；已经写入的文本会保留。";
+"Rate limit or quota exceeded." = "请求限流或额度不足。";
+"Ready" = "准备就绪";
+"Recognition" = "识别";
+"Remove from Queue" = "从队列移除";
+"Rename…" = "重命名…";
+"Resume" = "继续";
+"Retry" = "重试";
+"Save" = "保存";
+"Save As:" = "存储为：";
+"Save Key" = "保存密钥";
+"Save an API key for the speech service." = "请保存语音服务的 API 密钥。";
+"Save an API key for the text service." = "请保存文本服务的 API 密钥。";
+"Save an API key for this service in Settings first." = "请先在设置中保存此服务的 API 密钥。";
+"Saved" = "已保存";
+"Saved to Keychain" = "已保存至钥匙串";
+"Search Transcripts" = "搜索记录";
+"Select Model" = "选择模型";
+"Select a transcript to read its text, translation and summary." = "选择一条记录，查看原文、翻译和摘要。";
+"Selected" = "使用中";
+"Service" = "服务";
+"Settings could not be read. Defaults are in use; the original settings file was retained." = "设置无法读取，已使用默认设置；原设置文件已保留。";
+"Show Caption Window" = "显示字幕窗口";
+"Show Source in Finder" = "在访达中显示来源";
+"Show Transcription Options" = "显示转写选项";
+"Show in Finder" = "在访达中显示";
+"Show only translation when available" = "只显示翻译（有翻译时）";
+"Speech" = "语音模型";
+"Speech Engine" = "语音引擎";
+"Start Queue" = "开始处理";
+"Start Transcription" = "开始转写";
+"Stop & Save" = "停止并保存";
+"Stop Queue" = "停止队列";
+"Stop and Quit" = "停止并退出";
+"Stop and Save" = "停止并保存";
+"Stopped; partial transcript retained" = "已停止，保留部分文本";
+"Stopping…" = "正在停止…";
+"Summarize when finished" = "完成后生成摘要";
+"Summary" = "摘要";
+"Summary failed: " = "摘要失败：";
+"Supports audio and video that macOS can decode" = "支持 macOS 可解码的音频和视频";
+"System" = "跟随系统";
+"System Audio" = "系统声音";
+"System audio capture stopped. Check Screen Recording permission." = "系统声音采集已中断，请检查屏幕录制权限。";
+"Target Language" = "目标语言";
+"Text Models" = "翻译与摘要";
+"Text Processing" = "文本处理";
+"Text Service" = "文本服务";
+"Text Size" = "字号";
+"The API did not return a complete text result." = "API 未返回完整的文本结果。";
+"The API returned an invalid response." = "API 返回了无法识别的响应。";
+"The English model recognizes English only; choose 3.5 Multilingual for Chinese and other languages. All four files must pass SHA-256 verification before installation." = "英语版只识别英语；中文等语言请选择 3.5 多语言版。四个文件全部通过 SHA-256 校验后才安装。";
+"The local model is not loaded." = "本地模型尚未加载。";
+"The model output was truncated. Use a larger output limit or shorter input." = "文本模型输出被截断，请使用更大的输出限制或更短的内容。";
+"The original media file will be kept." = "原始媒体文件会保留。";
+"The request did not complete. It was not retried." = "请求未完成，未自动重试。";
+"The selected model is not downloaded yet." = "所选模型尚未下载。";
+"This file has no readable audio track." = "文件中没有可读取的音轨。";
+"This legacy OpenAI model is scheduled to shut down on February 26, 2027. For new use, choose gpt-transcribe." = "此旧版 OpenAI 模型计划于 2027 年 2 月 26 日停用。新任务建议选择 gpt-transcribe。";
+"This model does not accept vocabulary hints. This app uses its text output without speaker labels." = "此模型不支持词汇提示。本应用使用其文本结果，不显示说话人标签。";
+"This model requires Realtime transcription. Choose a file transcription model instead." = "此模型需要 Realtime 转录连接，请选择文件转录模型。";
+"This timestamp is estimated" = "此时间为片段估计时间";
+"Models are downloaded separately and verified with SHA-256. Large v3 is the full model; Turbo is smaller and faster." = "模型单独下载并通过 SHA-256 校验。Large v3 为完整版，Turbo 体积更小、速度更快。";
+"Title" = "标题";
+"Titles and summaries use the app language at task start, independently of the translation language." = "标题和摘要使用任务开始时的界面语言，与翻译目标语言独立。";
+"Today" = "今天";
+"Transcribing" = "正在转写";
+"Transcribing %@ of %@" = "正在转写第 %@ 个，共 %@ 个";
+"Transcribing audio" = "正在转写音频";
+"Transcript" = "文稿";
+"Transcript Location" = "记录位置";
+"Transcription" = "转写";
+"Transcription Options" = "转写选项";
+"Transcription could not keep up. Capture stopped and text was retained. Try a smaller model." = "转写速度跟不上采集，已停止采集并保留文本。请改用较小模型。";
+"Transcripts" = "记录";
+"Translate" = "翻译";
+"Translate Transcript" = "翻译文本";
+"Translating %@/%@" = "正在翻译 %@/%@";
+"Translating…" = "正在翻译…";
+"Translation" = "译文";
+"Translation and summary use the same text model. For local services, fetch the installed models or use an override." = "翻译和摘要共用此文本模型。本机服务可获取已安装模型，或使用自定义名称。";
+"Translation is falling behind. The original text was saved; translate it later from Library." = "翻译暂时跟不上，原文已保存；可稍后在该记录的菜单中翻译。";
+"The text model did not return a translation of this line. The original text was saved; translate it again from Library." = "文本模型返回的不是这一句的译文。原文已保存；可在该记录的菜单中重新翻译。";
+"Translation or summary is enabled. Configure a text model in Settings first." = "已开启翻译或摘要，请先在设置中填写文本模型。";
+"Turn sound into words" = "让声音成为文字";
+"Unreadable record files: %@. The files were retained." = "有 %@ 个记录文件无法读取，原文件已保留。";
+"Use OpenAI Endpoint" = "使用 OpenAI 地址";
+"Use" = "使用";
+"Use Metal GPU Acceleration" = "使用 Metal GPU 加速";
+"View" = "查看";
+"Vocabulary hints for this model cannot contain < or >." = "此模型的词汇提示不能包含 < 或 >。";
+"Vocabulary" = "词汇提示";
+"Waiting" = "等待处理";
+"Web page (HTML)" = "网页 (HTML)";
+"Whisper · On Device" = "Whisper · 本机";
+"Yesterday" = "昨天";
+"Your words, kept close" = "你的声音，随时回顾";
+"macOS could not decode this media file. Convert it to WAV, M4A or MP4 first." = "macOS 无法解码此媒体文件。请先转换为 WAV、M4A 或 MP4。";
+
+"Apple SpeechTranscriber could not select an audio format." = "Apple SpeechTranscriber 无法选择兼容的音频格式。";
+"Apple SpeechTranscriber is unavailable on this Mac." = "此 Mac 无法使用 Apple SpeechTranscriber。";
+"Checking availability…" = "正在检查可用性…";
+"Choose the spoken language explicitly. macOS manages and updates these on-device models; availability depends on this Mac. No speech API key is needed." = "请明确选择音频中的语言。macOS 负责管理和更新本机模型，可用性取决于此 Mac，无需语音 API 密钥。";
+"Download a FluidAudio model in Settings first." = "请先在设置中下载 FluidAudio 模型。";
+"Downloading…" = "正在下载…";
+"FluidAudio Models" = "FluidAudio 模型";
+"FluidAudio · On Device" = "FluidAudio · 本机";
+"Install Language Model" = "安装语言模型";
+"Install the Apple language model in Settings first." = "请先在设置中安装 Apple 语言模型。";
+"Language model download required" = "需要下载语言模型";
+"Live transcription updates about every 8 seconds; files are processed in 20-second chunks. Stopping also transcribes the remaining audio. Recognition stays on this Mac." = "实时转写约每 8 秒更新一次，文件按 20 秒分块处理。停止时也会转写剩余音频，识别完全在此 Mac 上运行。";
+"Managed by macOS" = "由 macOS 管理";
+"Model Status" = "模型状态";
+"Parakeet v2 recognizes English. V3 and Ultra detect 25 European languages automatically; Chinese is not supported. Ultra uses further-trained v3 weights." = "Parakeet v2 识别英语。V3 和 Ultra 自动检测 25 种欧洲语言，不支持中文。Ultra 是在 v3 基础上继续训练的版本。";
+"Parakeet v2 · English" = "Parakeet v2 · 英语";
+"Parakeet v3 · Multilingual" = "Parakeet v3 · 多语言";
+"Parakeet Ultra · Multilingual" = "Parakeet Ultra · 多语言";
+"Boost quiet audio" = "低音量增强";
+"Checks the whole file and raises quiet audio by up to 25 dB without changing the original. Background noise also gets louder. Leave off for normal recordings." = "先检查整份文件，将低音量录音最多提高 25 dB，不修改原文件。底噪也会被放大，正常音量的录音建议关闭。";
+"Ready for offline transcription" = "可离线转写";
+"Refresh Status" = "刷新状态";
+"Settings" = "设置";
+"System Language Model" = "系统语言模型";
+"This language is not supported by Apple SpeechTranscriber." = "Apple SpeechTranscriber 不支持此语言。";
+
+"Split cloud audio into chunks of ten minutes or less." = "请将云端音频分成不超过十分钟的片段。";
+
+"Gemini accepts up to 1,000 vocabulary terms." = "Gemini 最多支持 1,000 个词汇提示。";
+
+"The uploaded audio did not finish processing." = "上传的音频未能完成处理。";
+
+"The transcript was retained, but the temporary Gemini upload could not be deleted." = "转录文本已保留，但未能删除 Gemini 上的临时音频。";
+
+"File Transcription Model" = "文件转录模型";
+
+"Workspace ID (optional)" = "工作区 ID（可选）";
+
+"A renewed cloud connection ended before its final text was confirmed. Review the text around that point." = "续接后的云端连接在确认最后文本前已结束，请核对该处附近的文本。";
+"Cloud speech ended before all audio was confirmed. The received text was retained." = "云端语音服务未确认全部音频便结束了会话。已收到的文本已保留。";
+
+"Cloud transcription could not keep up. The received text was retained." = "云端转录未能跟上音频。已收到的文本已保留。";
+
+"Files use chunks of up to ten minutes. Live cloud sessions renew before expiry. Timestamps are estimates; paid requests are not replayed automatically." = "文件按不超过十分钟分段处理。实时云端会话在到期前续接。时间戳为估算值，付费请求不会自动重发。";
+
+"Gemini live translation is a preview. If the service does not confirm finalization, the saved record asks you to review the last sentence." = "Gemini 实时翻译为预览版。如果服务未确认收尾，保存的记录会提醒你核对最后一句。";
+
+"Live Speech" = "实时语音";
+
+"The cloud speech connection did not become ready." = "云端语音连接未能就绪。";
+
+"The cloud speech connection was lost. The received text was retained." = "云端语音连接已断开。已收到的文本已保留。";
+
+"The cloud speech service rejected the request. Check the model, language and credentials." = "云端语音服务拒绝了请求。请检查模型、语言和凭据。";
+
+"The cloud speech session could not be renewed before expiry. The received text was retained." = "未能在到期前续接云端语音会话。已收到的文本已保留。";
+
+"The preview translation service did not confirm the final output. Review the last sentence." = "预览版翻译服务未确认最终输出，请核对最后一句。";
+
+"File Transcription Language" = "文件转写语言";
+"Used for live transcription only with the selected models." = "当前模型组合仅在实时转录时使用这些术语。";
+"Used for file transcription. The selected live translation mode does not use these terms." = "用于文件转写。当前的实时直接翻译模式不会使用这些术语。";
+
+"The service timed out. The request was not retried; try again later or choose another model." = "服务响应超时。请求未自动重试，请稍后再试或选择其他模型。";
+
+"HTTP %@. The service is temporarily unavailable. Try again later or choose another model." = "HTTP %@。服务暂时不可用，请稍后再试或选择其他模型。";
+
+"Custom endpoints use 8-second chunks for live audio and chunks of up to ten minutes for files." = "自定义服务的实时音频按 8 秒分段，文件按不超过十分钟分段。";
+
+/* Settings, home summary and inspector wording (2026-10-26). */
+"A custom endpoint must implement audio/transcriptions. Live audio is sent to it in 8-second chunks; Realtime transcription is OpenAI only." = "自定义地址必须实现 audio/transcriptions。实时音频会按 8 秒分段发送到该地址；Realtime 实时转写仅限 OpenAI 官方地址。";
+
+"A custom model name is in use. The app has not checked it against the service." = "正在使用自定义模型名称，本应用未向服务核对该名称。";
+
+"A session is running. Speech and text settings unlock when it ends." = "会话进行中，语音与文本设置将在结束后解锁。";
+
+"API Key" = "API 密钥";
+
+"Compatible Service" = "兼容服务";
+
+"Created" = "创建时间";
+
+"Custom Name…" = "自定义名称…";
+
+"Direct from audio" = "直接从音频";
+
+"Duration" = "时长";
+
+"Enter a new key to replace the saved one" = "输入新密钥以替换已保存的密钥";
+
+"Exactly as the service names it" = "与服务端的模型名称完全一致";
+
+"File translation and summaries use this text model; live direct speech translation uses the speech service. Keys are saved separately for each API base URL. Fetching the model list does not run inference." = "文件翻译与摘要使用此文本模型；实时直接语音翻译使用语音服务。密钥按 API 地址分别保存。获取模型列表不会运行推理。";
+
+"File translation and summaries use this text model; live direct speech translation uses the speech service. Ollama must be running with a text model installed; a local model list loads automatically. Online services use HTTPS, and keys are saved separately for each API base URL." = "文件翻译与摘要使用此文本模型；实时直接语音翻译使用语音服务。Ollama 需在本机运行并已安装文本模型，本机模型列表会自动加载。在线服务使用 HTTPS，密钥按 API 地址分别保存。";
+
+"In Effect" = "当前生效";
+
+"legacy" = "旧模型";
+
+"Live Mode" = "实时模式";
+
+"Local Service" = "本机服务";
+
+"Model List" = "模型列表";
+
+"Model list unavailable: %@" = "无法获取模型列表：%@";
+
+"No key saved. Local services can go without one." = "未保存密钥。本机服务可以不填。";
+
+"No model selected" = "未选择模型";
+
+"Not configured" = "未配置";
+
+"Paste the key for this service" = "粘贴该服务的密钥";
+
+"Quick Fill" = "快速填入";
+
+"Remove" = "移除";
+
+"Saved in Keychain for this API address." = "已为此 API 地址保存到钥匙串。";
+
+"Service URL" = "服务地址";
+
+"Source" = "来源";
+
+"Speech Model" = "语音模型";
+
+"Speech Settings…" = "语音设置…";
+
+"Status" = "状态";
+
+"Text Model" = "文本模型";
+
+"Text Model Settings…" = "文本模型设置…";
+
+"The saved key was removed." = "已移除保存的密钥。";
+
+"This model is not in the service's preset list. Fetch the model list to check it." = "此模型不在该服务的预选列表中，可获取模型列表核对。";
+
+"This Transcript" = "这份文稿";
+
+"Transcribe" = "转录";
+
+"Translate or Summarize Again" = "重新翻译或生成摘要";
+
+"Translation is off, so live sessions transcribe. Turn on Translate to translate directly from audio." = "翻译未开启，实时会话按转录运行。开启翻译后才会直接从音频翻译。";
+
+"Translation or summary needs a text model." = "翻译或摘要需要文本模型。";
+
+"Turn On Translate" = "开启翻译";
+
+/* Home session setup and live mode (2026-10-26). */
+"Choose a Text Model" = "选择文本模型";
+
+"Choose a Text Model…" = "选择文本模型…";
+
+"Creates a summary with the text model when the session ends." = "会话结束后用文本模型生成摘要。";
+
+"Directly from audio" = "直接从音频翻译";
+
+"Live Translation" = "实时翻译方式";
+
+"No Translation" = "不翻译";
+
+"Spoken Language" = "语音语言";
+
+"Transcribe, then use the text model" = "先转录，再用文本模型翻译";
+
+"Transcription uses %@. Direct translation uses %@, returns both the original and translated text, and needs only the speech key. Generated audio is never played, but the service still bills it." = "转录使用 %@。直接翻译使用 %@，同时返回原文与译文，只需语音服务密钥。生成的音频不会播放，但服务仍按音频输出计费。";
+
+"Translate Directly" = "直接翻译";
+
+"Translate to %@" = "翻译为%@";
+"No Whisper model is selected." = "未选择 Whisper 模型。";
+
+"The selected Whisper model file is missing." = "所选 Whisper 模型文件不存在。";
+"Text" = "文本";
+
+/* File progress (2026-10-26). */
+"Translating" = "翻译中";
+
+"File %@ of %@" = "第 %@ / %@ 个文件";
+
+"Processed %@ of %@" = "已处理 %@ / %@";
+
+"Processed %@" = "已处理 %@";
+
+"Elapsed %@" = "用时 %@";
+
+"%@× real time" = "%@× 实时";
+
+"About %@ left" = "约剩 %@";
+
+"Translated %@ of %@" = "已翻译 %@ / %@ 句";
+
+/* In-place adjustments (2026-10-26). */
+"Not downloaded" = "未下载";
+
+"Live translation uses %@." = "实时翻译使用 %@。";
+"These use the text model above and replace this transcript's existing translation or summary." = "使用上方的文本模型，替换这份文稿已有的译文或摘要。";
+
+// Apple on-device text model
+"Apple Intelligence · On Device" = "Apple Intelligence · 本机";
+"This Mac does not support Apple Intelligence." = "这台 Mac 不支持 Apple Intelligence。";
+"Enable Apple Intelligence in System Settings to use the on-device text model." = "请在系统设置中开启 Apple Intelligence，以使用本机文本模型。";
+"Apple's on-device model is not ready. Check Apple Intelligence in System Settings and use the same language for Mac and Siri." = "Apple 本机模型尚未就绪。请检查系统设置中的 Apple Intelligence，并确保 Mac 与 Siri 使用相同语言。";
+"Apple's on-device text model is unavailable." = "Apple 本机文本模型暂不可用。";
+"Apple's on-device model does not support the language: %@." = "Apple 本机模型不支持此语言：%@。";
+"Apple's on-device model could not condense this transcript. Choose another text service for its summary." = "Apple 本机模型未能压缩此文稿。请选用其他文本服务生成摘要。";
+"Apple's on-device model does not support a language in this request." = "此请求中包含 Apple 本机模型不支持的语言。";
+"Apple's on-device model could not finish this request. Try again or choose another text service." = "Apple 本机模型未能完成此请求。请重试或选用其他文本服务。";
+"Apple's on-device model declined this content. Choose another text service to process it." = "Apple 本机模型拒绝处理此内容。请选用其他文本服务。";
+"Apple's content checks can reject ordinary quotations or sensitive topics. Translation and summaries may be refused; if this happens often, choose another text service." = "Apple 的内容审查可能拒绝普通引文或敏感话题，导致翻译、摘要失败。若频繁遇到拒绝，请选用其他文本服务。";
+"The request exceeds Apple's on-device context limit. Shorten vocabulary hints or choose another text service." = "请求超出 Apple 本机模型的上下文容量。请缩短词汇提示或选用其他文本服务。";
+"The model did not return a complete text result." = "模型未返回完整的文本结果。";
+"Ready on this Mac" = "本机已就绪";
+"Translation and summaries run on this Mac with Apple's system model. No API key or bundled model is needed. Long transcripts are summarized in sections. Requires Apple Intelligence to be enabled and ready." = "使用 Apple 系统模型在本机翻译和生成摘要，无需 API 密钥或内置模型文件。长文稿会分段汇总。需要 Apple Intelligence 已开启且模型就绪。";
+
+// Live audio and caption controls
+"Automatic" = "自动";
+"2 seconds · Faster" = "2 秒 · 更快";
+"4 seconds · Balanced" = "4 秒 · 均衡";
+"8 seconds · More context" = "8 秒 · 更多上下文";
+"Live Audio" = "实时音频";
+"Live Audio Chunks" = "音频切片";
+"Automatic cuts at pauses and waits at most 4 seconds. Shorter chunks respond faster but have less context." = "自动模式在停顿处分句，最长等待 4 秒。切片越短，响应越快，但上下文越少。";
+"Continuous streaming · No audio slicing" = "持续流式识别 · 无需切片";
+"Adaptive gain for quiet speech" = "小声语音自适应增益";
+"Apple microphone voice processing" = "苹果麦克风语音增强";
+"Gain helps quiet or distant voices. Apple's microphone processing reduces noise but may suppress distant speakers; leave it off for lectures or virtual inputs. It only processes microphone input and may lower other apps' audio." = "增益可增强小声或较远的人声。苹果麦克风处理可降低噪声，但可能抑制远处的说话人；课堂或虚拟输入建议关闭。此选项只处理麦克风输入，并可能降低其他应用的音量。";
+"Apple voice processing is unavailable for this input. Turn it off or select another microphone." = "当前输入无法使用苹果语音增强，请关闭此选项或选择其他麦克风。";
+"Live audio follows the chunk setting above. Files use 20-second chunks. Stopping retains the final audio. Recognition stays on this Mac." = "实时音频遵循上方的切片设置；文件按 20 秒处理。停止时会保留并处理末尾音频。识别在本机完成。";
+"Apple Speech streams words as you speak. Stable phrases are translated without waiting for a long pause; stopping finalizes the last words." = "Apple Speech 会在说话时持续更新文字，短句稳定后即可翻译，无需等待长时间停顿。停止时会完成末尾的识别。";
+"A custom endpoint must implement audio/transcriptions. Live audio follows the chunk setting above; Realtime transcription is OpenAI only." = "自定义服务必须实现 audio/transcriptions 接口。实时音频遵循上方的切片设置；Realtime 转录仅适用于 OpenAI。";
+"Custom endpoints use the live chunk setting above and chunks of up to ten minutes for files." = "自定义服务使用上方的实时切片设置；文件切片最长为十分钟。";
+"Caption Settings" = "字幕设置";
+"Visible Sentences" = "显示句数";
+"Provisional translation" = "暂定译文";
+
+"Starting audio capture…" = "正在启动音频采集…";
+"Save Recording" = "保存录音";
+"Keep an audio file alongside the transcript. Paused audio is excluded." = "随文稿保留音频文件，暂停期间的声音不会录入。";
+"Show Recording in Finder" = "在访达中显示录音";
+"This deletes the transcript and its saved audio." = "这会删除文稿及其保存的录音。";
+"Could not save the recording. Capture stopped; the transcript and any recorded audio were retained." = "无法保存录音，已停止采集。文稿和已录下的音频已保留。";
+"System Default" = "跟随系统";
+"System Default · %@" = "跟随系统 · %@";
+"Unavailable Microphone" = "麦克风不可用";
+"Microphone: %@" = "麦克风：%@";
+"The selected microphone is unavailable. Connect it or choose another microphone." = "所选麦克风不可用。请连接它或选择其他麦克风。";
+"The microphone changed or disconnected. Select a microphone and start a new recording." = "麦克风已更改或断开。请选择麦克风并重新开始录音。";
+"Could not use the selected microphone. Choose another microphone or turn off Apple voice processing." = "无法使用所选麦克风。请选择其他麦克风或关闭 Apple 麦克风语音处理。";
+
+"Recording Location" = "录音位置";
+"Recordings could not be moved. Existing audio is still available at its original location." = "未能移动录音。已有音频仍可从原位置访问。";
+
+"Choose Folder" = "选择文件夹";
+
+"Choose Folder…" = "选择文件夹…";
+
+"Use Default Location" = "使用默认位置";
+
+"New recordings use this folder. Existing recordings stay at their saved locations." = "新录音保存到此文件夹，已有录音仍保留在原位置。";
+
+"The recording is unavailable. Reconnect its drive before renaming." = "录音暂时不可用，请重新连接其所在磁盘后再重命名。";
+
+"Recording could not be renamed: " = "录音无法重命名：";
+
+"Recordings are saved when Save Recording is on. Transcripts stay on this Mac; API keys are stored in macOS Keychain. Online services receive the relevant audio or text." = "开启“保存录音”时会保留音频文件。转写记录存放在本机，API 密钥保存在 macOS 钥匙串。选择在线服务时，相关音频或文本会发送到该服务。";
+
+"Subtitles (SRT)" = "字幕 (SRT)";
+"The transcript and its saved audio move to the Trash." = "文稿及其保存的录音将移到废纸篓。";
+"The transcript moves to the Trash." = "文稿将移到废纸篓。";
+"This deletes the transcript." = "这会删除该文稿。";

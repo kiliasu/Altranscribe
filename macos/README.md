@@ -1,0 +1,199 @@
+# Altranscribe for macOS
+
+基于 `origin/dev` 的 `e90c412`，独立实现的原生 macOS 应用。界面使用 SwiftUI / AppKit，音频使用 AVFoundation / ScreenCaptureKit。本地支持 Nemotron 流式识别（sherpa-onnx / CPU）、Whisper（whisper.cpp / Metal）、FluidAudio（Parakeet / Core ML）和系统 Apple SpeechTranscriber。不包含 Flutter、WebView 或本地 HTTP 推理服务器。
+
+最低系统 macOS 26；本机使用 Xcode 27、Swift 6.4、macOS 27.0.1 / Apple Silicon 开发。界面按 macOS 26 设计规范实现：侧栏按日期列出全部记录并可搜索，工具栏、检查器、表单、菜单、对话框和文件选择器均为系统控件；实时与文件转写的控制条以及悬浮字幕使用系统 Liquid Glass。动效遵循同一套规则：新内容由下方升起，原位状态交叉淡化，页面之间淡化并轻微模糊、保持原尺寸（页面上的文本框、分段控件、开关和进度指示由 AppKit 绘制，缩放会每帧改变它们的尺寸），控制条在各阶段之间形变，完成的任务以绘制的对勾收尾；开启「减弱动态效果」后只保留淡入淡出。Intel Mac 未验证。
+
+当前版本 1.0.0。工具栏和底栏没有自己的底色，正文、文件队列和设置表单滚到它们下面时逐渐淡出，标题、计时和状态文字不会和正文叠在一起。侧栏默认 240 pt（可在 200–270 pt 之间拖动），检查器 250–320 pt，窗口最小 860×560 pt；侧栏和检查器取任何宽度，窗口都能缩到最小尺寸。默认窗口 1240×800 pt，实时页底栏此时在一行内放下音源、麦克风和开始按钮，麦克风按钮显示设备名称。
+
+主界面与悬浮字幕的流式原文、译文使用原生 [TextRenderer](https://developer.apple.com/documentation/swiftui/textrenderer)：新增或改写的后半部分在 0.18 秒内淡入并上移 2 pt，已有前文保持稳定。每次收到的完整内容立即显示，不用逐字播放队列增加延迟；保留原生换行和文字选择。悬浮字幕复用主界面的片段进出、状态切换和自动滚动过渡；「减少动态效果」下文字直接更新，滚动不做位移动画。
+
+实时文稿靠滚动视图的底部锚点停在最新一行：新文字、补上的译文、字号和窗口尺寸的变化都在同一次布局里定好位置，最新一行不动，前文上移。窗口在前台、被其他应用挡住、隐藏或最小化时走同一条路径，不暂存内容，返回时没有需要补播或追赶的滚动。用滚轮、触控板、滚动条或辅助功能离开末尾后停止跟随，原位阅读，并出现「跳到最新」；回到末尾即恢复跟随。会话结束后，停在末尾的文稿仍贴住末尾。
+
+录音期间一直在动的指示不经过 SwiftUI 的逐帧更新：底栏和侧栏的脉冲红点是 Core Animation 图层动画，「聆听」图标的逐层点亮由 AppKit 图像视图运行，输入电平条直接跟随模型并自行调整图层，窗口不可见时不更新。SwiftUI 自己驱动的持续动画每一帧都会让整个窗口重新布局，曾在整个录音期间占用约半个处理器核心。
+
+## 本地构建
+
+需要 Xcode 27 或更新版本、CMake（`brew install cmake`）。所有命令在仓库根目录运行：
+
+```sh
+bash macos/scripts/bootstrap-whisper.sh
+bash macos/scripts/build-app.sh
+open build/macos/Altranscribe.app
+```
+
+首次会从 whisper.cpp 官方仓库下载固定提交的源代码。Swift Package Manager 下载并校验固定的 sherpa-onnx 1.13.8 和 ONNX Runtime 1.28.1 macOS 静态 XCFramework，并解析固定的 FluidAudio 0.17.7。构建缓存均放在被 Git 忽略的 `.build` 目录中；依赖齐全后可以离线构建。应用位于 `build/macos/Altranscribe.app`，采用本地 ad-hoc 签名，没有发布、公证或上传。可直接将 `.app` 拖入「应用程序」。
+
+可以用 Xcode 打开 `macos/Package.swift` 阅读、编辑和调试。测试可通过 Swift Package 运行；麦克风和系统声音的实际使用请启动打包后的 `.app`，保证权限说明和应用身份完整。
+
+分发包只含引擎，不携带任何模型权重；构建时也会清除旧包中残留的 Tiny。所有模型在设置中按需下载或选择已有文件，本机下载目录不受打包影响。
+
+Whisper 提供 Tiny、Base、Small、Medium、Large v3 Turbo 和完整版 Large v3。完整版约 3.10 GB，Turbo 约 1.62 GB；两者是独立选项，下载使用与 Flutter 相同的固定版本和 SHA-256 校验。
+
+## 保留的功能
+
+| 功能 | macOS 实现 |
+| --- | --- |
+| 本地语音识别 | 默认 Nemotron 英语版；可选 Nemotron 3.5 多语言、Whisper / Metal、FluidAudio Parakeet v2 / v3 / Ultra、Apple SpeechTranscriber |
+| 模型管理 | Nemotron / Whisper 下载、SHA-256 校验、删除；FluidAudio 下载与删除；下载时显示百分比进度；Apple 语言模型安装和状态刷新；Whisper 可选择已有 GGML 文件 |
+| 麦克风 | AVAudioEngine；开始前选择输入设备，默认跟随系统，支持虚拟麦克风 |
+| 系统声音 | ScreenCaptureKit；只读取音频，不保存画面，排除本应用的声音 |
+| 实时转写 | Nemotron / Apple / 云端保持连续流；Whisper / Parakeet 默认自动按停顿切片（最长 4 秒），可选固定 2 / 4 / 8 秒；暂停、继续、停止并保存、丢弃 |
+| 保留录音 | 开始前在首页的会话选项或右侧检查器里切换「保存录音」，默认开启；原生 AAC/M4A 持续写盘，保留输入采样率和通道，暂停部分不录入；文稿中可定位录音文件，删除文稿时文稿和录音一起移到废纸篓 |
+| 文件队列 | 原生文件选择与拖放，拖入文件夹时加入其中的音频和视频，也可在访达里用「打开方式」或拖到 Dock 图标；依次处理，20 秒分块增量解码，停止时保留部分记录；处理中显示当前文件的阶段、进度、速度、预计剩余、所用模型、已翻译句数，以及实时生成的原文与译文 |
+| 语音 API | OpenAI / Gemini 文件转录、实时转录、直接语音翻译；OpenAI 文件模型 / 地址 override |
+| 翻译和摘要 | Apple Intelligence 本机模型、本机 Ollama 的 OpenAI 兼容接口、在线兼容服务、OpenAI、Gemini、Anthropic |
+| 双语悬浮字幕 | 可移动、可调整大小的原生 NSPanel；面板内直接调整 16–60 pt 字号、最近 1–8 个片段和只显示翻译；原译文逐条配对，只跟随进行中的实时会话 |
+| 记录 | 侧栏按日期分组，搜索原文/翻译/摘要，打开搜到的文稿时标出匹配的文字并滚动到第一处；复制、导出、原位重命名、删除、在访达中显示源文件；同样的命令也在「文件」菜单里 |
+| 导出 | TXT、Markdown、独立 HTML、SRT 字幕（每行一条，译文在原文下一行）；HTML 内容转义，不执行转写文本 |
+| 本地持久化 | 定稿、译文和状态立即原子保存，临时文本最多每秒合并写入一次；重启后未完成记录标记为已中断 |
+| 外观与语言 | 跟随系统 / 浅色 / 深色；手动切换外观时淡入淡出，尊重系统「减少动态效果」；跟随系统 / 简体中文 / English；持久保存偏好 |
+| 设置页面 | 侧栏「设置」和 ⌘, 共用通用、语音、文本模型配置，两处都用统一样式工具栏，分页选择器是标题栏中央的玻璃分段控件；表单字段有可见边框与占位提示，运行中锁定影响当前任务的设置并说明原因。右侧检查器可原地切换引擎、已下载的模型、实时模式、语言与文本模型；「管理模型…」「语音设置…」「文本模型设置…」等入口打开独立设置窗口并定位到对应分页，主窗口留在原页面 |
+
+## 使用
+
+1. 打开侧栏「设置」或 ⌘, → 语音模型。新安装默认采用 **Nemotron 英语版**；下载约 662 MB 的模型后可离线使用。中文等语言可选约 682 MB 的 Nemotron 3.5 多语言版。也可选择 Whisper、FluidAudio、Apple SpeechTranscriber 或 API。升级保留原有引擎选择。首页副标题下是一行系统胶囊控件：语音服务与模型、语音语言、翻译、摘要，以及翻译或摘要用到的文本模型。每个控件都能原地修改，菜单末尾进入对应设置页；缺少语音模型或文本模型时下方一行说明原因并给出操作，开始按钮同时禁用。
+2. 实时转写选择麦克风或系统声音，首次开始时由 macOS 请求相应权限。系统声音需要「隐私与安全性 → 屏幕与系统音频录制」权限；授权后如无法捕获，请退出应用再打开。
+   本地 ad-hoc 签名会随重新构建改变。如果开关已开启但仍提示权限拒绝，退出应用，在上述系统设置中移除旧的 Altranscribe 条目，再用「+」添加当前构建的 `.app` 并重开；只切换旧条目的开关可能无效。
+   如果重新构建后麦克风停在启动阶段，可退出应用，在「隐私与安全性 → 麦克风」中关闭再打开已有的 Altranscribe 授权，然后重开应用。
+3. 文件转写使用 ⌘O 或拖入媒体文件。支持 macOS 可解码的 WAV、M4A、MP3、AAC、AIFF、MP4、MOV 等；实际支持取决于文件编码。MKV、WebM、OGG、WMA 等可能需要先转换。
+4. 翻译/摘要默认关闭。OpenAI / Gemini 的实时直接翻译只需语音服务密钥；语音设置中的「实时模式」用「转录 / 直接翻译」分段控件选择，下方标明当前生效的模型，页脚列出两种模式各自的模型，翻译未开启时说明原因；首页「翻译」菜单里的「实时翻译方式」是同一个设置。文件翻译、先转录再翻译及摘要需要配置文本模型。Ollama 默认地址是 `http://127.0.0.1:11434/v1`，本机模型列表在打开文本页时自动获取；模型选择器末尾的「自定义名称…」展开输入框，使用自定义名称时在行下方提示未经核对。首页与检查器的文本快捷菜单可直接切换 OpenAI、Gemini、Anthropic、Apple 本机服务，记住各服务上次选择的模型。
+5. 「停止并保存」会等待最后一段语音与文本处理完成。「停止处理」立即取消剩余任务并保留已保存文本。在侧栏选择记录后，可在工具栏或「文件」菜单复制、导出，或在「更多」菜单中重新翻译、生成摘要；双击标题可直接重命名，并同步修改本应用保存的录音文件名；导入的原始音频或视频文件不改名。
+
+Nemotron 英语版固定识别英语；多语言版使用右侧的语言选择。模型使用 dev 分支相同的固定 ONNX 导出和 SHA-256 值，四个文件全部校验后才安装，取消或失败不激活不完整模型。实时采集每 320 ms 送入一次音频，模型采用 560 ms 分块；这两个数字均不是最终字幕延迟。临时文本原位更新，最多每秒写盘一次；实时定稿依据句末标点、系统句子分词与真实音频停顿，短片段和悬空词尾等待更久，无标点连续发言约 18 秒保留一次词边界。已出现的短句和译文可以继续修订，迟到子词不再被拆成新行。停止和文件结尾排空模型尾段；超过一分钟后的自然静音处释放旧识别流。Nemotron 暂不提供词汇提示或 GPU 加速。
+
+FluidAudio 默认提供 Parakeet v2 英语版，使用 Core ML 的 CPU / Neural Engine；可选 v3 和 Ultra 自动识别 25 种欧洲语言，不支持中文。Ultra 是在 v3 基础上继续训练的版本，沿用同一套本地模型管理与转写流程。本应用不启用 FluidAudio 的额外词汇模型，首次请在语音设置里显式下载模型，之后识别只从本地加载。
+
+Apple SpeechTranscriber 默认英语（美国），在语音设置里从系统实际支持的语言中选择，按需安装并刷新状态。模型由 macOS 管理，不放在应用的 `Models/` 目录中；可用性与资产下载取决于设备及系统。没有使用旧的 SFSpeechRecognizer，也不需要语音 API 密钥。Apple 实时使用持续运行的 SpeechAnalyzer 和快速临时结果，停止时排空尾句。Apple、Nemotron 和云端转录的临时文本可以先翻译当前草稿，最多每 4 秒一次；非 Gemini 文本服务才启用此额外请求。界面保留并标注「暂定译文」，后续原文会触发修订，磁盘仅保存定稿译文。
+
+FluidAudio 的 Parakeet v2 / v3 / Ultra 与 Whisper 使用切片。自动模式在至少 3 秒后寻找短停顿，最长等 4 秒；可选固定 2 / 4 / 8 秒。连续切片在最多 12 秒的音频窗口内重识别，原位修订已有行；明显停顿开始新窗口，短停止尾段带上前文重识别。各引擎的相邻未完成句子会按停顿、标点和时间范围合并，不再仅因超过七个词而强行分行；文字仍即时显示，保留原始片段编号以接收迟到修订。在线直接翻译同时维护原文和译文的对应关系。
+
+词汇提示和源语言按当前任务模式显示。Nemotron、FluidAudio 不显示词汇输入；Whisper 和 Apple 保留已接入的提示接口。OpenAI / Gemini 的实时直接翻译不显示未使用的词汇和源语言选项；文件模式仍按文件模型的实际能力显示。通用设置兼顾两种任务，并说明词汇只用于文件还是只用于实时转录；切换模式不会删除已填写的词汇。
+
+文件转写右侧提供「低音量增强」，仅用于本机引擎，默认关闭。开启后先读完整份文件，取 99.9% 的采样都不超过的电平作为这份录音的语音电平，整份文件用同一个增益把它提到约 −6 dBFS，最多增加 25 dB；本来就在这个电平以上的录音不变。不按单个峰值判断：课堂录音里一次碰桌子或咳嗽就能达到满幅，而语音仍低 40 dB。少数超出的采样平滑收在满幅以内，不削波。分块和时间戳保持不变，原文件不修改。它与实时采集的自适应增益独立，底噪也会一起放大，不能替代降噪；正常音量录音建议关闭。
+
+「翻译与摘要 → 文本服务 → Apple Intelligence · 本机」使用 Apple 官方 Foundation Models 的设备端文本模型，支持转录后的翻译和摘要，无需密钥、额外服务器或打包模型权重。需要兼容 Apple Intelligence 的 Mac，系统模型已启用并完成准备；Mac 与 Siri 语言须一致。应用读取实际可用状态和语言支持，未就绪时解释原因。它独立于 Apple SpeechTranscriber，不替代语音识别引擎；不会回退到云端。切换前的文本服务和模型会保留。
+
+Apple 本地模型的上下文和能力随系统模型版本变化。请求按系统报告的容量预检，长文分段翻译或逐层汇总，保留末段；旧系统使用保守预算。翻译采用 Apple 官方文本转换模式，结构化摘要保留默认内容检查。模型仍可能拒绝部分内容，或遗漏摘要细节，需要核对重要结果。接口依据 [Foundation Models](https://developer.apple.com/documentation/foundationmodels)、[多语言指南](https://developer.apple.com/documentation/foundationmodels/supporting-languages-and-locales-with-foundation-models)及[文本转换模式](https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel/guardrails/permissivecontenttransformations)。
+
+实时翻译单独排队，不阻塞语音识别；OpenAI / 兼容服务与 Anthropic 最多同时处理两条，Apple 本机和 Gemini 保持单条处理。积压超过 8 个待处理片段时，保留原文并标明可稍后补译。「停止并保存」会等待已排队翻译，取消处理则保留已保存结果。悬浮字幕默认保留最近三个片段，每条原文显示自己的译文与等待状态；旧请求不会覆盖修订后的原文。重新翻译记录时按记录的源语言处理，全部成功后一次替换译文；失败或取消保留原记录，并提供进度及取消按钮。
+
+在线文本服务逐句翻译时，待译的一句放在 `<source>` 标签里，此前三句原文放在 `<previous>` 标签里仅供理解人名、术语和指代，并要求译文写在 `<translation>` 标签内；应用只取标签内的文字，模型在标签外写的开场白或说明不会进入文稿。回复若包含多段译文、带回请求的标签、长度与原句明显不符或不是目标语言，就不当作译文：先不带前文再请求一次，仍不合格则在该句下标明没有取得译文，原文保留，可从文稿菜单重新翻译。请求失败（限流、鉴权、网络）不重试。Apple 本机模型沿用自己的提示词。
+
+文件转写中的翻译和历史文稿的重新翻译共用有界并发：OpenAI、Anthropic 和远程兼容服务最多同时处理 4 句；Apple 本机、回环地址的本机服务以及 Gemini 保持单条处理，降低本机推理争用和当前 Gemini 免费层级的限流风险。每句仍携带前面的原文上下文，按原句编号写回，完成顺序不会改变文稿顺序。历史处理期间保持后台任务活跃；失败或取消不会替换已有译文。
+
+「语音模型 → 实时音频」可开启自适应增益（默认开启），提升较轻或较远的声音，同时限制峰值并避免持续放大静音。另提供可选的 Apple 麦克风语音处理（默认关闭），使用系统噪声抑制与自动增益；不重复叠加软件增益，不应用于系统音频。它可能过滤非人声或影响其他音频的音量，远距离混响和噪声仍可能影响识别。实时任务持有防止 App Nap / 空闲睡眠的活动，并使用明确的实时优先级；停止后释放。
+
+界面支持与原项目一致的简体中文和英语，在设置 → 通用 → 语言切换；另保留 macOS 版的「跟随系统」，系统偏好中没有支持的语言时使用英语。主窗口、设置、悬浮字幕、自定义菜单、状态和应用错误立即切换；macOS 标准菜单与系统对话框在重新打开应用后更新。语言偏好保存在应用自己的 UserDefaults 中。
+
+标题和摘要使用任务开始时的界面语言，与语音识别和翻译目标语言独立，和原项目行为一致。导出中的说明文字，以及界面日期和文件大小按界面语言显示；已有原文、译文、摘要和用户命名保持原样。应用文案集中在 `Sources/AltranscribeCore/Resources/{en,zh-Hans}.lproj/Localizable.strings`，权限说明位于 `Resources/{en,zh-Hans}.lproj/InfoPlist.strings`，构建脚本会将资源一起打包。
+
+其他可适配 macOS 的转写模型及接入取舍见 [模型备选调研](MODEL_OPTIONS.md)。
+
+语音引擎「OpenAI」在地址为官方时按 OpenAI 显示，改为自定义地址（兼容服务）时按主机名显示为本机服务或兼容服务；文本服务仍称「OpenAI / Ollama / 兼容服务」；文稿页的检查器显示该条记录自身的来源、语言、模型与状态，而不是当前设置。语音 API 沿用 Flutter 的协议区分：导入文件使用专用转录接口，最多十分钟一段（16 kHz PCM16 WAV 约 19.2 MB）；实时采集以 100 ms 音频帧发送 WebSocket。语音设置中可选「直接从音频翻译」，在开启翻译时同时返回原文与译文，不要求文本模型密钥；文件翻译与摘要仍使用文本服务。生成的语音始终丢弃，不播放声音，但服务仍按音频输出计费。直接翻译没有逐句事件：OpenAI 按 `elapsed_ms` 以 5 秒窗口归并，Gemini 在一句结束且原文、译文都停顿约 2 秒后另起一行，避免整个连接只有一段长文本。时间戳标为约值，付费推理失败不自动重试或重放音频。
+
+实时默认模型为 OpenAI `gpt-live-transcribe` / `gpt-realtime-translate`，Gemini `gemini-3.5-transcribe-live` / `gemini-3.5-live-translate-preview`。Gemini 文件转录默认 `gemini-3.5-transcribe`，旧版默认的通用 Gemini 2.5 配置自动映射到专用文件模型，使用 Files + Interactions；上传结束后删除临时文件，取消或失败也执行清理。
+
+Gemini 实时连接约十分钟到期：九分钟准备下一连接，在静音处切换，最迟九分三十秒切换；旧连接只接收尾句，每个采集帧只发送到一条连接。服务端 `goAway` 只会收紧切换截止时间：替换连接就绪即切换，不因剩余时间短而直接结束录音。建立替换连接不是付费推理，失败时在旧连接仍有时间的前提下最多尝试三次；旧连接在排空尾句前被服务端关闭时，录音在新连接上继续，记录中标注该处需核对。OpenAI Realtime 的官方时限为六十分钟，本应用在五十五分钟准备续接。暂停时间计入连接寿命。停止时 OpenAI ASR 等待所有提交完成，直接翻译发送 `session.close` 并等到 `session.closed`；Gemini 转录使用手动 `activityStart/activityEnd` 分段：本地静音 0.6 秒结束一段，持续有声最长 30 秒也会结束一段，让定稿文本持续到达；Gemini 只回应听到语音的活动，咳嗽、键盘声等纯噪声活动不会收到任何事件，因此停止与续接不按活动计数等待：最后一段若只有噪声，服务端静默约 5 秒即视为完成；已开始返回文本的活动仍等待其完成信号。翻译发送 `audioStreamEnd`，并等待尾部输出。独立客户端对照实测发现 Gemini 自动 VAD 在句中结束后会漏掉后半段，手动活动边界保留了完整原文。Gemini 翻译预览版可能不发确认事件，等待尾部静音及文本安静后保留结果，并在记录中提示核对末句，不冒充服务端确认。
+
+OpenAI 文件转录提供原生模型预选，默认 `gpt-transcribe`，并保留模型名称与服务地址 override。预选仅包含 `/audio/transcriptions` 支持的文件模型；实时模型由独立的 WebSocket 路径处理。自定义地址必须实现音频转录接口，只有聊天兼容接口的服务不适用；自定义转录地址继续使用分段请求。
+
+按 [2026-10-25 核对的官方文档](https://developers.openai.com/api/docs/guides/speech-to-text)，`gpt-transcribe` 使用 `languages[]` 和逐条 `keywords[]`；旧模型使用 `language`，支持词汇提示时才发送 `prompt`。`gpt-4o-transcribe-diarize` 不发送提示词，使用 `chunking_strategy=auto` 和 JSON 文本结果，本应用不展示其说话人标记。旧模型 `whisper-1`、GPT-4o Transcribe / Mini / Diarize 仍列为兼容选项，界面注明官方计划于 **2027-02-26** 停用。Override 若匹配已知模型，也会采用对应参数；未知名称不发送词汇提示。
+
+翻译与摘要共用一个文本模型选择器，包含按服务划分的预选及独立名称 override。2026-10-25 核对的预选为 [OpenAI](https://developers.openai.com/api/docs/models) 的 GPT-6 Luna / GPT-6.1 Sol / GPT-6 Astra、[Gemini](https://ai.google.dev/gemini-api/docs/models) 的 3.5 Flash-Lite / 3.8 Flash / 4 Argon，以及 [Anthropic](https://platform.claude.com/docs/en/models/overview) 的 Haiku / Sonnet / Opus 5.5。Ollama 和其他自定义端点从「获取模型」列出该服务提供的名称，也可直接 override；不会把 OpenAI 预选套到本机服务。可用性仍取决于服务和账户权限。
+
+新选择在线服务时分别默认 GPT-6.1 Sol、Gemini 3.5 Flash-Lite、Claude Sonnet 5.5。Gemini 默认取当天实际完成请求的型号；官方推荐的 3.8 Flash 当天返回 503 或超时，仍可在列表中选择。官方 OpenAI 使用 Responses，Gemini 使用 Interactions，Anthropic 使用 Messages；本机及其他兼容服务保留 Chat Completions。推理参数按模型能力设置：例如 Sonnet 5.5 使用 `between_tools`，不能用 `disabled`；Gemini 3.8 Flash 使用 `low`，不发送不支持的 `minimal`。Anthropic 使用 Bearer、`anthropic-version: 2026-10-21`，并支持未绑定工作区的个人密钥填写 workspace ID。Responses / Interactions 设置 `store: false`，只解析最终文本，不把推理或截断输出当成完整结果。
+
+协议依据：[OpenAI 实时转录](https://developers.openai.com/api/docs/guides/realtime-transcription)、[实时翻译及收尾](https://developers.openai.com/api/docs/guides/realtime-translation)、[Realtime 时限](https://developers.openai.com/api/docs/guides/realtime-conversations)、[Gemini 专用转录](https://ai.google.dev/gemini-api/docs/transcribe)、[实时转录](https://ai.google.dev/gemini-api/docs/live-api/live-transcribe)、[实时翻译](https://ai.google.dev/gemini-api/docs/live-api/live-translate)、[会话管理](https://ai.google.dev/gemini-api/docs/live-api/session-management)、[Interactions](https://ai.google.dev/gemini-api/docs/interactions-overview)、[Anthropic 认证](https://platform.claude.com/docs/en/manage-claude/authentication)、[按模型配置 thinking](https://platform.claude.com/docs/en/build-with-claude/thinking)。
+
+快捷键：导入 ⌘O；开始 ⇧⌘R；暂停/继续 ⇧⌘P；停止保存 ⇧⌘S；悬浮字幕 ⇧⌘C；实时 / 文件转写 ⌘1 / ⌘2；文字放大 / 缩小 / 默认大小 ⌘+ / ⌘− / ⌘0；转写选项 ⌃⌘I；复制文稿 ⌥⌘C；删除所选记录 ⌫。
+
+## 舍弃的范围与限制
+
+- 不迁移远程主机、共享、配对、二维码、局域网发现及 Windows / Android 平台代码。
+- 本版不引入 RNNoise、FFmpeg。
+- 一次选择一个实时音源，不同时混合麦克风和系统声音。选择麦克风时，开始按钮旁可选择具体输入设备或跟随系统默认；选择会保存，只影响本应用。设备按钮采用与底栏一致的系统玻璃胶囊外观，切换设备时淡化文字，切换音源时平滑显示或隐藏，并适配「减弱动态效果」。设备列表随连接变化刷新，所选设备不可用时提示重新选择；录音中的实际输入设备或格式改变会结束当前采集并保留已生成文本。
+- 不迁移自动术语纠错、整份文稿修订对照和 HTML 媒体播放器；保留词汇提示和双语文本导出。
+- 不承诺原 Flutter 记录目录格式兼容；原项目文件不修改，macOS 使用独立数据目录。
+- 长时间采集如果推理速度落后超过有界队列容量，会明确报错并保留已完成文本，避免无限占用内存。
+- 未做说话人分离。模型结果应人工校对；短分段边界可能切开语句。
+
+## 数据与安全
+
+文稿、模型和设置位于 `~/Library/Application Support/Altranscribe/`：`Records/` 保存 JSON 文稿，`Models/` 保存下载模型，`settings.json` 保存不含密钥的设置。API 密钥只保存在 macOS Keychain，并按完整 API 基地址隔离。 删除文稿时，文稿文件和它的录音移到废纸篓，可以放回原处后重新打开应用恢复；所在磁盘没有废纸篓时直接删除。
+
+录音默认位于 `~/Documents/Altranscribe/Recordings/`，可在「设置 → 通用 → 录音位置」选择其他文件夹、打开当前目录或恢复默认位置。更改只影响新录音，每份文稿保留自己的录音位置。文件名采用「名称 · 日期 时间 短标识.m4a」；开始时使用音源名称，摘要成功后优先使用摘要标题，手动重命名文稿也会联动。文件名中的不合法字符会清理，超长名称会截短；同名文件不会被覆盖。旧版录音迁移失败时仍可从原位置找到音频。悬浮字幕的新默认字号为 20 pt，已有字号设置不变。
+
+应用、评测与验证共用这一个 `Models/` 目录，不再保留独立的下载权重副本。验证文稿仍保存在各自目录，其 `Models` 仅建立指向标准目录的符号链接；旧评测路径也通过链接兼容。Apple 系统模型继续由 macOS 管理。
+
+macOS 记录格式版本 2 保存可随界面语言切换的应用错误及摘要语言；仍可读取版本 1 记录和旧字符串错误。旧记录只在用户后续保存时升级。
+
+「保存录音」默认开启，用户可在开始前关闭；已有明确关闭的偏好保持不变。开启时录制过程中持续写盘，停止时封装完成，关闭后音频仅在内存中处理。没有音频播放路径，不启动监听端口。使用本地语音引擎和本机文本服务时，不向在线推理服务发送内容。下载模型与显式选择在线 API 需要网络。在线 API 只允许 HTTPS；明文 HTTP 限定 `localhost`、`127.0.0.1` 和 `::1`。携带密钥的请求不跟随重定向；错误中不显示服务响应正文。
+
+## 验证
+
+OpenAI、Gemini、Anthropic 的真实云端验证、协议依据、十分钟边界及服务可用性限制见 [云服务验证记录](CLOUD_VALIDATION.md)。真实云端测试默认跳过，必须显式提供本地凭据与公开音频才运行。云端会话的无文本活动、活动上限、`goAway`、替换连接重试和退役连接失败路径另有 8 项离线回归，使用脚本化的假连接，不访问网络：
+
+```sh
+swift test --package-path macos --filter CloudSessionTests
+```
+
+早期 FluidAudio / Apple 组合测试覆盖文件与旧版 8 秒采集分块、停止尾段、取消、文件队列和持久保存；旧设置兼容与 i18n 复用已有测试。只读取公开英语文件，不播放到扬声器，也不采集麦克风：
+
+```sh
+mkdir -p "$HOME/Library/Application Support/Altranscribe/Models" .build/additional-speech-validation
+[ -e .build/additional-speech-validation/Models ] || ln -s "$HOME/Library/Application Support/Altranscribe/Models" .build/additional-speech-validation/Models
+ALTRANSCRIBE_TEST_ADDITIONAL_ROOT="$PWD/.build/additional-speech-validation" \
+ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
+swift test --package-path macos --filter 'AdditionalSpeechTests|testEnglishDefaultAndExistingSettings|LocalizationTests'
+```
+
+该可选测试会复用标准目录中的 FluidAudio v2、v3、Ultra，缺失时下载到同一目录，并为测试进程安装 Apple 英语语言资产。可额外设置 `ALTRANSCRIBE_TEST_QUIET_AUDIO` 指向同一语音的低音量版本，验证开启增强后的文件转写与持久保存。实际执行结果见 [验证记录](VALIDATION.md)。
+
+本轮实时验证使用已安装模型，不下载、不播放声音；组合检查按真实时间输入低音量语音，另检查长静音后的 48 kHz 双声道采集与 Nemotron 首句：
+
+```sh
+ALTRANSCRIBE_REALTIME_MODELS="$HOME/Library/Application Support/Altranscribe/Models" \
+ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/bindings/go/samples/jfk.wav" \
+swift test --package-path macos --filter RealtimeSpeechTests
+```
+
+采集与流式实现依据：[SpeechAnalyzer 连续识别](https://developer.apple.com/videos/play/wwdc2025/277/)、[快速临时结果](https://developer.apple.com/documentation/speech/speechtranscriber/reportingoption/fastresults)、[AVAudioEngine 原生语音处理](https://developer.apple.com/documentation/avfaudio/avaudioionode/setvoiceprocessingenabled(_:))。实际虚拟麦克风、暂定翻译及后台检查结果另见 [验证记录](VALIDATION.md)。
+
+i18n 仅新增 2 项测试：双语资源完整性、格式占位符、旧记录兼容和导出；摘要语言不受翻译目标语言影响。复用 3 项工作流回归，共 5 项：
+
+```sh
+swift test --package-path macos --filter 'LocalizationTests|testSummaryUsesCapturedInterfaceLanguageInsteadOfTranslationTarget|WorkflowTests'
+```
+
+细节修复仅新增 3 项回归测试，覆盖慢翻译与有界队列、补标点保留译文、源语言、重新翻译失败/取消及设置损坏时的记录恢复：
+
+```sh
+swift test --package-path macos --filter WorkflowTests
+```
+
+Nemotron 接入仅新增两项测试：英语默认值与旧设置兼容；真实模型的流式结果、尾句、文件队列和保存。使用公开 JFK 样本，模型不存在时通过链接下载到标准模型目录：
+
+```sh
+mkdir -p "$HOME/Library/Application Support/Altranscribe/Models" .build/nemotron-validation
+[ -e .build/nemotron-validation/Models ] || ln -s "$HOME/Library/Application Support/Altranscribe/Models" .build/nemotron-validation/Models
+ALTRANSCRIBE_TEST_NEMOTRON_ROOT="$PWD/.build/nemotron-validation" \
+ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
+ALTRANSCRIBE_TEST_MULTILINGUAL=1 \
+swift test --package-path macos --filter NemotronTests
+```
+
+以下为原有迁移测试，按需运行；本次 Nemotron 接入不重复运行整套测试：
+
+```sh
+swift test --package-path macos
+
+# 包含真实 Metal 推理的集成验证，使用 whisper.cpp 随附的 JFK 测试音频：
+ALTRANSCRIBE_TEST_MODEL="$HOME/Library/Application Support/Altranscribe/Models/ggml-tiny.bin" \
+ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
+swift test --package-path macos
+```
+
+测试覆盖端点边界、认证请求、API 结果和错误处理、实时音频重采样、暂停/停止尾段保留、采集队列过载、存储恢复、搜索、HTML 转义、增量媒体解码、延迟音轨对齐与真实 Whisper 推理。没有 API 凭证时使用协议替身验证接口，不进行付费调用。本机已完成静音条件下的实际系统音频转写、暂停/恢复和保存，以及真实麦克风的启动、暂停和停止；麦克风真人语音识别按用户要求留待稍后。此次本地结果见 [验证记录](VALIDATION.md)。
+
+设计与接口依据：[Apple SwiftUI 新设计](https://developer.apple.com/videos/play/wwdc2025/323/)、[ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos)、[whisper.cpp](https://github.com/ggml-org/whisper.cpp)、[Nemotron / sherpa-onnx](https://k2-fsa.github.io/sherpa/onnx/nemo/nemotron-streaming.html)、[OpenAI 音频 API](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)、[Gemini 音频](https://ai.google.dev/gemini-api/docs/audio)、[Anthropic Messages](https://platform.claude.com/docs/en/api/messages/create)。应用内附带 Whisper、sherpa-onnx、ONNX Runtime、FluidAudio 的许可证及相关第三方声明；模型许可见设置中的对应模型卡。
