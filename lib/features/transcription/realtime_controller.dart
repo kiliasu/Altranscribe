@@ -467,6 +467,17 @@ class RealtimeController extends ChangeNotifier {
   String get speechBackend => cloudSpeech
       ? '${speechProvider.label} · ${record?.speechModel ?? (processingFiles ? speechProvider.fileModel : speechProvider.liveModel(cloudDirectTranslation))}'
       : engine.backend;
+
+  /// The text model a session uses, as its engine chip names it: the chosen
+  /// provider and model, and a note when a local service says the model
+  /// runs on the CPU.
+  String get llmBackend {
+    if (remoteLlm) return remoteTranslator.backend;
+    final model = translationModel.isEmpty ? '' : ' · $translationModel';
+    final note = translator.backend.startsWith('CPU') ? ' · CPU' : '';
+    return '${llmProvider.label}$model$note';
+  }
+
   final _cloudLive = <String, CloudLiveSession>{};
   final _cloudLines = <String, TranscriptLine>{};
   final _cloudFinalized = <String>{};
@@ -541,6 +552,17 @@ class RealtimeController extends ChangeNotifier {
   /// Lines translated at once. A burst of sentences then waits about one
   /// request rather than one per sentence; each line still starts in order.
   static const translationSlots = 3;
+
+  /// An online service answers several requests as fast as one, within
+  /// limits counted per minute that a session stays far below.
+  static const cloudTranslationSlots = 6;
+
+  /// A file's lines are all known in advance, so more go out together.
+  static const cloudFileTranslationSlots = 8;
+  int get liveTranslationSlots =>
+      llmOnline ? cloudTranslationSlots : translationSlots;
+  int get fileTranslationSlots =>
+      llmOnline ? cloudFileTranslationSlots : translationSlots;
 
   /// Completes once no line is being translated or waiting to be.
   Completer<void>? _translationsDone;
@@ -1367,6 +1389,7 @@ class RealtimeController extends ChangeNotifier {
             engine: fileEngine,
             chunkSeconds: cloudSpeech ? 600 : 20,
             cutter: cutter,
+            parallel: fileTranslationSlots,
             translator: translator,
             translationContext: translationContext,
             store: store,
@@ -1403,6 +1426,7 @@ class RealtimeController extends ChangeNotifier {
           await task.process(
             record: current,
             translator: translator,
+            parallel: fileTranslationSlots,
             translationContext: translationContext,
             store: store,
             options: options,
@@ -1995,7 +2019,7 @@ class RealtimeController extends ChangeNotifier {
   /// Starts queued lines while slots are free; each line that finishes
   /// frees its slot for the next, and lines queued meanwhile start at once.
   void _pumpTranslations() {
-    while (_translationsRunning < translationSlots) {
+    while (_translationsRunning < liveTranslationSlots) {
       final next = _nextTranslation();
       if (next == null) break;
       _translationsRunning++;
@@ -2355,6 +2379,7 @@ class RealtimeController extends ChangeNotifier {
     try {
       await FileTranscriber(fileDecoder).process(
         record: current,
+        parallel: fileTranslationSlots,
         translator: translator,
         store: store,
         options: const CleanupOptions(),

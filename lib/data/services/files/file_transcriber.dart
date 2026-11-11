@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:altranscribe/data/models/transcript_record.dart';
 import 'package:altranscribe/data/services/audio/audio_service.dart';
 import 'package:altranscribe/data/repositories/record_store.dart';
@@ -16,7 +19,26 @@ class FileTranscriber {
   final AudioFileDecoder decoder;
   bool cancelled = false;
   String stage = 'fileTranscribing';
+
+  /// Audio transcribed so far, and audio read from the file so far, which
+  /// runs ahead while a long piece collects before its request.
   int processedMs = 0;
+  int decodedMs = 0;
+
+  /// The file's length, when the decoder can tell it without decoding.
+  int? durationMs;
+
+  /// A long file changes many times a second while its lines translate
+  /// side by side. The screen hears about it a few times a second and the
+  /// disk about once; every stage ends with a save that waits.
+  static const changeInterval = Duration(milliseconds: 200);
+  static const saveInterval = Duration(seconds: 1);
+  TranscriptRecord? _record;
+  RecordStore? _store;
+  void Function()? _onChanged;
+  Timer? _changeTimer;
+  Timer? _saveTimer;
+  Object? _saveFailure;
 
   Future<void> cancel() async {
     cancelled = true;
@@ -32,6 +54,7 @@ class FileTranscriber {
     required void Function() onChanged,
     int chunkSeconds = 20,
     PauseCutter? cutter,
+    int parallel = 1,
     TranslationContextPolicy translationContext =
         const TranslationContextPolicy(),
   }) async {
@@ -49,6 +72,7 @@ class FileTranscriber {
         store: store,
         options: options,
         onChanged: onChanged,
+        parallel: parallel,
         translationContext: translationContext,
       );
     }
@@ -65,9 +89,15 @@ class FileTranscriber {
     int chunkSeconds = 20,
     PauseCutter? cutter,
   }) async {
+    _begin(record, store, onChanged);
     final sentences = TranscriptAssembler();
+    decoder.onDecoded = (endMs) {
+      decodedMs = endMs;
+      _changedSoon();
+    };
     try {
-      await _save(record, store, onChanged);
+      durationMs = await decoder.durationMs(record.inputFile!);
+      await _saveNow();
       await for (final chunk in decoder.decode(
         record.inputFile!,
         chunkSeconds: chunkSeconds,
@@ -107,38 +137,46 @@ class FileTranscriber {
           );
         }
         processedMs = chunk.endMs;
-        await _save(record, store, onChanged);
+        _saveSoon();
+        _changedSoon();
       }
-      if (!cancelled) return true;
+      if (!cancelled) {
+        await _saveNow();
+        return true;
+      }
     } catch (e) {
       if (!cancelled) {
         record.status = 'error';
         record.error = e.toString();
       }
+    } finally {
+      decoder.onDecoded = null;
     }
-    await _finish(record, store, onChanged);
+    await _finish();
     return false;
   }
 
   /// Cleans up, translates and summarizes a transcribed [record] as its
-  /// options ask, then saves it as final.
+  /// options ask, then saves it as final. Lines are translated [parallel]
+  /// at a time.
   Future<void> process({
     required TranscriptRecord record,
     required TranslationService translator,
     required RecordStore store,
     required CleanupOptions options,
     required void Function() onChanged,
+    int parallel = 1,
     TranslationContextPolicy translationContext =
         const TranslationContextPolicy(),
   }) async {
-    Future<void> save() => _save(record, store, onChanged);
+    _begin(record, store, onChanged);
     try {
       if (cancelled) return;
 
       Future<void> clean(bool translation) async {
         if (!options.spellingEnabled || cancelled) return;
         stage = translation ? 'fileCleaningTranslation' : 'fileCleaning';
-        onChanged();
+        _changedNow();
         final lines = record.lines
             .where((line) => !translation || line.translation != null)
             .toList();
@@ -174,7 +212,7 @@ class FileTranscriber {
           record.cleanupStatus = 'failed';
           record.cleanupError = e.toString();
         }
-        await save();
+        await _saveNow();
       }
 
       await clean(false);
@@ -185,7 +223,7 @@ class FileTranscriber {
           (prepareNames || options.mergeSentences) &&
           record.lines.isNotEmpty) {
         stage = 'filePreparingText';
-        onChanged();
+        _changedNow();
         for (final joining in [
           if (options.mergeSentences) true,
           if (prepareNames) false,
@@ -210,39 +248,13 @@ class FileTranscriber {
             record.cleanupStatus = 'failed';
             record.cleanupError = e.toString();
           }
-          await save();
+          await _saveNow();
         }
       }
       if (record.targetLanguage != null && !cancelled) {
         stage = 'fileTranslating';
-        onChanged();
-        for (final line in record.lines) {
-          if (cancelled) break;
-          line.translationStatus = 'pending';
-          await save();
-          try {
-            final translation = record.language == record.targetLanguage
-                ? line.displayText
-                : await translator.translate(
-                    line.displayText,
-                    record.language,
-                    record.targetLanguage!,
-                    context: translationContext.select(record, line),
-                    rules: record.translationRules,
-                    terms: record.translationTerms,
-                  );
-            if (cancelled) {
-              line.translationStatus = 'interrupted';
-              break;
-            }
-            line.translation = translation;
-            line.translationStatus = 'done';
-          } catch (e) {
-            line.translationStatus = cancelled ? 'interrupted' : 'failed';
-            if (!cancelled) line.translationError = e.toString();
-          }
-          await save();
-        }
+        _changedNow();
+        await _translateLines(record, translator, translationContext, parallel);
         await clean(true);
       }
       if (cancelled) return;
@@ -254,7 +266,7 @@ class FileTranscriber {
           record.summaryStatus = 'empty';
         } else {
           stage = 'generatingSummary';
-          onChanged();
+          _changedNow();
           try {
             final summary = await translator.summarize(
               record.lines.map((line) => line.displayText).toList(),
@@ -277,25 +289,111 @@ class FileTranscriber {
         record.error = e.toString();
       }
     } finally {
-      await _finish(record, store, onChanged);
+      await _finish();
     }
   }
 
-  Future<void> _save(
+  /// Translates the lines in order, [parallel] at a time: an online service
+  /// answers several requests as fast as one, and a local server queues or
+  /// batches them. Each line keeps its own state, so a slow or failed line
+  /// holds up none of the others.
+  Future<void> _translateLines(
+    TranscriptRecord record,
+    TranslationService translator,
+    TranslationContextPolicy translationContext,
+    int parallel,
+  ) async {
+    final lines = record.lines.toList();
+    var next = 0;
+    Future<void> worker() async {
+      while (!cancelled && next < lines.length) {
+        final line = lines[next++];
+        line.translationStatus = 'pending';
+        _changedSoon();
+        try {
+          final translation = record.language == record.targetLanguage
+              ? line.displayText
+              : await translator.translate(
+                  line.displayText,
+                  record.language,
+                  record.targetLanguage!,
+                  context: translationContext.select(record, line),
+                  rules: record.translationRules,
+                  terms: record.translationTerms,
+                );
+          if (cancelled) {
+            line.translationStatus = 'interrupted';
+            return;
+          }
+          line.translation = translation;
+          line.translationStatus = 'done';
+        } catch (e) {
+          line.translationStatus = cancelled ? 'interrupted' : 'failed';
+          if (!cancelled) line.translationError = e.toString();
+        }
+        _saveSoon();
+        _changedSoon();
+      }
+    }
+
+    await Future.wait([for (var i = 0; i < max(1, parallel); i++) worker()]);
+    await _saveNow();
+  }
+
+  void _begin(
     TranscriptRecord record,
     RecordStore store,
     void Function() onChanged,
-  ) async {
-    await store.save(record);
-    onChanged();
+  ) {
+    _record = record;
+    _store = store;
+    _onChanged = onChanged;
+  }
+
+  void _changedNow() {
+    _changeTimer?.cancel();
+    _changeTimer = null;
+    _onChanged?.call();
+  }
+
+  void _changedSoon() {
+    _changeTimer ??= Timer(changeInterval, _changedNow);
+  }
+
+  void _saveSoon() {
+    _saveTimer ??= Timer(saveInterval, () {
+      _saveTimer = null;
+      unawaited(_write());
+    });
+  }
+
+  /// A write that fails is reported by the next save that waits, so a file
+  /// that goes on for a while still learns of a full disk.
+  Future<void> _write() async {
+    final record = _record;
+    final store = _store;
+    if (record == null || store == null) return;
+    try {
+      await store.save(record);
+    } catch (e) {
+      _saveFailure = e;
+    }
+  }
+
+  Future<void> _saveNow() async {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    await _write();
+    _changedNow();
+    if (_saveFailure case final failure?) {
+      _saveFailure = null;
+      throw failure;
+    }
   }
 
   /// Settles what is still open: a cancelled step reads as interrupted.
-  Future<void> _finish(
-    TranscriptRecord record,
-    RecordStore store,
-    void Function() onChanged,
-  ) async {
+  Future<void> _finish() async {
+    final record = _record!;
     if (cancelled && record.targetLanguage != null) {
       for (final line in record.lines) {
         if (line.translationStatus == 'none' ||
@@ -313,6 +411,6 @@ class FileTranscriber {
     if (record.summaryStatus == 'pending') {
       record.summaryStatus = 'interrupted';
     }
-    await _save(record, store, onChanged);
+    await _saveNow();
   }
 }

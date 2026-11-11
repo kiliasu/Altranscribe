@@ -157,6 +157,9 @@ class CloudApi {
     return newestFirst(result);
   }
 
+  /// No connection is open: nothing was prepared, or a session closed it.
+  bool get closed => _client == null;
+
   void close() {
     _generation++;
     _client?.close(force: true);

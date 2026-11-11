@@ -33,6 +33,14 @@ class FileAudioChunk {
 }
 
 abstract class AudioFileDecoder {
+  /// Told the end of each piece of audio as it is read from the file, before
+  /// any cutting, so progress shows while a long piece collects.
+  void Function(int endMs)? onDecoded;
+
+  /// The file's length in milliseconds when it can be read without
+  /// decoding, else null.
+  Future<int?> durationMs(String path) async => null;
+
   /// The file's audio in pieces of [chunkSeconds], or cut at pauses by
   /// [cutter] when one is given.
   Stream<FileAudioChunk> decode(
@@ -45,11 +53,39 @@ abstract class AudioFileDecoder {
 
 /// Streams local media through FFmpeg; pipe backpressure bounds decoded audio
 /// memory even when the model is much slower than decoding.
-class FfmpegAudioDecoder implements AudioFileDecoder {
+class FfmpegAudioDecoder extends AudioFileDecoder {
   FfmpegAudioDecoder({this.executable = 'ffmpeg'});
   final String executable;
   Process? _process;
   int _generation = 0;
+
+  @override
+  Future<int?> durationMs(String path) async {
+    try {
+      // Asked for no output, FFmpeg describes the input and stops.
+      final result = await Process.run(executable, [
+        '-hide_banner',
+        '-nostdin',
+        '-i',
+        File(path).absolute.path,
+      ]).timeout(const Duration(seconds: 10));
+      return parseDuration('${result.stderr}');
+    } on Object {
+      return null;
+    }
+  }
+
+  /// The length FFmpeg prints for an input, as `Duration: 01:13:19.25`.
+  static int? parseDuration(String output) {
+    final match = RegExp(r'Duration: (\d+):(\d\d):(\d\d)(?:\.(\d+))?')
+        .firstMatch(output);
+    if (match == null) return null;
+    final fraction = (match[4] ?? '').padRight(3, '0').substring(0, 3);
+    return ((int.parse(match[1]!) * 60 + int.parse(match[2]!)) * 60 +
+                int.parse(match[3]!)) *
+            1000 +
+        int.parse(fraction);
+  }
 
   @override
   Stream<FileAudioChunk> decode(
@@ -136,6 +172,7 @@ class FfmpegAudioDecoder implements AudioFileDecoder {
           }
           buffer.add(Uint8List.sublistView(available, end));
           decoded = true;
+          onDecoded?.call((consumed + end) ~/ 32);
           yield FileAudioChunk(
             Uint8List.sublistView(available, 0, end),
             consumed ~/ 32,
@@ -151,6 +188,7 @@ class FfmpegAudioDecoder implements AudioFileDecoder {
       if (buffer.length >= 2) {
         final remaining = buffer.takeBytes();
         decoded = true;
+        onDecoded?.call((consumed + remaining.length) ~/ 32);
         yield FileAudioChunk(
           remaining,
           consumed ~/ 32,

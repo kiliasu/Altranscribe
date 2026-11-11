@@ -210,24 +210,21 @@ class TranscribeService implements TimedSpeechEngine {
       throw StateError('Transcribe is not running. $_log');
     }
     final boundary = 'altranscribe-${DateTime.now().microsecondsSinceEpoch}';
-    final bytes = BytesBuilder();
-    void field(String name, String value) => bytes.add(
-      utf8.encode(
-        '--$boundary\r\nContent-Disposition: form-data; name="$name"\r\n\r\n$value\r\n',
-      ),
+    final head = StringBuffer();
+    void field(String name, String value) => head.write(
+      '--$boundary\r\nContent-Disposition: form-data; name="$name"\r\n\r\n$value\r\n',
     );
     // Without a language the model works it out itself.
     if (language != 'auto') field('language', language.split('-').first);
     field('response_format', timed ? 'verbose_json' : 'json');
     if (timed) field('timestamp_granularities[]', 'word');
-    bytes.add(
-      utf8.encode(
-        '--$boundary\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n',
-      ),
+    head.write(
+      '--$boundary\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n',
     );
-    bytes.add(wave);
-    bytes.add(utf8.encode('\r\n--$boundary--\r\n'));
-    final body = bytes.takeBytes();
+    // An hour of audio is a hundred megabytes: it goes out between the
+    // form's parts as it is, not copied into one body first.
+    final opening = utf8.encode(head.toString());
+    final closing = utf8.encode('\r\n--$boundary--\r\n');
     final request = await _client!.postUrl(
       Uri.parse('$_base/v1/audio/transcriptions'),
     );
@@ -237,8 +234,11 @@ class TranscribeService implements TimedSpeechEngine {
         'multipart/form-data; boundary=$boundary',
       )
       ..set(HttpHeaders.authorizationHeader, 'Bearer $_key');
-    request.contentLength = body.length;
-    request.add(body);
+    request.contentLength = opening.length + wave.length + closing.length;
+    request
+      ..add(opening)
+      ..add(wave)
+      ..add(closing);
     try {
       // An hour of audio is one request.
       final response = await request.close().timeout(

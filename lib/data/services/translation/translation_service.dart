@@ -553,7 +553,7 @@ class LocalLlmService implements TranslationService {
         _request(client, uri, key: key, timeout: timeout, body: body);
     Map<String, dynamic> response;
     try {
-      response = await send();
+      response = await _sendRetrying(client, send);
     } on LlmHttpException catch (error) {
       // A server that rejects a reasoning switch is asked again without it.
       final before = quiet.copy();
@@ -668,11 +668,8 @@ class LocalLlmService implements TranslationService {
     final key = '${_provider.name} $_model';
     final steps = _provider == LlmProvider.gemini ? 2 : 3;
     String content;
-    for (
-      var step = _cloudSteps[key] ??= _firstStep(_provider, _model);
-      ;
-      step++
-    ) {
+    var attempt = 0;
+    for (var step = _cloudSteps[key] ??= _firstStep(_provider, _model); ;) {
       try {
         content = await _cloudRequest(
           api,
@@ -687,7 +684,19 @@ class LocalLlmService implements TranslationService {
         break;
       } on StateError catch (error) {
         // Refused even without reasoning settings: the cause lies elsewhere.
-        if (error.message != 'cloudHttp400' || step >= steps) rethrow;
+        if (error.message == 'cloudHttp400' && step < steps) {
+          step++;
+          continue;
+        }
+        // A rate limit or a passing server error is asked again after a
+        // pause, unless the session has closed the connection meanwhile.
+        final status = error.message == 'cloudConnectionFailed'
+            ? 0
+            : int.tryParse(error.message.replaceFirst('cloudHttp', '')) ?? -1;
+        final delay = retryDelay(status, attempt++);
+        if (delay == null || api.closed) rethrow;
+        await Future<void>.delayed(delay);
+        if (api.closed) rethrow;
       }
     }
     if (content.trim().isEmpty) {
@@ -702,6 +711,51 @@ class LocalLlmService implements TranslationService {
 
   /// Per provider and model, the reasoning step that worked.
   static final _cloudSteps = <String, int>{};
+
+  /// Pauses before the first, second and later repeats of a request. Tests
+  /// shorten them.
+  @visibleForTesting
+  static List<Duration> retryDelays = const [
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+  ];
+
+  /// How long to wait before repeating a request that failed with [status]
+  /// for the [attempt]th time, or null when it should not be repeated. A
+  /// rate limit or a server error passes, a failed connection (status 0)
+  /// twice; a refused or malformed request does not.
+  @visibleForTesting
+  static Duration? retryDelay(int status, int attempt) {
+    final retries = const {429, 500, 502, 503, 504, 529}.contains(status)
+        ? retryDelays.length
+        : status == 0
+        ? 2
+        : 0;
+    if (attempt >= retries) return null;
+    final base = retryDelays[attempt];
+    return base +
+        Duration(milliseconds: Random().nextInt(base.inMilliseconds ~/ 2 + 1));
+  }
+
+  /// Sends a request, asking again after a pause while the server is busy:
+  /// a local server with every slot taken, or a service's rate limit.
+  Future<Map<String, dynamic>> _sendRetrying(
+    HttpClient client,
+    Future<Map<String, dynamic>> Function() send,
+  ) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await send();
+      } on LlmHttpException catch (error) {
+        final delay = retryDelay(error.statusCode, attempt);
+        if (delay == null || client != _client) rethrow;
+        await Future<void>.delayed(delay);
+        if (client != _client) rethrow;
+      }
+    }
+  }
 
   /// Forgets which reasoning settings servers and models accepted.
   @visibleForTesting

@@ -5,7 +5,7 @@ import 'package:altranscribe/data/services/files/pause_cutter.dart';
 
 /// Pulls bounded decoded PCM windows. Android retains only the current decoder
 /// window, and the document stays with its original content provider.
-class AndroidAudioDecoder implements AudioFileDecoder {
+class AndroidAudioDecoder extends AudioFileDecoder {
   static const channel = MethodChannel('altranscribe/files');
   int _generation = 0;
 

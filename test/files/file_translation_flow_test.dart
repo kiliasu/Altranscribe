@@ -31,7 +31,16 @@ class NameCleaner extends FakeTranslator {
   ]);
 }
 
+/// Holds every line until the test answers it, oldest first.
 class QueuedTranslator extends FakeTranslator {
+  final pending = <Completer<String>>[];
+  Completer<String> get next => pending.firstWhere((item) => !item.isCompleted);
+  void answerAll(String text) {
+    for (final item in pending) {
+      if (!item.isCompleted) item.complete(text);
+    }
+  }
+
   @override
   Future<String> translate(
     String text,
@@ -41,15 +50,10 @@ class QueuedTranslator extends FakeTranslator {
     String rules = defaultTranslationRules,
     List<TranslationTerm> terms = const [],
   }) {
-    response = Completer<String>();
-    return super.translate(
-      text,
-      source,
-      target,
-      context: context,
-      rules: rules,
-      terms: terms,
-    );
+    calls.add((text, source, target));
+    final completer = Completer<String>();
+    pending.add(completer);
+    return completer.future;
   }
 }
 
@@ -149,7 +153,7 @@ void main() {
       );
       final before = tester.getTopLeft(find.byType(TranscriptTile).last).dy;
       for (var i = 0; i < 3; i++) {
-        translator.response!.complete(i.isEven ? '短译文。' : '一段较长的译文。' * 30);
+        translator.next.complete(i.isEven ? '短译文。' : '一段较长的译文。' * 30);
         for (var frame = 0; frame < 16; frame++) {
           await tester.pump(const Duration(milliseconds: 16));
           expect(
@@ -159,7 +163,7 @@ void main() {
         }
       }
       final stopping = controller.stop();
-      translator.response!.complete('Cancelled');
+      translator.answerAll('Cancelled');
       await stopping;
       await task;
       await tester.pumpWidget(const SizedBox());

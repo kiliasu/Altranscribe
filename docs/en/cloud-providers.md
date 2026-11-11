@@ -21,7 +21,8 @@ Successfully listing models does not mean your account can call every model. For
 - Direct live translation may generate translated speech. The provider may charge for it even though the app does not play it.
 - Long files are submitted in sections; the original file is unchanged. Gemini file transcription temporarily uploads audio. The app attempts to delete it when the task ends and reports deletion failures.
 - After **Stop & save**, final text, translations, and summaries continue processing. Wait for them to finish before starting another session.
-- If the network disconnects or quota runs out, received text is retained. Paid inference is not retried automatically.
+- A file's lines are translated several at a time: eight with a cloud model, three with a local one, each in order. A request the provider rate-limits or fails on its side is repeated after a pause of a few seconds, up to four times; a refused request is not.
+- If the network disconnects or quota runs out, received text is retained.
 - Translation, titles and cleanup ask each model for the least reasoning it accepts. If the provider refuses a setting, the app moves up one level and remembers it.
 
 ## Known limitations
