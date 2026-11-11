@@ -653,7 +653,9 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                   child: AnimatedSwitcher(
                     duration: AltMotion.content,
                     transitionBuilder: AltMotion.rise,
-                    child: acknowledged == null
+                    // It belongs to the page the session ran on; the
+                    // library lists the saved transcript itself.
+                    child: acknowledged == null || page != 0
                         ? const SizedBox.shrink()
                         : acknowledgement(acknowledged!),
                   ),
@@ -1590,12 +1592,15 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
             pulsing: !paused,
           ),
           const SizedBox(width: 10),
+          // A clock that ticks every second stays still between ticks;
+          // only counts that change now and then roll.
           ElapsedText.reading(
             () => live.listened,
             key: const Key('session-clock'),
             label: durationLabel,
-            style: label,
-            rolling: true,
+            style: label?.copyWith(
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
           if (!narrow) ...[
             const SizedBox(width: 14),
@@ -2111,7 +2116,8 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           slivers: [
             if (!files)
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+                // Clear of the fade at the top edge until it scrolls.
+                padding: EdgeInsets.fromLTRB(side, 16, side, 0),
                 sliver: SliverToBoxAdapter(child: sessionPanel()),
               ),
             SliverPadding(

@@ -98,7 +98,9 @@ class _CaptionPanelState extends State<CaptionPanel> {
   final scroll = ScrollController();
 
   /// Rows already on the panel: a new one rises in, the rest stay put.
+  /// Those there when the panel opens simply appear.
   final shownRows = <String>{};
+  bool opened = false;
   double? followedExtent;
   String t(String key) => strings[key]![widget.data['english'] == true ? 1 : 0];
   CaptionPreferences get prefs =>
@@ -217,8 +219,8 @@ class _CaptionPanelState extends State<CaptionPanel> {
       }
     });
     final live = widget.data['phase'] == 'listening';
-    // Rows already there when the panel opens simply appear.
-    final opening = shownRows.isEmpty;
+    final opening = !opened;
+    opened = true;
     Widget button(
       String action,
       String label,
