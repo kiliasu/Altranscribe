@@ -4,18 +4,20 @@ import 'dart:typed_data';
 import 'package:altranscribe/data/models/transcript_record.dart';
 import 'package:altranscribe/data/services/files/media_paths.dart';
 
-enum ExportFormat { text, markdown, html }
+enum ExportFormat { text, markdown, html, srt }
 
 extension ExportFormatInfo on ExportFormat {
   String get extension => switch (this) {
     ExportFormat.text => 'txt',
     ExportFormat.markdown => 'md',
     ExportFormat.html => 'html',
+    ExportFormat.srt => 'srt',
   };
   String get mimeType => switch (this) {
     ExportFormat.text => 'text/plain',
     ExportFormat.markdown => 'text/markdown',
     ExportFormat.html => 'text/html',
+    ExportFormat.srt => 'application/x-subrip',
   };
 }
 
@@ -119,6 +121,38 @@ class TranscriptExporter {
       if (translation != null && translation.trim().isNotEmpty) {
         out.writeln('${' ' * prefix.length}$translation');
       }
+    }
+    return out.toString();
+  }
+
+  /// SubRip subtitles: one cue per line, its translation on the line below,
+  /// so a player shows both languages together.
+  String srt(TranscriptRecord record) {
+    String time(int ms) {
+      String two(int value) => value.toString().padLeft(2, '0');
+      final total = ms < 0 ? 0 : ms;
+      return '${two(total ~/ 3600000)}:${two(total ~/ 60000 % 60)}:'
+          '${two(total ~/ 1000 % 60)},${(total % 1000).toString().padLeft(3, '0')}';
+    }
+
+    String flat(String value) =>
+        value.trim().replaceAll(RegExp(r'\s*\n\s*'), ' ');
+    final out = StringBuffer();
+    var cue = 0;
+    for (final line in record.lines) {
+      final original = flat(line.displayText);
+      final translation = flat(line.displayTranslation ?? '');
+      if (original.isEmpty && translation.isEmpty) continue;
+      // A cue needs a length; an instant line stays a second.
+      final end = line.endMs > line.startMs ? line.endMs : line.startMs + 1000;
+      out
+        ..writeln(++cue)
+        ..writeln('${time(line.startMs)} --> ${time(end)}')
+        ..writeln(original.isEmpty ? translation : original);
+      if (original.isNotEmpty && translation.isNotEmpty) {
+        out.writeln(translation);
+      }
+      out.writeln();
     }
     return out.toString();
   }

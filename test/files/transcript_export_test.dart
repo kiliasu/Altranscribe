@@ -61,6 +61,18 @@ void main() {
     expect(text, contains('[≈1:02:05] Microphone: Later'));
   });
 
+  test('subtitles give each line a cue with its translation below', () {
+    expect(
+      exporter.srt(record),
+      '1\n00:00:00,000 --> 00:00:02,000\nGood <morning>\n大家早上好。\n\n'
+      '2\n01:02:05,000 --> 01:02:10,000\nLater\n\n',
+    );
+    expect(
+      TranscriptExporter.fileName(record, ExportFormat.srt),
+      endsWith('.srt'),
+    );
+  });
+
   test('markdown keeps hard line breaks between original and translation', () {
     final markdown = exporter.markdown(record);
     expect(markdown, startsWith('# Solar / panels: intro?\n'));
@@ -123,7 +135,12 @@ void main() {
       language: 'en',
       sources: ['file'],
       lines: [
-        TranscriptLine(source: 'file', startMs: 65000, endMs: 65900, text: 'Hi'),
+        TranscriptLine(
+          source: 'file',
+          startMs: 65000,
+          endMs: 65900,
+          text: 'Hi',
+        ),
       ],
     );
     expect(exporter.text(single), contains('[1:05] Hi'));

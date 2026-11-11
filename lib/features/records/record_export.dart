@@ -89,6 +89,8 @@ Future<String?> exportRecord(
       content = exporter.text(record);
     case ExportFormat.markdown:
       content = exporter.markdown(record);
+    case ExportFormat.srt:
+      content = exporter.srt(record);
     case ExportFormat.html:
       String? source;
       var mime = 'audio/mpeg';
@@ -200,6 +202,7 @@ Future<void> showExportDialog(
                           (ExportFormat.text, 'exportText'),
                           (ExportFormat.markdown, 'exportMarkdown'),
                           (ExportFormat.html, 'exportHtml'),
+                          (ExportFormat.srt, 'exportSrt'),
                         ])
                           RadioListTile<ExportFormat>(
                             key: ValueKey('export-${option.name}'),

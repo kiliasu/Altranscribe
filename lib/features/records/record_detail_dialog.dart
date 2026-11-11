@@ -52,109 +52,124 @@ class RecordDetailDialog extends StatelessWidget {
           title: Text(record.displayTitle),
           content: SizedBox(
             width: 512,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+            // Lines are built as they scroll into view, so a transcript of
+            // an hour opens as quickly as a short one. A short one keeps the
+            // dialog no taller than it needs.
+            child: CustomScrollView(
+              shrinkWrap: record.lines.length < 40,
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Chip(
-                        visualDensity: altChipDensity,
-                        avatarBoxConstraints: altChipIconBounds,
-                        avatar: const Icon(AltIcons.check, size: 18),
-                        label: Text(t('recordStatus_${record.status}')),
-                      ),
-                      Chip(
-                        visualDensity: altChipDensity,
-                        avatarBoxConstraints: altChipIconBounds,
-                        avatar: const Icon(AltIcons.schedule, size: 18),
-                        label: Text(record.dateTimeLabel),
-                      ),
-                      Chip(
-                        visualDensity: altChipDensity,
-                        avatarBoxConstraints: altChipIconBounds,
-                        avatar: const Icon(AltIcons.segment, size: 18),
-                        label: Text('${record.lines.length} ${t('segments')}'),
-                      ),
-                    ],
-                  ),
-                  if (record.cleanupStatus != 'none') ...[
-                    const SizedBox(height: 12),
-                    Text(t('cleanup_${record.cleanupStatus}')),
-                    if (record.cleanupError != null)
-                      Text(issue(record.cleanupError!)),
-                  ],
-                  if (record.summary != null) ...[
-                    const SizedBox(height: 16),
-                    pagePanel(
-                      context,
-                      pageStack([
-                        Row(
-                          children: [
-                            Icon(
-                              AltIcons.autoAwesome,
-                              size: 18,
-                              color: colors.onTertiaryContainer,
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          Chip(
+                            visualDensity: altChipDensity,
+                            avatarBoxConstraints: altChipIconBounds,
+                            avatar: const Icon(AltIcons.check, size: 18),
+                            label: Text(t('recordStatus_${record.status}')),
+                          ),
+                          Chip(
+                            visualDensity: altChipDensity,
+                            avatarBoxConstraints: altChipIconBounds,
+                            avatar: const Icon(AltIcons.schedule, size: 18),
+                            label: Text(record.dateTimeLabel),
+                          ),
+                          Chip(
+                            visualDensity: altChipDensity,
+                            avatarBoxConstraints: altChipIconBounds,
+                            avatar: const Icon(AltIcons.segment, size: 18),
+                            label: Text(
+                              '${record.lines.length} ${t('segments')}',
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              t('generatedSummary'),
-                              style: text.labelLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
+                          ),
+                        ],
+                      ),
+                      if (record.cleanupStatus != 'none') ...[
+                        const SizedBox(height: 12),
+                        Text(t('cleanup_${record.cleanupStatus}')),
+                        if (record.cleanupError != null)
+                          Text(issue(record.cleanupError!)),
+                      ],
+                      if (record.summary != null) ...[
+                        const SizedBox(height: 16),
+                        pagePanel(
+                          context,
+                          pageStack([
+                            Row(
+                              children: [
+                                Icon(
+                                  AltIcons.autoAwesome,
+                                  size: 18,
+                                  color: colors.onTertiaryContainer,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  t('generatedSummary'),
+                                  style: text.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: colors.onTertiaryContainer,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SelectableText(
+                              record.summary!,
+                              style: text.bodyMedium?.copyWith(
                                 color: colors.onTertiaryContainer,
                               ),
                             ),
-                          ],
+                          ], gap: 6),
+                          radius: 16,
+                          padding: const EdgeInsets.all(16),
+                          color: colors.tertiaryContainer,
                         ),
-                        SelectableText(
-                          record.summary!,
-                          style: text.bodyMedium?.copyWith(
-                            color: colors.onTertiaryContainer,
-                          ),
+                        const SizedBox(height: 16),
+                      ],
+                      if (record.summaryStatus != 'none' &&
+                          record.summaryStatus != 'done') ...[
+                        const SizedBox(height: 12),
+                        Text(t('summary_${record.summaryStatus}')),
+                        if (record.summaryError != null)
+                          Text(issue(record.summaryError!)),
+                      ],
+                      if (record.error != null)
+                        Text(
+                          issue(record.error!),
+                          style: TextStyle(color: colors.error),
                         ),
-                      ], gap: 6),
-                      radius: 16,
-                      padding: const EdgeInsets.all(16),
-                      color: colors.tertiaryContainer,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (record.summaryStatus != 'none' &&
-                      record.summaryStatus != 'done') ...[
-                    const SizedBox(height: 12),
-                    Text(t('summary_${record.summaryStatus}')),
-                    if (record.summaryError != null)
-                      Text(issue(record.summaryError!)),
-                  ],
-                  if (record.error != null)
-                    Text(
-                      issue(record.error!),
-                      style: TextStyle(color: colors.error),
-                    ),
-                  if (record.lines.isEmpty) Text(t('noSpeechRecorded')),
-                  pageStack([
-                    for (final line in record.lines)
-                      TranscriptTile(
-                        line: line,
-                        english: english,
-                        compact: true,
-                      ),
-                  ], gap: 12),
-                  const SizedBox(height: 16),
-                  Tooltip(
-                    message: '${live.store.directory.path}/${record.id}.json',
-                    child: Text(
-                      t('storedLocally'),
-                      style: text.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
+                      if (record.lines.isEmpty) Text(t('noSpeechRecorded')),
+                    ],
+                  ),
+                ),
+                SliverList.separated(
+                  itemCount: record.lines.length,
+                  separatorBuilder: (context, _) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) => TranscriptTile(
+                    line: record.lines[index],
+                    english: english,
+                    compact: true,
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Tooltip(
+                      message: '${live.store.directory.path}/${record.id}.json',
+                      child: Text(
+                        t('storedLocally'),
+                        style: text.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           actions: [

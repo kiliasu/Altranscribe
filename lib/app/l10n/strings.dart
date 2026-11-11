@@ -812,6 +812,7 @@ const strings = <String, List<String>>{
   "exportText": ["纯文本 (TXT)", "Plain text (TXT)"],
   "exportMarkdown": ["Markdown", "Markdown"],
   "exportHtml": ["网页 (HTML)", "Web page (HTML)"],
+  "exportSrt": ["字幕 (SRT)", "Subtitles (SRT)"],
   "exportAudio": ["网页中的播放器", "Player in the page"],
   "exportAudioNone": ["不包含音频", "No audio"],
   "exportAudioLink": [
