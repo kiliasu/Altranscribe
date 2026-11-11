@@ -36,7 +36,7 @@ Windows 和 Android 共用一个 Flutter 应用；Mac 上是单独的原生应�
 
 **键盘（Windows）**：`Ctrl+1` 到 `Ctrl+4` 切换转录、记录、设备和设置，`Ctrl+F` 搜索记录，`Ctrl+O` 添加文件；`Ctrl+Shift+R` 开始，`Ctrl+Shift+P` 暂停或继续，`Ctrl+Shift+S` 停止并保存，`Ctrl+Shift+C` 开关悬浮字幕；`Ctrl` 加 `+`、`-`、`0` 调整文稿字号。
 
-**Windows 本地模型**：从 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 获取 `whisper-server.exe`，在模型设置中填写路径并选择 CPU 或 GPU。点击模型旁的下载按钮即可下载 Tiny 到 Large v3 Turbo 并自动校验；手动放入模型的方法见 [模型说明](docs/zh-CN/models.md)。Nemotron 3.5 Transcribe 需要 NVIDIA 的 [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp)，模型在同一面板下载，见[相关说明](docs/zh-CN/models.md#nemotron-35-transcribe)。翻译和摘要可以用本机运行的 Ollama 或其他 OpenAI 兼容文字服务，也可以填写在线 OpenAI 兼容服务的地址和 API Key，或直接使用 OpenAI、Gemini、Anthropic。
+**Windows 本地模型**：模型和运行它的程序都在模型设置中下载并自动校验。Whisper 有 Tiny 到 Large v3 Turbo 六个模型，程序是 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 的 NVIDIA GPU 版或 CPU 版；Nemotron 3.5 Transcribe 的程序是 NVIDIA 的 [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp)，见[相关说明](docs/zh-CN/models.md#nemotron-35-transcribe)。手动放入模型或使用自己的程序，见 [模型说明](docs/zh-CN/models.md)。翻译和摘要可以用本机运行的 Ollama 或其他 OpenAI 兼容文字服务，也可以填写在线 OpenAI 兼容服务的地址和 API Key，或直接使用 OpenAI、Gemini、Anthropic。
 
 其他用法见 [云端服务](docs/zh-CN/cloud-providers.md) 和 [连接 Windows 主机](docs/zh-CN/remote-processing.md)，后者能让手机使用电脑上的模型：在电脑上开启共享，用手机扫描它显示的二维码，主机就会出现在手机的「设备」页。手机也可以用 Nemotron 自己转录，只把翻译和摘要交给电脑。
 

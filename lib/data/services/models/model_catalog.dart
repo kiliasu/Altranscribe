@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:altranscribe/data/services/logging/app_log.dart';
+import 'package:altranscribe/data/services/models/zip_archive.dart';
 
 enum ModelAvailability { missing, incomplete, available }
 
@@ -118,13 +120,72 @@ class TranscribeModel extends FolderModel {
   String get decoder => files.first.name;
 }
 
+/// The engine a program serves.
+enum ProgramEngine { whisper, transcribe }
+
+/// A program an engine runs, as its project publishes it for Windows: one
+/// zip from a release, unpacked into a folder of its own. It is not a
+/// model, but it is downloaded, checked, shown and removed the way one is.
+class ProgramPackage extends SpeechModel {
+  const ProgramPackage(
+    this.id, {
+    required this.name,
+    required this.version,
+    required this.variant,
+    required this.engine,
+    required this.url,
+    required this.bytes,
+    required this.sha256,
+    required this.executable,
+    required this.licenseName,
+    required this.sourceUrl,
+  });
+  @override
+  final String id;
+
+  /// The project and the release the build is from.
+  final String name;
+  final String version;
+
+  /// What the build runs on, which tells the builds of one release apart.
+  final String variant;
+  @override
+  String get label => '$name $version · $variant';
+  @override
+  final int bytes;
+  final ProgramEngine engine;
+  final String url;
+  final String sha256;
+
+  /// The file to run, wherever in the archive it lies.
+  final String executable;
+  final String licenseName;
+  final String sourceUrl;
+}
+
 class ModelCatalog extends ChangeNotifier {
   ModelCatalog(
     this.directory, {
+    Directory? programDirectory,
+    List<ProgramPackage>? packages,
     this.stallTimeout = const Duration(seconds: 30),
     this.retryDelay = const Duration(seconds: 2),
-  });
+  }) : programDirectory =
+           programDirectory ?? Directory('${directory.parent.path}/programs'),
+       packages = packages ?? (Platform.isWindows ? programs : const []);
   final Directory directory;
+
+  /// Where downloaded programs are unpacked, each in a folder named by its
+  /// id; beside the models unless told otherwise.
+  final Directory programDirectory;
+
+  /// The programs this catalog offers: the published Windows builds, and
+  /// none where they do not run.
+  final List<ProgramPackage> packages;
+
+  /// The programs offered for an engine.
+  List<ProgramPackage> programsFor(ProgramEngine engine) =>
+      packages.where((package) => package.engine == engine).toList();
 
   /// No data for this long counts as a dropped connection.
   final Duration stallTimeout;
@@ -287,6 +348,101 @@ class ModelCatalog extends ChangeNotifier {
   static TranscribeModel? transcribe(String id) =>
       transcribeModels.where((model) => model.id == id).firstOrNull;
 
+  // The builds the app is tested against, from each project's own release
+  // page. Sizes and SHA-256 values are those GitHub reports for the files;
+  // whisper.cpp publishes the binaries of 1.9.4 under its build tag b5130.
+  static const programs = [
+    ProgramPackage(
+      'whisper-cpp-1.9.4-cuda',
+      name: 'whisper.cpp',
+      version: '1.9.4',
+      variant: 'NVIDIA GPU',
+      engine: ProgramEngine.whisper,
+      url: 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-cublas-12.4.0-bin-x64.zip',
+      bytes: 674539285,
+      sha256:
+          'af520ddd034d985b55dfeea3e465ed93653ba2aee1a55e865033edc548c272a7',
+      executable: 'whisper-server.exe',
+      licenseName: 'MIT',
+      sourceUrl: 'https://github.com/ggml-org/whisper.cpp/releases/tag/b5130',
+    ),
+    ProgramPackage(
+      'whisper-cpp-1.9.4-cpu',
+      name: 'whisper.cpp',
+      version: '1.9.4',
+      variant: 'CPU',
+      engine: ProgramEngine.whisper,
+      url: 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-x64.zip',
+      bytes: 8573270,
+      sha256:
+          'f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c',
+      executable: 'whisper-server.exe',
+      licenseName: 'MIT',
+      sourceUrl: 'https://github.com/ggml-org/whisper.cpp/releases/tag/b5130',
+    ),
+    ProgramPackage(
+      'nemo-speech-0.3.0-cuda',
+      name: 'NeMo-Speech.cpp',
+      version: '0.3.0',
+      variant: 'NVIDIA GPU',
+      engine: ProgramEngine.transcribe,
+      url: 'https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-cuda.zip',
+      bytes: 508625181,
+      sha256:
+          'd0d32ae1bf6ee0534767a47b2aa0e9e2ff6fe39643465c0baae9301d04f6ed42',
+      executable: 'nemo-speech.exe',
+      licenseName: 'Apache 2.0',
+      sourceUrl:
+          'https://github.com/NVIDIA/NeMo-Speech.cpp/releases/tag/v0.3.0',
+    ),
+  ];
+
+  /// The folder a program is unpacked into.
+  String programFolder(ProgramPackage package) =>
+      '${programDirectory.path}/${package.id}';
+
+  /// The archive of a program while it is downloaded and unpacked.
+  File _archive(ProgramPackage package) =>
+      File('${programDirectory.path}/${package.id}.zip');
+
+  /// Where an unpacked program is kept until all of it is there.
+  Directory _staging(ProgramPackage package) =>
+      Directory('${programFolder(package)}.unpacking');
+
+  /// Where a program's folder is moved before it is deleted.
+  Directory _removing(ProgramPackage package) =>
+      Directory('${programFolder(package)}.removing');
+
+  /// The offered program whose installed executable is [path], if any;
+  /// separators and letter case do not tell two Windows paths apart.
+  ProgramPackage? programAt(String path) {
+    String plain(String value) => value.replaceAll('/', r'\').toLowerCase();
+    return packages
+        .where((package) => programPath(package) != null)
+        .where((package) => plain(programPath(package)!) == plain(path))
+        .firstOrNull;
+  }
+
+  /// Written last into a program's folder: the path of its executable
+  /// inside it. A folder without it was not unpacked to the end.
+  static const _installed = 'installed.txt';
+
+  /// The executable of each installed program, by package id, as the last
+  /// [scan] found them.
+  Map<String, String> programPaths = const {};
+
+  /// The executable of [package] if it is installed.
+  String? programPath(ProgramPackage package) => programPaths[package.id];
+
+  /// The installed program an engine can run, the one for an NVIDIA GPU
+  /// before the one for the CPU.
+  String? installedProgram(ProgramEngine engine) =>
+      programsFor(engine).map(programPath).nonNulls.firstOrNull;
+
+  /// How far unpacking a program has come, from 0 to 1, while the stage is
+  /// [DownloadStage.installing].
+  double installProgress = 0;
+
   String path(WhisperModel model) => '${directory.path}/${model.filename}';
 
   /// The folder a Nemotron or Transcribe model's files live in.
@@ -301,6 +457,10 @@ class ModelCatalog extends ChangeNotifier {
   Map<String, ModelAvailability> availability = const {};
 
   SpeechModel? downloadingModel;
+
+  /// What the download in progress, or the last one, was for: the model or
+  /// program [downloadError] is about.
+  SpeechModel? lastDownload;
   int receivedBytes = 0;
   DownloadStage downloadStage = DownloadStage.connecting;
   String? downloadError;
@@ -324,6 +484,7 @@ class ModelCatalog extends ChangeNotifier {
       throw StateError('modelDownloadBusy');
     }
     downloadingModel = model;
+    lastDownload = model;
     receivedBytes = 0;
     downloadStage = DownloadStage.connecting;
     downloadError = null;
@@ -336,6 +497,22 @@ class ModelCatalog extends ChangeNotifier {
     AppLog.instance.info('models', 'Download of ${model.id} started');
     _notify();
     try {
+      if (model is ProgramPackage) {
+        await programDirectory.create(recursive: true);
+        final archive = _archive(model);
+        // An archive that was already downloaded and checked is unpacked
+        // again without fetching it a second time.
+        final fetched =
+            await archive.exists() ||
+            await _fetch(
+              client,
+              Uri.parse(model.url),
+              archive,
+              model.bytes,
+              model.sha256,
+            );
+        return _finished(model, fetched && await _install(model), clock);
+      }
       await directory.create(recursive: true);
       if (model is WhisperModel) {
         return _finished(
@@ -393,6 +570,160 @@ class ModelCatalog extends ChangeNotifier {
         // The next scan reports the folder as it is.
       }
       _notify();
+    }
+  }
+
+  /// Unpacks a program's archive beside its final folder, notes where its
+  /// executable is and moves the folder into place, so a folder that is
+  /// there is always whole. The archive goes once that is done. False
+  /// means cancelled.
+  Future<bool> _install(ProgramPackage package) async {
+    final archive = _archive(package);
+    final staging = _staging(package);
+    final folder = Directory(programFolder(package));
+    downloadStage = DownloadStage.installing;
+    installProgress = 0;
+    _notify();
+    if (await staging.exists()) await staging.delete(recursive: true);
+    final port = ReceivePort();
+    // True once all of it is unpacked, false when it stopped as asked.
+    final done = Completer<bool>();
+    final orders = Completer<SendPort>();
+    await Isolate.spawn(_unpack, [
+      archive.path,
+      staging.path,
+      port.sendPort,
+    ], onExit: port.sendPort);
+    var lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+    final messages = port.listen((message) {
+      if (message is List && message.length == 2) {
+        final total = message[1] as int;
+        installProgress = total == 0 ? 1 : (message[0] as int) / total;
+        // Progress arrives with every megabyte; listeners hear of it as
+        // often as of a download's.
+        final now = DateTime.now();
+        if (installProgress == 1 ||
+            now.difference(lastUpdate).inMilliseconds >= 100) {
+          lastUpdate = now;
+          _notify();
+        }
+      } else if (message is SendPort) {
+        orders.complete(message);
+      } else if (!done.isCompleted) {
+        // A bool says how it ended; a text is what went wrong, and a full
+        // or locked disk is not a bad archive. Null is the isolate gone
+        // without a word.
+        if (message is bool) {
+          done.complete(message);
+        } else if (message is String && message.startsWith(_storage)) {
+          done.completeError(
+            FileSystemException(message.substring(_storage.length)),
+          );
+        } else {
+          done.completeError(FormatException('${message ?? 'no result'}'));
+        }
+      }
+    });
+    try {
+      // Cancelling asks the unpacking to stop. It does within a megabyte
+      // and closes its files first, so all of it can be deleted.
+      unawaited(
+        _cancel.future.then((_) async => (await orders.future).send(true)),
+      );
+      final unpacked = await done.future;
+      if (_cancelled || !unpacked) {
+        await _discard(package);
+        return false;
+      }
+      String? executable;
+      await for (final entry in staging.list(recursive: true)) {
+        if (entry is File &&
+            entry.uri.pathSegments.last.toLowerCase() ==
+                package.executable.toLowerCase()) {
+          executable = entry.path
+              .substring(staging.path.length + 1)
+              .replaceAll(r'\', '/');
+          break;
+        }
+      }
+      if (executable == null) {
+        throw const FormatException('modelDownloadInvalid');
+      }
+      await File('${staging.path}/$_installed')
+          .writeAsString(executable, flush: true);
+      if (await folder.exists()) await folder.delete(recursive: true);
+      // A scanner may still hold a file it has just seen written.
+      for (var attempt = 0; ; attempt++) {
+        try {
+          await staging.rename(folder.path);
+          break;
+        } on FileSystemException {
+          if (attempt >= 5) rethrow;
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        }
+      }
+      await archive.delete();
+      return true;
+    } on FormatException {
+      // An archive that cannot be unpacked is fetched afresh next time.
+      await _discard(package);
+      rethrow;
+    } finally {
+      await messages.cancel();
+      port.close();
+    }
+  }
+
+  /// Runs in an isolate of its own: unpacking a gigabyte is a few seconds
+  /// of work that the interface should not wait for. Sends a port to tell
+  /// it to stop through, then the bytes written and their total as it
+  /// goes, then true for done, false for stopped, or what went wrong.
+  static Future<void> _unpack(List<Object> arguments) async {
+    final port = arguments[2] as SendPort;
+    final orders = ReceivePort();
+    var stopped = false;
+    orders.listen((_) => stopped = true);
+    port.send(orders.sendPort);
+    try {
+      await ZipArchive.extract(
+        arguments[0] as String,
+        arguments[1] as String,
+        progress: (written, total) => port.send([written, total]),
+        // An order that has arrived is heard once the work pauses.
+        stop: () => Future<bool>.delayed(Duration.zero, () => stopped),
+      );
+      port.send(true);
+    } on ZipStopped {
+      port.send(false);
+    } on FileSystemException catch (error) {
+      port.send('$_storage$error');
+    } catch (error) {
+      port.send('$error');
+    } finally {
+      orders.close();
+    }
+  }
+
+  static const _storage = 'storage: ';
+
+  /// Removes what an interrupted or failed installation, or a removal, left
+  /// behind. A file that is still held is left for the next attempt to
+  /// replace.
+  Future<void> _discard(ProgramPackage package) async {
+    for (final leftover in <FileSystemEntity>[
+      _staging(package),
+      _removing(package),
+      _archive(package),
+      File('${_archive(package).path}.part'),
+    ]) {
+      for (var attempt = 0; attempt < 5; attempt++) {
+        try {
+          if (await leftover.exists()) await leftover.delete(recursive: true);
+          break;
+        } on FileSystemException {
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        }
+      }
     }
   }
 
@@ -622,7 +953,27 @@ class ModelCatalog extends ChangeNotifier {
   Future<void> remove(SpeechModel model) async {
     if (downloadingModel == model) throw StateError('modelDownloadBusy');
     try {
-      if (model is FolderModel) {
+      if (model is ProgramPackage) {
+        final target = Directory(programFolder(model));
+        if (await target.exists()) {
+          // Windows lets the folder of a running program be renamed and
+          // most of its files deleted, which would leave it running on half
+          // of them. A program or library that is loaded cannot be opened
+          // for writing, so that is asked first, of each.
+          await for (final entry in target.list(recursive: true)) {
+            final name = entry.path.toLowerCase();
+            if (entry is File &&
+                (name.endsWith('.exe') || name.endsWith('.dll'))) {
+              await (await entry.open(mode: FileMode.append)).close();
+            }
+          }
+          // The folder is gone at once; what it held is deleted after.
+          final aside = _removing(model);
+          if (await aside.exists()) await aside.delete(recursive: true);
+          await target.rename(aside.path);
+        }
+        await _discard(model);
+      } else if (model is FolderModel) {
         final target = Directory(folder(model));
         if (await target.exists()) await target.delete(recursive: true);
       } else if (model is WhisperModel && await directory.exists()) {
@@ -702,14 +1053,42 @@ class ModelCatalog extends ChangeNotifier {
           ? ModelAvailability.missing
           : ModelAvailability.incomplete;
     }
+    final paths = <String, String>{};
+    for (final package in packages) {
+      final folder = programFolder(package);
+      final note = File('$folder/$_installed');
+      if (await note.exists()) {
+        final executable = File(
+          '$folder/${(await note.readAsString()).trim()}',
+        );
+        if (await executable.exists()) {
+          // Written the way Windows writes a path, as one typed in would be.
+          paths[package.id] = Platform.isWindows
+              ? executable.absolute.path.replaceAll('/', r'\')
+              : executable.absolute.path;
+          result[package.id] = ModelAvailability.available;
+          continue;
+        }
+      }
+      final archive = _archive(package);
+      result[package.id] =
+          await Directory(folder).exists() ||
+              await _staging(package).exists() ||
+              await archive.exists() ||
+              await File('${archive.path}.part').exists()
+          ? ModelAvailability.incomplete
+          : ModelAvailability.missing;
+    }
+    programPaths = paths;
     availability = result;
     return result;
   }
 }
 
-/// Where a download is: waiting for its first bytes, receiving, or waiting to
-/// reconnect after the connection dropped or stalled.
-enum DownloadStage { connecting, receiving, retrying }
+/// Where a download is: waiting for its first bytes, receiving, waiting to
+/// reconnect after the connection dropped or stalled, or, for a program,
+/// being unpacked.
+enum DownloadStage { connecting, receiving, retrying, installing }
 
 /// A request the server answered with an error status. A temporary refusal
 /// is tried again; any other ends the download.

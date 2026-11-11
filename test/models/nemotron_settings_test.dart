@@ -113,9 +113,10 @@ void main() {
       expect(find.byKey(const Key('download-nemotron-en-0.6b')), findsNothing);
       expect(find.textContaining('NVIDIA Open Model License'), findsOneWidget);
       expect(find.textContaining('OpenMDW'), findsOneWidget);
-      // Whisper's compute toggle and program field do not apply here.
+      // Whisper's compute toggle and its programs do not apply here.
       expect(find.text('GPU'), findsNothing);
-      expect(find.text('whisper-server.exe'), findsNothing);
+      expect(find.text('Whisper 程序'), findsNothing);
+      expect(find.byKey(const Key('program-custom')), findsNothing);
 
       // The English model is the default and already downloaded, so saving
       // switches the engine.

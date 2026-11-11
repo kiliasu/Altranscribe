@@ -32,6 +32,10 @@ Windows 主机使用 Dart 包 [qr](https://pub.dev/packages/qr)（BSD 3-Clause�
 
 Nemotron 流式识别通过 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache 2.0）的 Dart 包实现，其中附带 [ONNX Runtime](https://github.com/microsoft/onnxruntime)（MIT）。模型本身按需下载，不随应用分发：英文模型采用 [NVIDIA Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/)，3.5 多语言模型采用 [OpenMDW 1.1](https://openmdw.ai/license/1-1/)，见[模型说明](models.md)。
 
+## whisper.cpp
+
+本地 Whisper 在 [whisper.cpp](https://github.com/ggml-org/whisper.cpp)（MIT）中运行，由应用作为本机服务启动。它不随应用分发：Windows 版程序按需从该项目的 GitHub 发布页下载，也可以由用户自备。NVIDIA GPU 版附带 NVIDIA 的 CUDA 运行库，这些库沿用 NVIDIA 的许可。Whisper 模型按需下载，采用 MIT 许可证，见[模型说明](models.md)。
+
 ## NeMo-Speech.cpp 与 Nemotron 3.5 Transcribe
 
-Nemotron 3.5 Transcribe 在 NVIDIA 的 [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp)（Apache 2.0）中运行。它需另行安装，由应用作为本机服务启动，不随应用分发。模型按需下载，采用 [OpenMDW 1.1](https://openmdw.ai/license/1-1/)，是 AtomicChat 对 NVIDIA 权重的 GGUF 转换，见[模型说明](models.md#nemotron-35-transcribe)。
+Nemotron 3.5 Transcribe 在 NVIDIA 的 [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp)（Apache 2.0）中运行，由应用作为本机服务启动。它不随应用分发：Windows 版程序按需从该项目的 GitHub 发布页下载，附带 NVIDIA 的 CUDA 运行库及其许可，也可以另行安装。模型按需下载，采用 [OpenMDW 1.1](https://openmdw.ai/license/1-1/)，是 AtomicChat 对 NVIDIA 权重的 GGUF 转换，见[模型说明](models.md#nemotron-35-transcribe)。

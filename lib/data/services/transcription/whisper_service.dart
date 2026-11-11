@@ -171,7 +171,7 @@ class WhisperService implements SpeechEngine {
   }) async {
     if (Platform.isAndroid) throw const FormatException('mobileRemoteOnly');
     if (!File(executable).existsSync()) {
-      throw const FileSystemException('whisper-server.exe was not found');
+      throw const FormatException('whisperProgramMissing');
     }
     if (!File(model).existsSync()) {
       throw const FileSystemException('Whisper model was not found');

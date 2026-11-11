@@ -6,6 +6,18 @@ Download models under **Settings → Speech models**, then select the model and 
 
 On Windows, models are stored in `%LOCALAPPDATA%\Altranscribe\models\`, the folder shown in the model panel.
 
+## Programs
+
+On Windows, a program loads the models of Whisper and of Nemotron 3.5 Transcribe. The programs are listed under each engine's models and are downloaded, cancelled and removed the same way:
+
+| Engine | Program | Runs on | Size (approx.) |
+| --- | --- | --- | ---: |
+| Whisper | [whisper.cpp 1.9.4](https://github.com/ggml-org/whisper.cpp/releases/tag/b5130) | NVIDIA GPU | 675 MB |
+| Whisper | [whisper.cpp 1.9.4](https://github.com/ggml-org/whisper.cpp/releases/tag/b5130) | CPU | 9 MB |
+| Transcribe | [NeMo-Speech.cpp 0.3.0](https://github.com/NVIDIA/NeMo-Speech.cpp/releases/tag/v0.3.0) | NVIDIA GPU | 509 MB |
+
+The files come straight from each project's GitHub release, are verified against a pinned size and SHA-256, and are unpacked into `%LOCALAPPDATA%\Altranscribe\programs\`. The builds for NVIDIA GPUs include the CUDA runtime and need only the graphics driver. An engine that has no program yet uses the download as soon as it is installed. To run a build of your own, choose **Custom path** and enter where `whisper-server.exe` or `nemo-speech.exe` is.
+
 ## Adding Whisper models manually
 
 Place an official file from the table below in the model directory, then open model settings or click refresh. Do not rename `.en` or quantized variants to these filenames.
@@ -21,7 +33,7 @@ Place an official file from the table below in the model directory, then open mo
 
 Sources: the [official whisper.cpp model instructions](https://github.com/ggml-org/whisper.cpp/tree/master/models) and the [Hugging Face repository they reference](https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1).
 
-App downloads verify the pinned version's file size and SHA-256. Manually added files are checked only for filename, size, and file header. Downloading a model does not install the Whisper program; configure `whisper-server.exe` separately. Whisper runs only on Windows; on Android, use Nemotron, a Windows host or a cloud service.
+App downloads verify the pinned version's file size and SHA-256. Manually added files are checked only for filename, size, and file header. Model files do not include the program; see [Programs](#programs) above. Whisper runs only on Windows; on Android, use Nemotron, a Windows host or a cloud service.
 
 The bundled [Silero VAD](third-party.md#silero-vad) is copied to the model directory when local Whisper starts. It detects speech and is not a selectable transcription model. The app also runs it itself to cut files at pauses: Whisper hears 30 seconds at a time, so each piece ends in the last pause before that. Audio far below normal speech level, such as a distant lecture, is raised before Whisper hears it; its speech detector is strict enough to ignore notification sounds and would otherwise drop nearly all such speech.
 
@@ -40,7 +52,7 @@ The files are the int8 exports from the sherpa-onnx `asr-models` release (560 ms
 
 [Nemotron 3.5 Transcribe](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B) is NVIDIA's speech language model for complete recordings: 30B parameters, of which about 4B are active at a time. It writes punctuation itself and times every word. It is most accurate in English; Chinese is in NVIDIA's lowest quality tier, so compare it with Whisper on your own recordings.
 
-It runs on Windows in [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp), NVIDIA's local runtime, installed separately: run its Windows installer or extract the `windows-x86_64-cuda` archive from its releases, then enter `nemo-speech.exe` under **Transcribe executable**. The installer's default location is found automatically.
+It runs on Windows in [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp), NVIDIA's local runtime, downloaded under **Transcribe program**. A copy installed with its Windows installer is found automatically in the default location.
 
 The model is the NVFP4 build, about 21.3 GB in two files: the decoder and the speech encoder it names. NVIDIA publishes no GGUF files (its own NVFP4 checkpoint runs only in vLLM on Linux), so the app downloads [AtomicChat's conversion](https://huggingface.co/AtomicChat/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF), made with NVIDIA's converter, at a pinned revision and verifies it by SHA-256. License: [OpenMDW 1.1](https://openmdw.ai/license/1-1/).
 

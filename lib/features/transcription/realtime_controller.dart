@@ -109,6 +109,8 @@ class RealtimeController extends ChangeNotifier {
                environmentValue('ALTRANSCRIBE_MODELS_DIR') ??
                    '${store.directory.path}/models',
              ),
+             // Programs stay with the app's data wherever the models are.
+             programDirectory: Directory('${store.directory.path}/programs'),
            );
   factory RealtimeController.local() {
     final audio = PlatformAudioService();
@@ -169,6 +171,40 @@ class RealtimeController extends ChangeNotifier {
   /// The program argument for `engine.start`.
   String get engineExecutable =>
       transcribeSpeech ? transcribeExecutable : executable;
+
+  /// The engine in use starts a program of its own, and that program is not
+  /// on disk: none was downloaded or entered yet, or it has been moved
+  /// since. Looked up when the settings load or change, not while drawing.
+  bool programMissing = false;
+
+  void _checkProgram() {
+    final current = engine;
+    programMissing =
+        !cloudSpeech &&
+        (current is WhisperService || current is TranscribeService) &&
+        !File(engineExecutable).existsSync();
+  }
+
+  /// The program an engine runs: the one set, or, when none is set or it is
+  /// no longer there, one downloaded in the app.
+  String _programOr(String current, ProgramEngine engine) =>
+      current.isNotEmpty && File(current).existsSync()
+      ? current
+      : catalog.installedProgram(engine) ?? current;
+
+  /// Puts downloaded programs to use where an engine has none on disk.
+  /// True when that changed a setting.
+  bool _adoptPrograms() {
+    final whisper = _programOr(executable, ProgramEngine.whisper);
+    final transcribe = _programOr(
+      transcribeExecutable,
+      ProgramEngine.transcribe,
+    );
+    final changed = whisper != executable || transcribe != transcribeExecutable;
+    executable = whisper;
+    transcribeExecutable = transcribe;
+    return changed;
+  }
 
   final SpeechDetector? _providedDetector;
   SpeechDetector? _bundledDetector;
@@ -685,6 +721,7 @@ class RealtimeController extends ChangeNotifier {
           (savedTranscribe.isNotEmpty
               ? savedTranscribe
               : TranscribeService.installedProgram() ?? '');
+      _adoptPrograms();
       translationAddress =
           settings['translationAddress'] as String? ?? translationAddress;
       llmProvider =
@@ -741,6 +778,7 @@ class RealtimeController extends ChangeNotifier {
           environmentValue('ALTRANSCRIBE_TRANSLATION_MODEL') != null) {
         await saveSettings();
       }
+      _checkProgram();
     } catch (e, s) {
       AppLog.instance.error('settings', e, s);
       error = e.toString();
@@ -776,6 +814,7 @@ class RealtimeController extends ChangeNotifier {
 
   Future<void> saveSettings() async {
     await store.saveSettings(_settings());
+    _checkProgram();
     _notify();
     unawaited(estimateSharedGpu());
   }
@@ -1083,8 +1122,10 @@ class RealtimeController extends ChangeNotifier {
     _notify();
   }
 
-  /// Downloads a speech model. On Android a foreground service keeps it going
-  /// with the screen off or the app in the background, and shows progress.
+  /// Downloads a speech model or an engine's program. On Android a
+  /// foreground service keeps it going with the screen off or the app in the
+  /// background, and shows progress. A program is put to use at once where
+  /// its engine has none.
   Future<bool> downloadModel(SpeechModel model, {required bool english}) async {
     // The catalog takes the download before anything is awaited, so a second
     // request is refused here and never touches this one's service.
@@ -1116,7 +1157,19 @@ class RealtimeController extends ChangeNotifier {
         total: model.bytes,
         english: english,
       );
-      return await download;
+      final done = await download;
+      if (done && model is ProgramPackage && _adoptPrograms()) {
+        // Should the settings not be written, the program still serves
+        // this run, and is found again the next time the app starts.
+        try {
+          await saveSettings();
+        } catch (e) {
+          AppLog.instance.warn('settings', 'Program choice not saved: $e');
+        }
+      }
+      _checkProgram();
+      _notify();
+      return done;
     } finally {
       catalog.removeListener(mirror);
       MobilePlatform.onDownloadCancel = null;
@@ -1124,18 +1177,30 @@ class RealtimeController extends ChangeNotifier {
     }
   }
 
-  /// Deletes a downloaded speech model. When it was the chosen one, another
-  /// downloaded model of the same kind takes its place.
+  /// Deletes a downloaded speech model or program. When it was the chosen
+  /// one, another downloaded one of the same kind takes its place.
   Future<void> removeModel(SpeechModel model) async {
     if (active || removingModel) throw StateError('settingsLocked');
     removingModel = true;
     _notify();
     try {
+      final ranWhisper = catalog.programAt(executable) == model;
+      final ranTranscribe = catalog.programAt(transcribeExecutable) == model;
       await catalog.remove(model);
       final available = catalog.availability;
       bool ready(SpeechModel item) =>
           available[item.id] == ModelAvailability.available;
-      if (model is NemotronModel && nemotronModel == model.id) {
+      if (model is ProgramPackage) {
+        // The engine that ran it runs another downloaded build, or none.
+        final other = catalog.installedProgram(model.engine) ?? '';
+        if (ranWhisper || ranTranscribe) {
+          if (ranWhisper) executable = other;
+          if (ranTranscribe) transcribeExecutable = other;
+          await saveSettings();
+        } else {
+          _checkProgram();
+        }
+      } else if (model is NemotronModel && nemotronModel == model.id) {
         final other = ModelCatalog.nemotronModels.where(ready).firstOrNull;
         if (other != null) {
           nemotronModel = other.id;

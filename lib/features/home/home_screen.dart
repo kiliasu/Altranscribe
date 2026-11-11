@@ -931,10 +931,14 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
         catalog.downloadStage == DownloadStage.retrying ||
         (catalog.downloadStage == DownloadStage.connecting &&
             catalog.receivedBytes == 0);
+    // A program is unpacked once it has arrived.
+    final unpacking = catalog.downloadStage == DownloadStage.installing;
     final name = model is NemotronModel
         ? 'Nemotron · ${model.shortLabel}'
         : model is TranscribeModel
         ? 'Transcribe · NVFP4'
+        : model is ProgramPackage
+        ? model.label
         : 'Whisper · ${model.label}';
     return Column(
       key: const Key('home-model-download'),
@@ -942,7 +946,11 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
       children: [
         const SizedBox(height: 6),
         LinearProgressIndicator(
-          value: waiting ? null : catalog.receivedBytes / model.bytes,
+          value: waiting
+              ? null
+              : unpacking
+              ? catalog.installProgress
+              : catalog.receivedBytes / model.bytes,
         ),
         const SizedBox(height: 4),
         Text(
@@ -950,6 +958,8 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
               ? t('modelRetrying')
               : waiting
               ? t('modelConnecting')
+              : unpacking
+              ? t('programUnpacking')
               : '${catalog.receivedBytes * 100 ~/ model.bytes}%'}',
           style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
         ),
@@ -1538,6 +1548,8 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     builder: (context, _) {
       final noSource = !fileMode && !microphone && !systemAudio;
       final unset = modelUnconfigured || localModelMissing;
+      // With its model in place, the engine may still lack its program.
+      final noProgram = !unset && live.programMissing;
       final (
         IconData icon,
         Color tint,
@@ -1557,6 +1569,16 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
               modelUnconfigured
                   ? t('noSpeechModel')
                   : '$modelSummary · ${t('model_missing')}',
+            )
+          : noProgram
+          ? (
+              AltIcons.error,
+              colors.error,
+              t(
+                live.transcribeSpeech
+                    ? 'noTranscribeProgram'
+                    : 'noWhisperProgram',
+              ),
             )
           : fileMode && filePaths.isEmpty
           ? (AltIcons.info, colors.onSurfaceVariant, t('addFilesFirst'))
@@ -1586,13 +1608,15 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                 ),
               ),
             ),
-            if (unset && !noSource && !live.backgroundFinishing) ...[
+            if ((unset || noProgram) &&
+                !noSource &&
+                !live.backgroundFinishing) ...[
               const SizedBox(width: 4),
               TextButton(
-                key: const Key('choose-model'),
+                key: Key(unset ? 'choose-model' : 'choose-program'),
                 style: TextButton.styleFrom(visualDensity: altChipDensity),
                 onPressed: session ? null : modelSettings,
-                child: Text(t('chooseModel')),
+                child: Text(t(unset ? 'chooseModel' : 'chooseProgram')),
               ),
             ],
           ],

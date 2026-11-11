@@ -32,6 +32,10 @@ The Windows host draws pairing QR codes with the [qr](https://pub.dev/packages/q
 
 Nemotron streaming recognition uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) through its Dart package, which bundles [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT). The models themselves are downloaded on request and are not part of the app: the English model under the [NVIDIA Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/) and the 3.5 multilingual model under [OpenMDW 1.1](https://openmdw.ai/license/1-1/), as listed in the [model guide](models.md).
 
+## whisper.cpp
+
+Local Whisper runs in [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT), started by the app as a local server. It is not part of the app: its Windows build is downloaded on request from the project's GitHub release, or supplied by the user. The build for NVIDIA GPUs includes NVIDIA's CUDA runtime libraries, which keep NVIDIA's license. The Whisper models are downloaded on request under the MIT License, as listed in the [model guide](models.md).
+
 ## NeMo-Speech.cpp and Nemotron 3.5 Transcribe
 
-Nemotron 3.5 Transcribe runs in NVIDIA's [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) (Apache 2.0), which is installed separately and started by the app as a local server; it is not part of the app. The model is downloaded on request under [OpenMDW 1.1](https://openmdw.ai/license/1-1/): AtomicChat's GGUF conversion of NVIDIA's checkpoint, as listed in the [model guide](models.md#nemotron-35-transcribe).
+Nemotron 3.5 Transcribe runs in NVIDIA's [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) (Apache 2.0), started by the app as a local server. It is not part of the app: its Windows build is downloaded on request from the project's GitHub release, with NVIDIA's CUDA runtime libraries and their license, or installed separately. The model is downloaded on request under [OpenMDW 1.1](https://openmdw.ai/license/1-1/): AtomicChat's GGUF conversion of NVIDIA's checkpoint, as listed in the [model guide](models.md#nemotron-35-transcribe).

@@ -60,10 +60,22 @@ void main() {
       );
       expect(find.textContaining('21.35 GB'), findsOneWidget);
       expect(find.textContaining('OpenMDW'), findsOneWidget);
-      // Whisper's compute toggle does not apply; the program field is open
-      // because nothing is set yet.
+      // Whisper's compute toggle does not apply. The program is the
+      // published build, to download, or one's own; nothing is chosen yet,
+      // so no path is asked for.
       expect(find.text('GPU'), findsNothing);
-      expect(find.text('nemo-speech.exe'), findsOneWidget);
+      expect(find.text('Transcribe 程序'), findsOneWidget);
+      expect(
+        find.byKey(const Key('program-nemo-speech-0.3.0-cuda')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('download-nemo-speech-0.3.0-cuda')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('509 MB · 未下载'), findsOneWidget);
+      expect(find.text('NeMo-Speech.cpp 0.3.0 · Apache 2.0'), findsOneWidget);
+      expect(find.text('nemo-speech.exe'), findsNothing);
 
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
@@ -71,6 +83,10 @@ void main() {
       expect(find.textContaining('找不到 nemo-speech.exe'), findsOneWidget);
       expect(live.speechProvider, SpeechProvider.whisper);
 
+      // A program of one's own is given by its path.
+      await tester.ensureVisible(find.byKey(const Key('program-custom')));
+      await tester.tap(find.byKey(const Key('program-custom')));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'nemo-speech.exe'),
         program.path,

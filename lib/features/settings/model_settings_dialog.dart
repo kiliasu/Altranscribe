@@ -42,8 +42,26 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
 
   /// Run the local text model beside Transcribe in live sessions anyway.
   late bool keepLocal = controller.liveLocalLlm;
+
+  /// The choice that stands for a program of one's own, given by its path.
+  static const customProgram = 'custom';
+
+  /// What a program path stands for among the choices: the download it
+  /// belongs to, one's own program, or nothing yet.
+  String? programChoice(String path) =>
+      controller.catalog.programAt(path)?.id ??
+      (path.isEmpty ? null : customProgram);
+
+  /// The program each engine runs: a download by its id, or
+  /// [customProgram] with the path typed under it.
+  late String? whisperProgram = programChoice(controller.executable);
+  late String? transcribeChoice = programChoice(
+    controller.transcribeExecutable,
+  );
   late final transcribeProgram = TextEditingController(
-    text: controller.transcribeExecutable,
+    text: transcribeChoice == customProgram
+        ? controller.transcribeExecutable
+        : '',
   );
   late bool direct = controller.cloudDirectTranslation;
   late bool autoLanguage = controller.cloudAutoLanguage;
@@ -56,7 +74,9 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       .firstOrNull
       ?.id;
   late ComputeMode compute = controller.computeMode;
-  late final executable = TextEditingController(text: controller.executable);
+  late final executable = TextEditingController(
+    text: whisperProgram == customProgram ? controller.executable : '',
+  );
   Map<String, ModelAvailability> available = {};
   @override
   String get title => 'modelsEntry';
@@ -64,6 +84,23 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
   void initState() {
     super.initState();
     controller.catalog.addListener(downloadChanged);
+    controller.addListener(programsChanged);
+  }
+
+  /// A download that finishes is put to use where its engine had no
+  /// program, whichever panel started it. Where nothing was chosen here,
+  /// that program becomes the choice.
+  void programsChanged() {
+    if (!mounted) return;
+    final whisper = whisperProgram ?? programChoice(controller.executable);
+    final transcribe =
+        transcribeChoice ?? programChoice(controller.transcribeExecutable);
+    if (whisper != whisperProgram || transcribe != transcribeChoice) {
+      setState(() {
+        whisperProgram = whisper;
+        transcribeChoice = transcribe;
+      });
+    }
   }
 
   void downloadChanged() {
@@ -85,6 +122,12 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
           nemotronSelected = model.id;
         } else if (model is TranscribeModel) {
           transcribeSelected = model.id;
+        } else if (model is ProgramPackage) {
+          if (model.engine == ProgramEngine.whisper) {
+            whisperProgram = model.id;
+          } else {
+            transcribeChoice = model.id;
+          }
         } else {
           selected = model.id;
         }
@@ -93,11 +136,13 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
   }
 
   Future<void> remove(SpeechModel model) async {
+    final program = model is ProgramPackage;
     if (!await confirmRemoval(
       context,
       widget.english,
-      'removeModel',
-      '${model.label}\n${model.size}\n\n${t('removeModelHint')}',
+      program ? 'removeProgram' : 'removeModel',
+      '${model.label}\n${model.size}\n\n'
+          '${t(program ? 'removeProgramHint' : 'removeModelHint')}',
       'confirm-remove-model',
     )) {
       return;
@@ -126,6 +171,14 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
               .firstOrNull
               ?.id;
         }
+        // A removed program leaves the choice with what the engine now
+        // runs; a path of one's own is not touched.
+        if (whisperProgram != customProgram && !ready(whisperProgram)) {
+          whisperProgram = programChoice(controller.executable);
+        }
+        if (transcribeChoice != customProgram && !ready(transcribeChoice)) {
+          transcribeChoice = programChoice(controller.transcribeExecutable);
+        }
       });
     });
   }
@@ -133,6 +186,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
   @override
   void dispose() {
     controller.catalog.removeListener(downloadChanged);
+    controller.removeListener(programsChanged);
     executable.dispose();
     transcribeProgram.dispose();
     super.dispose();
@@ -144,19 +198,23 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
     if (mounted) setState(() => available = result);
   }
 
-  /// One radio tile per model with size, state, download progress and, for
-  /// Nemotron, the license it is offered under.
+  /// One radio tile per model or program with size, state, download
+  /// progress and the license it is offered under. [more] are further
+  /// choices of the same group, shown after them.
   List<Widget> modelTiles(
     List<SpeechModel> models,
     String keyPrefix,
     String? value,
-    ValueChanged<String?> onChanged,
-  ) {
+    ValueChanged<String?> onChanged, {
+    List<Widget> more = const [],
+  }) {
     final catalog = controller.catalog;
     final waiting =
         catalog.downloadStage == DownloadStage.retrying ||
         (catalog.downloadStage == DownloadStage.connecting &&
             catalog.receivedBytes == 0);
+    // A program is unpacked once it has arrived.
+    final unpacking = catalog.downloadStage == DownloadStage.installing;
     return [
       RadioGroup<String>(
         groupValue: value,
@@ -168,8 +226,10 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
               contentPadding: const EdgeInsets.fromLTRB(8, 0, 16, 0),
               minTileHeight: 56,
               controlAffinity: ListTileControlAffinity.leading,
+              // The builds of one program differ in what they run on; the
+              // program and its release stand with the license.
               title: Text(
-                model.label,
+                model is ProgramPackage ? model.variant : model.label,
                 style: const TextStyle(fontSize: 16, letterSpacing: .5),
               ),
               subtitle: Column(
@@ -184,11 +244,18 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                       '${t('modelLicense')}: ${model.licenseName}',
                       style: const TextStyle(fontSize: 12, letterSpacing: .25),
                     ),
+                  if (model is ProgramPackage)
+                    Text(
+                      '${model.name} ${model.version} · ${model.licenseName}',
+                      style: const TextStyle(fontSize: 12, letterSpacing: .25),
+                    ),
                   if (catalog.downloadingModel == model) ...[
                     LinearProgressIndicator(
                       key: const Key('model-download-progress'),
                       value: waiting
                           ? null
+                          : unpacking
+                          ? catalog.installProgress
                           : catalog.receivedBytes / model.bytes,
                     ),
                     Text(
@@ -196,6 +263,8 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                           ? t('modelRetrying')
                           : waiting
                           ? t('modelConnecting')
+                          : unpacking
+                          ? t('programUnpacking')
                           : '${(catalog.receivedBytes / 1000000).toStringAsFixed(1)} MB / ${model.size}',
                     ),
                   ],
@@ -231,7 +300,11 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                           withLocalOverlay(
                             IconButton(
                               key: Key('remove-${model.id}'),
-                              tooltip: t('removeModel'),
+                              tooltip: t(
+                                model is ProgramPackage
+                                    ? 'removeProgram'
+                                    : 'removeModel',
+                              ),
                               onPressed: editable ? () => remove(model) : null,
                               icon: const Icon(AltIcons.delete),
                             ),
@@ -243,16 +316,107 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                   editable &&
                   available[model.id] == ModelAvailability.available,
             ),
+          ...more,
         ]),
       ),
-      if (catalog.downloadingModel != null) Text(t('modelDownloadBackground')),
-      if (catalog.downloadError case final downloadError?)
+      // What a download says is said under the list it belongs to.
+      if (models.contains(catalog.downloadingModel)) ...[
+        const SizedBox(height: 8),
+        Text(t('modelDownloadBackground')),
+      ],
+      if (catalog.downloadError case final downloadError?
+          when models.contains(catalog.lastDownload)) ...[
+        const SizedBox(height: 8),
         AltNotice.error(
           t(downloadError),
           key: const Key('model-download-error'),
         ),
+      ],
     ];
   }
+
+  /// The programs an engine can run: the published builds, downloaded and
+  /// removed like models, and one's own by its path. The path is asked for
+  /// while that is the choice.
+  List<Widget> programTiles(
+    ProgramEngine engine,
+    String title,
+    String? value,
+    ValueChanged<String?> onChanged,
+    TextEditingController path,
+    String fileName,
+  ) {
+    final packages = controller.catalog.programsFor(engine);
+    return [
+      Text(title, style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 8),
+      ...modelTiles(
+        packages,
+        'program',
+        value,
+        onChanged,
+        more: [
+          RadioListTile<String>(
+            key: const Key('program-custom'),
+            contentPadding: const EdgeInsets.fromLTRB(8, 0, 16, 0),
+            minTileHeight: 56,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: Text(
+              t('programCustom'),
+              style: const TextStyle(fontSize: 16, letterSpacing: .5),
+            ),
+            value: customProgram,
+            enabled: editable,
+          ),
+          AltReveal(
+            child: value == customProgram
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: TextField(
+                      key: const Key('program-path'),
+                      controller: path,
+                      enabled: editable,
+                      decoration: InputDecoration(labelText: fileName),
+                    ),
+                  )
+                : null,
+          ),
+        ],
+      ),
+      if (packages.isNotEmpty)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            key: const Key('program-source'),
+            onPressed: () => run(() async {
+              await Process.start('rundll32.exe', [
+                'url.dll,FileProtocolHandler',
+                packages.first.sourceUrl,
+              ]);
+            }),
+            icon: const Icon(AltIcons.openInNew),
+            label: Text(t('modelSource')),
+          ),
+        ),
+    ];
+  }
+
+  /// The path of the program chosen for an engine: the executable of the
+  /// download, or what was typed. With nothing chosen, the engine keeps
+  /// the program it has, [current].
+  String chosenProgram(
+    String? choice,
+    TextEditingController path,
+    String current,
+  ) => choice == null
+      ? current
+      : choice == customProgram
+      ? path.text.trim()
+      : controller.catalog.packages
+                .where((package) => package.id == choice)
+                .map(controller.catalog.programPath)
+                .firstOrNull ??
+            '';
 
   /// Links to the model source, a rescan and the folder on disk.
   Widget folderRow({String? sourceUrl}) => Column(
@@ -389,6 +553,15 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
         (value) => setState(() => transcribeSelected = value),
       ),
       folderRow(sourceUrl: ModelCatalog.transcribeModels.first.sourceUrl),
+      gap(),
+      ...programTiles(
+        ProgramEngine.transcribe,
+        t('transcribeProgram'),
+        transcribeChoice,
+        (value) => setState(() => transcribeChoice = value),
+        transcribeProgram,
+        'nemo-speech.exe',
+      ),
       // A local text model and Transcribe do not fit in the GPU together.
       if (controller.llmLocal) ...[
         gap(),
@@ -421,20 +594,6 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
           ]),
         ),
       ],
-      gap(),
-      ExpansionTile(
-        key: const Key('transcribe-program'),
-        title: Text(t('transcribeProgram')),
-        // Nothing runs until the program is set, so it starts open then.
-        initiallyExpanded: transcribeProgram.text.isEmpty,
-        children: [
-          TextField(
-            controller: transcribeProgram,
-            enabled: editable,
-            decoration: const InputDecoration(labelText: 'nemo-speech.exe'),
-          ),
-        ],
-      ),
     ] else if (provider.isCloud) ...[
       Text(t('cloudAudioNotice')),
       CloudKeyEditor(
@@ -512,6 +671,15 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       ),
       folderRow(sourceUrl: ModelCatalog.sourceUrl),
       gap(),
+      ...programTiles(
+        ProgramEngine.whisper,
+        t('whisperProgram'),
+        whisperProgram,
+        (value) => setState(() => whisperProgram = value),
+        executable,
+        'whisper-server.exe',
+      ),
+      gap(),
       Text(t('computeBackend')),
       const SizedBox(height: 8),
       AltButtonGroup(
@@ -540,16 +708,6 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       ),
       gap(),
       Text(t('gpuHint')),
-      ExpansionTile(
-        title: Text(t('whisperProgram')),
-        children: [
-          TextField(
-            controller: executable,
-            enabled: editable,
-            decoration: const InputDecoration(labelText: 'whisper-server.exe'),
-          ),
-        ],
-      ),
     ],
   ];
   @override
@@ -584,7 +742,11 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       if (chosen == null || result[chosen] != ModelAvailability.available) {
         throw const FormatException('transcribeModelMissing');
       }
-      final program = transcribeProgram.text.trim();
+      final program = chosenProgram(
+        transcribeChoice,
+        transcribeProgram,
+        controller.transcribeExecutable,
+      );
       if (!File(program).existsSync()) {
         throw const FormatException('transcribeProgramMissing');
       }
@@ -608,13 +770,23 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
     if (selected == null || result[selected] != ModelAvailability.available) {
       throw const FormatException('whisperModelMissing');
     }
+    // A path that was typed has to lead somewhere; with no program chosen
+    // yet, the start page says so and leads back here.
+    final program = chosenProgram(
+      whisperProgram,
+      executable,
+      controller.executable,
+    );
+    if (whisperProgram == customProgram && !File(program).existsSync()) {
+      throw const FormatException('whisperProgramMissing');
+    }
     controller.model = controller.catalog.path(
       ModelCatalog.models.firstWhere((item) => item.id == selected),
     );
     controller.useRemote = false;
     controller.computeMode = compute;
     controller.speechProvider = provider;
-    controller.executable = executable.text.trim();
+    controller.executable = program;
     await controller.saveSettings();
   }
 }
