@@ -267,36 +267,37 @@ class _RecordsScreenState extends State<RecordsScreen> {
     final moving = query == shownQuery;
     shownQuery = query;
     return pageStack([
-      SizedBox(
-        height: 56,
-        child: TextFormField(
-          key: const Key('record-search'),
-          focusNode: widget.searchFocus,
-          initialValue: widget.query,
-          onChanged: widget.onQueryChanged,
-          decoration: InputDecoration(
-            hintText: t('searchRecords'),
-            prefixIcon: const Icon(AltIcons.search),
-            fillColor: colors.surfaceContainerHigh,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999),
-              borderSide: BorderSide(color: colors.primary),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 16,
+      if (live.records.isNotEmpty)
+        SizedBox(
+          height: 56,
+          child: TextFormField(
+            key: const Key('record-search'),
+            focusNode: widget.searchFocus,
+            initialValue: widget.query,
+            onChanged: widget.onQueryChanged,
+            decoration: InputDecoration(
+              hintText: t('searchRecords'),
+              prefixIcon: const Icon(AltIcons.search),
+              fillColor: colors.surfaceContainerHigh,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(color: colors.primary),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
             ),
           ),
         ),
-      ),
       if (live.records.isNotEmpty)
         pagePanel(
           context,
@@ -316,7 +317,6 @@ class _RecordsScreenState extends State<RecordsScreen> {
           context,
           AltIcons.history,
           t('emptyLibrary'),
-          t('emptyLibraryHint'),
           FilledButton.tonalIcon(
             style: FilledButton.styleFrom(minimumSize: const Size(160, 56)),
             onPressed: widget.onTranscribe,
@@ -331,14 +331,6 @@ class _RecordsScreenState extends State<RecordsScreen> {
             t('noSearchResults'),
             textAlign: TextAlign.center,
             style: text.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
-          ),
-        ),
-      if (live.records.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            t('storedLocally'),
-            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
           ),
         ),
     ]);

@@ -60,7 +60,6 @@ Widget pageEmptyState(
   BuildContext context,
   IconData icon,
   String title,
-  String description,
   Widget action,
 ) => Padding(
   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 48),
@@ -79,17 +78,7 @@ Widget pageEmptyState(
         style: Theme.of(context).textTheme.headlineSmall,
         textAlign: TextAlign.center,
       ),
-      const SizedBox(height: 12),
-      ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Text(
-          description,
-          style: Theme.of(context).textTheme.bodyMedium
-              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-          textAlign: TextAlign.center,
-        ),
-      ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 16),
       action,
     ],
   ),

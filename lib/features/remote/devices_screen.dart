@@ -226,16 +226,6 @@ class _DevicesScreenState extends State<DevicesScreen> {
                       color: colors.onSecondaryContainer,
                     ),
                   ),
-                  Text(
-                    t(
-                      MobilePlatform.android
-                          ? 'mobileDeviceHint'
-                          : 'deviceLocalHint',
-                    ),
-                    style: text.bodyMedium?.copyWith(
-                      color: colors.onSecondaryContainer,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -251,12 +241,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(t('share'), style: text.bodyLarge),
-                      pageHint(
-                        context,
-                        sharing
-                            ? '${live.sharedHost.address} · ${live.sharedHost.info['model']}'
-                            : t('shareLocalHint'),
-                      ),
+                      // Where it is reached and what it serves, once it is.
+                      if (sharing)
+                        pageHint(
+                          context,
+                          '${live.sharedHost.address} · ${live.sharedHost.info['model']}',
+                        ),
                       if (sharing)
                         TextButton(
                           onPressed: sharingDialog,
@@ -600,7 +590,6 @@ class _DevicesScreenState extends State<DevicesScreen> {
 
   @override
   Widget build(BuildContext context) => pageStack([
-    pageHint(context, t('devicesSubtitle')),
     localCard(context),
     if (live.localInferenceAllowed) pairedPanel(context),
     if (live.remoteConnection.address.isNotEmpty) hostCard(context),

@@ -1,4 +1,5 @@
 import 'package:altranscribe/app/app.dart';
+import 'package:altranscribe/data/models/transcript_record.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
 import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter/services.dart';
@@ -60,6 +61,18 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final live = fakeController();
       addTearDown(live.dispose);
+      // One transcript, so the library has something to search.
+      live.records = [
+        TranscriptRecord(
+          id: 'session-1',
+          createdAt: DateTime(2026, 9, 12, 10, 20),
+          language: 'en',
+          sources: ['microphone'],
+          lines: [],
+          status: 'completed',
+          title: 'Kept',
+        ),
+      ];
       await tester.pumpWidget(AltranscribeApp(realtime: live));
       await tester.pumpAndSettle();
 

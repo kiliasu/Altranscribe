@@ -147,10 +147,6 @@ class SettingsScreen extends StatelessWidget {
                 selected: {english ? 1 : 0},
                 onPressed: (i) => onLocale(i == 1),
               ),
-              Text(
-                t('interfaceHint'),
-                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
             ], gap: 8),
             pageStack([
               Text(
@@ -310,12 +306,7 @@ class SettingsScreen extends StatelessWidget {
               t('captionSettingsSummary'),
               captionSettings,
             ),
-            (
-              'privacy',
-              AltIcons.shield,
-              t('storedLocally').split('。').first,
-              privacyDialog,
-            ),
+            ('privacy', AltIcons.shield, null, privacyDialog),
             if (AppLog.instance.directory != null)
               (
                 'logs',
@@ -334,7 +325,7 @@ class SettingsScreen extends StatelessWidget {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               leading: Icon(entry.$2),
               title: Text(t(entry.$1)),
-              subtitle: Text(entry.$3),
+              subtitle: entry.$3 == null ? null : Text(entry.$3!),
               trailing: const Icon(AltIcons.chevronRight),
               onTap: entry.$4,
             ),
@@ -343,7 +334,7 @@ class SettingsScreen extends StatelessWidget {
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Text(
-          'Altranscribe $appVersion · ${t('appTagline')}',
+          'Altranscribe $appVersion',
           key: const Key('app-version'),
           style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
         ),

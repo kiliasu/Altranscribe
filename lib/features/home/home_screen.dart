@@ -1316,55 +1316,49 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           ], gap: 0),
         ),
       ),
+      // The recent transcripts, once there are any.
       AltReveal(
-        child: live.cloudSpeech
-            ? Padding(
+        child: live.records.isEmpty
+            ? null
+            : Padding(
                 padding: const EdgeInsets.only(top: 16),
-                child: AltNotice(
-                  t(fileMode ? 'cloudFileHint' : 'cloudAudioNotice'),
+                child: pagePanel(
+                  context,
+                  pageStack([
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(t('recent'), style: text.titleMedium),
+                          ),
+                          TextButton(
+                            onPressed: () => selectPage(1),
+                            child: Text(t('all')),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // A transcript just saved takes its place at the top.
+                    AltFlow(
+                      children: [
+                        for (final record in live.records.take(2))
+                          KeyedSubtree(
+                            key: ValueKey(record.id),
+                            child: infoRow(
+                              record.summary == null
+                                  ? AltIcons.description
+                                  : AltIcons.autoAwesome,
+                              record.displayTitle,
+                              recordLine(record, widget.english),
+                              () => showRecord(record),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ], gap: 0),
                 ),
-              )
-            : null,
-      ),
-      const SizedBox(height: 16),
-      pagePanel(
-        context,
-        pageStack([
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
-            child: Row(
-              children: [
-                Expanded(child: Text(t('recent'), style: text.titleMedium)),
-                TextButton(
-                  onPressed: () => selectPage(1),
-                  child: Text(t('all')),
-                ),
-              ],
-            ),
-          ),
-          // A transcript just saved takes its place at the top.
-          AltFlow(
-            children: [
-              for (final record in live.records.take(2))
-                KeyedSubtree(
-                  key: ValueKey(record.id),
-                  child: infoRow(
-                    record.summary == null
-                        ? AltIcons.description
-                        : AltIcons.autoAwesome,
-                    record.displayTitle,
-                    recordLine(record, widget.english),
-                    () => showRecord(record),
-                  ),
-                ),
-            ],
-          ),
-          if (live.records.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              child: pageHint(context, t('emptyLibraryHint')),
-            ),
-        ], gap: 0),
+              ),
       ),
       AltReveal(
         child: fileMode
@@ -1396,10 +1390,6 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                               : (value) =>
                                     setState(() => fileOptions[i] = value!),
                         ),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: pageHint(context, t('cleanupHint')),
-                      ),
                     ],
                   ),
                 ),
@@ -1478,16 +1468,6 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
             ),
           ],
         ],
-      ),
-      pageHint(
-        context,
-        t(
-          directTranslation
-              ? 'cloudDirectHint'
-              : translate
-              ? 'translationHint'
-              : 'translationOff',
-        ),
       ),
     ], gap: 12),
     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -2740,34 +2720,12 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                 ),
               ],
             ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                t('volumeHistory'),
-                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-              Text(
-                t('latestLevel'),
-                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-            ],
-          ),
           LayoutBuilder(
             builder: (context, constraints) => RecordingWave(
               running: live.phase == SessionPhase.listening,
               // The histories reserve 96 px for the label and a 16 px gap.
               historyWidth: constraints.maxWidth - 112,
             ),
-          ),
-          Text(
-            [
-              if (!live.cloudSpeech)
-                '${t('pendingAudio')}: ${live.pending} · ${t('lastInference')}: ${live.lastInferenceSeconds.toStringAsFixed(1)} s',
-              if (translate && live.record?.directTranslation != true)
-                '${t('pendingTranslations')}: ${live.pendingTranslations} · ${t('lastTranslation')}: ${live.lastTranslationSeconds.toStringAsFixed(1)} s',
-            ].join(' · '),
-            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
           ),
         ]),
         radius: altHeroRadius,

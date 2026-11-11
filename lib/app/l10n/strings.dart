@@ -49,10 +49,6 @@ const strings = <String, List<String>>{
     '手机上只能使用云端服务、在线 OpenAI 兼容服务或远程主机。',
     'On a phone, use a cloud service, an online OpenAI-compatible service or a remote host.',
   ],
-  'mobileDeviceHint': [
-    '在手机上采集音频，可在本机、主机或云端转录和翻译。',
-    'Captures on this phone; transcribes and translates here, on a host or in the cloud.',
-  ],
   'androidSystemAudioHint': [
     '系统音频每次开始都需要授权，仅能采集允许被捕获的媒体与游戏声音。通话或受保护内容可能无法采集。',
     'Authorize system audio each time. Only media and game audio that permits capture is available; calls and protected content may be excluded.',
@@ -66,12 +62,12 @@ const strings = <String, List<String>>{
     'System audio authorization was revoked. Capture stopped and received text was kept.',
   ],
   'remoteProcessingHint': [
-    '使用主机上的 Whisper 和本地 LLM。音频由当前设备采集，文稿保存到当前设备；实时和文件转录均可使用。云端转录模型不参与共享。',
-    'Use the host’s Whisper and local LLM. Capture audio and save transcripts on this device, for live or file transcription. Cloud speech models are not shared.',
+    '使用主机上的 Whisper 和本地 LLM；云端转录模型不参与共享。',
+    'Use the host’s Whisper and local LLM. Cloud speech models are not shared.',
   ],
   'remoteNetworkHint': [
-    '仅支持局域网或 Tailscale 的 HTTP 地址，不支持公网或 HTTPS。局域网 HTTP 不加密，请仅在信任的网络中使用；连接失败时检查主机是否在线、防火墙端口及 Tailscale 访问权限。',
-    'LAN or Tailscale HTTP addresses only; public internet and HTTPS are unsupported. LAN HTTP is unencrypted; use a trusted network. Check the host, firewall port and Tailscale access if connecting fails.',
+    '仅支持局域网或 Tailscale 的 HTTP 地址。HTTP 不加密，请仅在信任的网络中使用。',
+    'LAN or Tailscale HTTP addresses only. HTTP is unencrypted; use a trusted network.',
   ],
   'remoteAddressInvalid': [
     '请输入局域网或 Tailscale 主机的 HTTP 地址与端口。',
@@ -127,16 +123,13 @@ const strings = <String, List<String>>{
   ],
   'remoteHostLlm': ['主机本地 LLM', 'Host local LLM'],
   'remoteAddressConnection': ['通过地址连接', 'Connect by address'],
-  'remoteConnectionGuide': [
-    '在电脑上开启共享，然后扫码，或输入地址和配对码。同一网络的主机会自动列出。',
-    'Turn on sharing on the computer, then scan its QR code or enter the address and pairing code. Hosts on this network are listed automatically.',
-  ],
+  'remoteConnectionGuide': ['先在主机上开启共享。', 'Turn on sharing on the host first.'],
   'connectHost': ['连接主机', 'Connect to host'],
   'connectAndUse': ['连接并使用', 'Connect and use'],
   'shareLocalModels': ['共享本机模型', 'Share local models'],
   'shareLocalHint': [
-    '单独加载本机 Whisper，为授权设备提供转录，可同时共享本地 LLM。关闭应用会结束共享。',
-    'Load a separate local Whisper instance for authorized devices, optionally with a local LLM. Sharing ends when the app closes.',
+    '单独加载本机 Whisper；关闭应用会结束共享。',
+    'Loads a separate local Whisper instance. Sharing ends when the app closes.',
   ],
   'sharingDetails': ['地址与配对', 'Address and pairing'],
   'sharingNetwork': ['共享网络', 'Sharing network'],
@@ -157,8 +150,8 @@ const strings = <String, List<String>>{
     'Content, sentences, opacity and font',
   ],
   'captionSettingsHint': [
-    '置顶显示最新语句，可拖动顶部移动窗口，也可拖动边缘调整大小。两种语言的断句可能不同，将分别保留最近的句子。',
-    'Keep recent speech on top. Drag the header to move; drag an edge to resize. Sentence boundaries may differ between languages; each shows its latest sentences.',
+    '拖动顶部移动窗口，拖动边缘调整大小。',
+    'Drag the header to move the window; drag an edge to resize it.',
   ],
   'captionSentences': ['显示最近句数', 'Recent sentences'],
   'captionOriginal': ['显示转录原文', 'Show original transcript'],
@@ -183,13 +176,13 @@ const strings = <String, List<String>>{
   ],
   'translationContext': ['翻译上下文', 'Translation context'],
   'translationContextHint': [
-    '适用于 LLM 文本翻译。只读取本次记录中同一音频来源的已完成原文和译文；0 表示不读取。云端直接语音翻译不使用此设置。',
-    'For LLM text translation. Use preceding completed text and translations from the same source in this record. Set 0 for no context. Direct cloud speech translation is unaffected.',
+    '翻译时参考同一音源的前文；0 表示不参考。',
+    'Translation reads earlier lines from the same source; 0 reads none.',
   ],
   'contextAuto': ['自动选择上下文', 'Automatic context'],
   'contextAutoHint': [
-    '最近 90 秒内最多 6 条；自动和手动均限制总长度，避免请求过大。',
-    'Up to 6 preceding entries within 90 seconds. Both modes cap text length to keep requests bounded.',
+    '最近 90 秒内最多 6 条',
+    'Up to 6 entries from the last 90 seconds',
   ],
   'contextCount': ['读取之前的条目数', 'Previous entries to read'],
   'audioDenoise': ['轻度降噪', 'Gentle noise reduction'],
@@ -207,7 +200,6 @@ const strings = <String, List<String>>{
     'Smooth speech levels with peak protection; reduce gain during silence.',
   ],
   'volumeHistory': ['音量变化 · 最近约 15 秒', 'Volume · Last ~15 seconds'],
-  'latestLevel': ['最新', 'Latest'],
   'palette': ['配色方案', 'Color palette'],
   'amber': ['琥珀', 'Amber'],
   'baseline': ['基线', 'Baseline'],
@@ -275,14 +267,8 @@ const strings = <String, List<String>>{
     '模型列出不代表已验证推理权限；实际连接时会检查可用性。',
     'A listed model does not verify inference access; availability is checked when connecting.',
   ],
-  'cloudKeySaved': [
-    '已加密保存。留空保留现有 Key。',
-    'Encrypted key saved. Leave blank to keep it.',
-  ],
-  'cloudKeyNotSaved': [
-    '尚未保存。Key 由操作系统加密保存在本设备上。',
-    'No key saved. Keys are encrypted by the operating system and stay on this device.',
-  ],
+  'cloudKeySaved': ['已保存。留空保留现有 Key。', 'Saved. Leave blank to keep it.'],
+  'cloudKeyNotSaved': ['尚未保存', 'Not saved yet'],
   'cloudSaveKey': ['保存 Key', 'Save key'],
   'cloudKeySavePending': [
     'Key 正在保存，请稍后重试。',
@@ -394,17 +380,9 @@ const strings = <String, List<String>>{
     '未确认文本 · 连接结束前未收到最终结果',
     'Unconfirmed text · No final result received before the connection ended',
   ],
-  "appTagline": [
-    "Windows 与 Android 转录和翻译",
-    "Transcription and translation for Windows and Android",
-  ],
   "processingPrivacy": [
     "本机处理时音频留在电脑上；使用远程主机或云端时，音频与处理所需的文字会发送给所选服务。API Key 和主机令牌使用系统加密存储。删除记录不会删除导入的原始文件。",
     "Local processing keeps audio on this computer. Remote and cloud processing send audio and required text to the selected service. API keys and host tokens use system-encrypted storage. Deleting a transcript does not delete its imported source file.",
-  ],
-  "deviceLocalHint": [
-    "本地转录 · 可连接主机或共享处理能力",
-    "Local transcription · Connect to a host or share processing",
   ],
   "remoteButton": ["手动连接", "Connect manually"],
   "noModelConfigured": ["尚未配置模型", "No models configured"],
@@ -450,10 +428,6 @@ const strings = <String, List<String>>{
   "unifyNames": ["人名统一", "Unify person names"],
   "unifyTerms": ["专业术语统一", "Unify technical terms"],
   "correctWords": ["错误词汇修正（仅高置信度）", "Correct words (high confidence only)"],
-  "cleanupHint": [
-    "仅用于文件，需要所选 LLM。只做有依据的明确修正，有疑义则保留；合并断句需单独勾选。原文与修改对照会保留，结果仍需核对。",
-    "For files; requires the selected LLM. Only clear, supported edits are made and doubtful ones are skipped; joining sentences is a separate option. Originals and changes are kept for review.",
-  ],
   "preferredSpellings": ["首选人名与术语（可选）", "Preferred names & terms (optional)"],
   "spellingsHint": [
     "用逗号或换行分隔，例如：张伟，Whisper，CUDA。可同时填写原文与译文写法。",
@@ -503,15 +477,7 @@ const strings = <String, List<String>>{
     "Some files failed. See their records for details.",
   ],
   "emptyLibrary": ["还没有记录", "No recordings yet"],
-  "emptyLibraryHint": [
-    "结束一次会话，或导入一段录音。文字会保存在这里。",
-    "Finish a session or import a recording. Your transcripts will live here.",
-  ],
   "searchRecords": ["搜索记录", "Search records"],
-  "devicesSubtitle": [
-    "在自己的设备之间，选择在哪里处理。",
-    "Choose which of your devices does the work.",
-  ],
   "scan": ["查找设备", "Find devices"],
   "noRemote": ["尚未连接主机", "No host connected"],
   "deviceName": ["设备名称", "Device name"],
@@ -519,10 +485,6 @@ const strings = <String, List<String>>{
   "modelSettings": ["模型与处理", "Models & processing"],
   "appearance": ["外观", "Appearance"],
   "interfaceLanguage": ["界面语言", "App language"],
-  "interfaceHint": [
-    "只改变界面文字，不改变识别语言或已有文稿。",
-    "Changes the interface, without changing recognition languages or transcripts.",
-  ],
   "light": ["浅色", "Light"],
   "dark": ["深色", "Dark"],
   "system": ["跟随系统", "System"],
@@ -550,8 +512,6 @@ const strings = <String, List<String>>{
     "等待识别结果。请说话或播放语音。",
     "Waiting for transcription. Speak or play speech.",
   ],
-  "pendingAudio": ["待识别片段", "Pending chunks"],
-  "lastInference": ["上次识别耗时", "Last inference"],
   "audioGap": [
     "音频设备报告了采集间断，部分声音可能缺失。",
     "The audio device reported a capture gap. Some audio may be missing.",
@@ -587,20 +547,6 @@ const strings = <String, List<String>>{
     "此前选择的设备不可用",
     "Previously selected device is unavailable",
   ],
-  "deviceChangeHint": [
-    "设备在每次开始时确定；使用中更换设备后，请停止并重新开始。",
-    "Devices are selected at session start. Stop and restart after changing audio devices.",
-  ],
-  "translationHint": [
-    "原文先显示，译文随后补齐；翻译失败会保留原文。",
-    "Original text appears first, followed by translation. Originals are retained if translation fails.",
-  ],
-  "translationOff": [
-    "翻译已关闭，仅显示转录原文。",
-    "Translation is off. Only original transcription is shown.",
-  ],
-  "pendingTranslations": ["待翻译片段", "Pending translations"],
-  "lastTranslation": ["上次翻译耗时", "Last translation"],
   "translating": ["正在翻译…", "Translating…"],
   "translationInterrupted": [
     "翻译因上次退出而中断，原文已保留。",
@@ -652,15 +598,7 @@ const strings = <String, List<String>>{
     "转录期间设置只读，停止后可修改。",
     "Settings are read-only during transcription. Stop to make changes.",
   ],
-  "audioPanelHint": [
-    "分别选择麦克风和系统播放设备。两个音源可在转录页独立开启，也可同时使用。",
-    "Select microphone and playback devices separately. Enable either or both on the transcription page.",
-  ],
   "refreshDevices": ["刷新设备", "Refresh devices"],
-  "modelCatalogHint": [
-    "选择模型旁的下载按钮，文件会保存到下方目录并校验完整性。来源为 whisper.cpp 官方 GitHub 指向的 Hugging Face 仓库。也可手动放入模型文件后刷新。",
-    "Download a model to the folder below, with integrity verification. Files come from the Hugging Face repository linked by the official whisper.cpp GitHub project. You can also add files manually and refresh.",
-  ],
   "downloadModel": ["下载", "Download"],
   "modelDownloading": ["下载中", "Downloading"],
   "cancelDownload": ["取消下载", "Cancel download"],
@@ -701,10 +639,6 @@ const strings = <String, List<String>>{
   "whisperModelMissing": [
     "请先下载或添加一个完整模型，再选择并保存。",
     "Download or add a complete model, then select it and save.",
-  ],
-  "llmPanelHint": [
-    "勾选一个引擎和一个模型，用于文字翻译、整理、标题与摘要。本地引擎需要先启动服务；云端引擎需要 API Key。",
-    "Select one engine and model for text translation, cleanup, titles and summaries. Local engines require a running server; cloud engines require an API key.",
   ],
   "compatibleKeyHint": [
     "先填服务地址，再填 API Key。每个地址单独保存 Key；保存配置或测试连接时会一并保存。",
@@ -876,10 +810,7 @@ const strings = <String, List<String>>{
   ],
   "pairedWith": ["已配对并选用主机：", "Paired with host:"],
   "pairedDevices": ["已配对设备", "Paired devices"],
-  "noPairedDevices": [
-    "还没有配对的设备。开启共享后点「添加设备」。",
-    "No paired devices yet. Turn on sharing, then choose Add device.",
-  ],
+  "noPairedDevices": ["还没有配对的设备", "No paired devices yet"],
   "addDevice": ["添加设备", "Add device"],
   "removeDevice": ["移除设备", "Remove device"],
   "removeDeviceHint": [
@@ -914,10 +845,6 @@ const strings = <String, List<String>>{
   "forgetHostHint": [
     "断开并删除保存的主机和凭据；主机上的配对需在主机上移除。",
     "Disconnects and deletes the saved host and credential. Remove the pairing on the host separately.",
-  ],
-  "llmSourceHint": [
-    "选择翻译、整理和摘要使用的文字模型。",
-    "Choose the text model for translation, refinement and summaries.",
   ],
   "llmFromHost": ["主机共享的模型", "The host's shared model"],
   "llmOwnService": ["自行配置的服务", "Your own service"],

@@ -504,8 +504,6 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
           ),
       Text(t('cloudAvailabilityHint')),
     ] else ...[
-      Text(t('modelCatalogHint')),
-      gap(),
       ...modelTiles(
         ModelCatalog.models,
         'whisper',

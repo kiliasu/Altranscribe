@@ -134,8 +134,6 @@ class _TranslationSettingsState
   }
 
   List<Widget> sourceSection() => [
-    Text(t('llmSourceHint')),
-    gap(),
     RadioGroup<bool>(
       groupValue: fromHost,
       onChanged: (value) {
@@ -217,8 +215,6 @@ class _TranslationSettingsState
   ];
 
   List<Widget> ownServiceSection() => [
-    Text(t('llmPanelHint')),
-    gap(),
     AltButtonGroup(
       height: 32,
       stretch: true,

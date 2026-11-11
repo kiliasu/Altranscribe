@@ -168,21 +168,8 @@ class RecordDetailDialog extends StatelessWidget {
                       compact: true,
                     ),
                   ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 16, bottom: 20),
-                      child: Tooltip(
-                        message:
-                            '${live.store.directory.path}/${record.id}.json',
-                        child: Text(
-                          t('storedLocally'),
-                          style: text.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  // Clear of the fade at the bottom edge.
+                  const SliverToBoxAdapter(child: SizedBox(height: 20)),
                 ],
               ),
             ),

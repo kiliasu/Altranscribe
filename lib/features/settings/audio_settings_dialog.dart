@@ -121,9 +121,10 @@ class _AudioSettingsState extends SettingsDialogState<AudioSettingsDialog> {
 
   @override
   List<Widget> contents() => [
-    Text(t('audioPanelHint')),
-    if (!controller.localInferenceAllowed) Text(t('androidSystemAudioHint')),
-    gap(),
+    if (!controller.localInferenceAllowed) ...[
+      Text(t('androidSystemAudioHint')),
+      gap(),
+    ],
     choices([
       devicePicker('microphone', mic, (value) => setState(() => mic = value!)),
       CheckboxListTile(
@@ -174,13 +175,7 @@ class _AudioSettingsState extends SettingsDialogState<AudioSettingsDialog> {
     gap(),
     Row(
       children: [
-        Expanded(
-          child: Text(
-            t('deviceChangeHint'),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-        const SizedBox(width: 12),
+        const Spacer(),
         TextButton.icon(
           onPressed: busy ? null : () => run(load),
           icon: const Icon(AltIcons.refresh, size: 18),
