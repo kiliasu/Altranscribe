@@ -455,10 +455,10 @@ void main() {
       final follow = find.byKey(const Key('follow-latest'));
       expect(tester.widget<Checkbox>(follow).value, true);
       final scroll = tester
-          .widget<SingleChildScrollView>(
+          .widget<CustomScrollView>(
             find.byWidgetPredicate(
               (widget) =>
-                  widget is SingleChildScrollView && widget.controller != null,
+                  widget is CustomScrollView && widget.controller != null,
             ),
           )
           .controller!;

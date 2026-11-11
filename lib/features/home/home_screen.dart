@@ -2,6 +2,7 @@ import 'package:altranscribe/features/records/record_detail_dialog.dart';
 import 'package:altranscribe/shared/ui/page_layout.dart';
 import 'package:altranscribe/app/l10n/localized_issue.dart';
 import 'package:altranscribe/shared/ui/confirmation_dialog.dart';
+import 'package:altranscribe/shared/ui/elapsed_text.dart';
 import 'package:altranscribe/shared/ui/transcript_tile.dart';
 import 'package:altranscribe/shared/ui/transcript_scroll_controller.dart';
 import 'package:altranscribe/features/records/records_screen.dart';
@@ -64,7 +65,6 @@ class AltranscribeHome extends StatefulWidget {
 class _AltranscribeHomeState extends State<AltranscribeHome>
     with SingleTickerProviderStateMixin {
   int page = 0;
-  Timer? sessionClock;
   bool minimized = false;
   int sessionShape = math.Random().nextInt(AltLoading.shapeCount);
   bool get confirmingDiscard => live.discardConfirmationPending;
@@ -99,10 +99,15 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   String preferredSpellings = '';
   final scrollBucket = PageStorageBucket();
   late final sessionScroll = TranscriptScrollController(
-    following: () => followLatest,
+    following: () => followLatest && followArmed,
   );
   bool followLatest = true;
   bool followScheduled = false;
+
+  /// The next layout may move to the end: the transcript changed, the page
+  /// was entered or following was turned on. Other layouts, such as rows
+  /// built while the user scrolls, keep the reading position.
+  bool followArmed = false;
   bool wasSession = false;
   int transcriptRevision = -1;
   String? anchorRecord;
@@ -114,9 +119,6 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     live.sharedHost.addListener(refresh);
     MobilePlatform.importedFiles.addListener(importMobileFiles);
     WidgetsBinding.instance.addPostFrameCallback((_) => importMobileFiles());
-    sessionClock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && session) setState(() {});
-    });
     wasSession = session;
     scheduleFollow();
   }
@@ -158,7 +160,9 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   }
 
   void scheduleFollow() {
-    if (followScheduled || !followLatest || !showSession) return;
+    if (!followLatest || !showSession) return;
+    followArmed = true;
+    if (followScheduled) return;
     followScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       followScheduled = false;
@@ -169,6 +173,10 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           sessionScroll.jumpTo(sessionScroll.position.maxScrollExtent);
         }
       }
+      // The jump's own layout may still correct the end of a list whose
+      // length was estimated; after that frame, positions are kept again.
+      WidgetsBinding.instance.addPostFrameCallback((_) => followArmed = false);
+      WidgetsBinding.instance.ensureVisualUpdate();
     });
     WidgetsBinding.instance.ensureVisualUpdate();
   }
@@ -183,7 +191,6 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     live.removeListener(refresh);
     live.sharedHost.removeListener(refresh);
     MobilePlatform.importedFiles.removeListener(importMobileFiles);
-    sessionClock?.cancel();
     swapAnimation.dispose();
     sessionScroll.dispose();
     super.dispose();
@@ -289,7 +296,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   @override
   Widget build(BuildContext context) {
     final pageContent = switch (page) {
-      0 => showSession ? sessionPage() : transcribePage(),
+      0 => showSession ? const SizedBox.shrink() : transcribePage(),
       1 => RecordsScreen(
         controller: live,
         english: widget.english,
@@ -497,48 +504,30 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                                     }
                                     return false;
                                   },
-                                  child: SingleChildScrollView(
-                                    key: PageStorageKey(
-                                      'page-$page-$showSession-$fileMode',
-                                    ),
-                                    controller: showSession
-                                        ? sessionScroll
-                                        : null,
-                                    padding: EdgeInsets.fromLTRB(
-                                      narrow ? 16 : 24,
-                                      8,
-                                      narrow ? 16 : 24,
-                                      session ? 120 : 32,
-                                    ),
-                                    child: Align(
-                                      alignment: Alignment.topCenter,
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                          maxWidth: 960,
-                                        ),
-                                        child: TweenAnimationBuilder<double>(
-                                          key: ValueKey(
-                                            'page-transition-$page',
+                                  child: showSession
+                                      ? sessionScrollView(narrow)
+                                      : SingleChildScrollView(
+                                          key: PageStorageKey(
+                                            'page-$page-$showSession-$fileMode',
                                           ),
-                                          tween: Tween(begin: 0, end: 1),
-                                          duration: navigationDuration,
-                                          curve: Curves.easeOutCubic,
-                                          builder: (context, value, child) =>
-                                              Opacity(
-                                                opacity: value,
-                                                child: Transform.translate(
-                                                  offset: Offset(
-                                                    0,
-                                                    12 * (1 - value),
-                                                  ),
-                                                  child: child,
-                                                ),
+                                          padding: EdgeInsets.fromLTRB(
+                                            narrow ? 16 : 24,
+                                            8,
+                                            narrow ? 16 : 24,
+                                            session ? 120 : 32,
+                                          ),
+                                          child: Align(
+                                            alignment: Alignment.topCenter,
+                                            child: ConstrainedBox(
+                                              constraints: const BoxConstraints(
+                                                maxWidth: 960,
                                               ),
-                                          child: pageContent,
+                                              child: pageTransition(
+                                                pageContent,
+                                              ),
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  ),
                                 ),
                               ),
                             ),
@@ -1665,7 +1654,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     return '$minutes:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
-  Widget fileSessionPage() => pageStack([
+  Widget fileSessionPanel() => pageStack([
     pagePanel(
       context,
       pageStack([
@@ -1710,16 +1699,19 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                 visualDensity: altChipDensity,
                 avatarBoxConstraints: altChipIconBounds,
                 avatar: const Icon(AltIcons.translate, size: 18),
-                label: Text('LLM · ${live.translator.backend}'),
+                label: Text('LLM · ${live.llmBackend}'),
               ),
           ],
         ),
         LinearProgressIndicator(
+          key: const Key('file-progress'),
+          value: fileProgress,
           minHeight: 8,
           borderRadius: BorderRadius.circular(4),
         ),
         Text(
-          '${t('processedAudio')}: ${elapsedLabel(Duration(milliseconds: live.fileTask?.processedMs ?? 0))}',
+          fileProgressLabel,
+          key: const Key('file-progress-label'),
           style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
         ),
       ]),
@@ -1733,32 +1725,127 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
       ),
     if (live.error != null)
       Text(issue(live.error!), style: TextStyle(color: colors.error)),
-    Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-      child: pageStack(transcriptTiles(animateTranslation: false), gap: 4),
-    ),
   ]);
 
-  List<Widget> transcriptTiles({bool animateTranslation = true}) {
-    final record = live.record;
-    if (record == null) return const [];
-    final keys = sessionScroll.keysFor(record.id, record.lines);
-    return [
-      for (final (index, line) in record.lines.indexed)
-        TranscriptTile(
-          key: keys[index],
-          line: line,
-          english: widget.english,
-          captionSize: captionSize,
-          highlight: showSession && identical(line, record.lines.lastOrNull),
-          awaitingTranslation: awaitingTranslation(line),
-          animateTranslation: animateTranslation,
+  /// Fades a page in when it is first shown.
+  Widget pageTransition(Widget child) => TweenAnimationBuilder<double>(
+    key: ValueKey('page-transition-$page'),
+    tween: Tween(begin: 0, end: 1),
+    duration: navigationDuration,
+    curve: Curves.easeOutCubic,
+    builder: (context, value, child) => Opacity(
+      opacity: value,
+      child: Transform.translate(
+        offset: Offset(0, 12 * (1 - value)),
+        child: child,
+      ),
+    ),
+    child: child,
+  );
+
+  /// The session: its panel, then one row per line. Rows are built only
+  /// where they are on or near the screen, so a transcript of a thousand
+  /// lines costs no more to update than one of ten.
+  Widget sessionScrollView(bool narrow) => LayoutBuilder(
+    builder: (context, constraints) {
+      final side = math.max(
+        narrow ? 16.0 : 24.0,
+        (constraints.maxWidth - 960) / 2,
+      );
+      final record = live.record;
+      final lines = record?.lines ?? const <TranscriptLine>[];
+      final keys = record == null
+          ? const <GlobalKey>[]
+          : sessionScroll.keysFor(record.id, lines);
+      final indexes = {for (final (index, key) in keys.indexed) key: index};
+      final animate = !live.processingFiles;
+      return pageTransition(
+        CustomScrollView(
+          key: PageStorageKey('page-$page-$showSession-$fileMode'),
+          controller: sessionScroll,
+          slivers: [
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+              sliver: SliverToBoxAdapter(child: sessionPanel()),
+            ),
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(side + 8, 24, side + 8, 120),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == lines.length - 1 ? 0 : 4,
+                    ),
+                    child: TranscriptTile(
+                      key: keys[index],
+                      line: lines[index],
+                      english: widget.english,
+                      captionSize: captionSize,
+                      highlight: index == lines.length - 1,
+                      awaitingTranslation: awaitingTranslation(lines[index]),
+                      animateTranslation: animate,
+                    ),
+                  ),
+                  childCount: lines.length,
+                  findChildIndexCallback: (key) => indexes[key],
+                ),
+              ),
+            ),
+          ],
         ),
-    ];
+      );
+    },
+  );
+
+  /// How far the file has come in its current stage: the audio transcribed,
+  /// then the lines translated. Null while a stage has no measure.
+  double? get fileProgress {
+    final task = live.fileTask;
+    final record = live.record;
+    if (task == null || record == null) return null;
+    switch (task.stage) {
+      case 'fileTranscribing':
+        // The first piece says nothing until it returns; the text beside
+        // the bar shows how much audio has been read meanwhile.
+        final total = task.durationMs;
+        if (total == null || total <= 0 || task.processedMs == 0) return null;
+        return (task.processedMs / total).clamp(0, 1).toDouble();
+      case 'fileTranslating':
+        if (record.lines.isEmpty) return null;
+        return translatedLines(record) / record.lines.length;
+      default:
+        return null;
+    }
   }
 
-  Widget sessionPage() => live.processingFiles
-      ? fileSessionPage()
+  static int translatedLines(TranscriptRecord record) => record.lines
+      .where(
+        (line) => const {
+          'done',
+          'failed',
+          'interrupted',
+        }.contains(line.translationStatus),
+      )
+      .length;
+
+  String get fileProgressLabel {
+    final task = live.fileTask;
+    final record = live.record;
+    String time(int ms) => elapsedLabel(Duration(milliseconds: ms));
+    if (task?.stage == 'fileTranslating' && record != null) {
+      return '${t('translatedLines')} ${translatedLines(record)} / ${record.lines.length}';
+    }
+    final processed = task?.processedMs ?? 0;
+    final total = task?.durationMs;
+    final read = task?.decodedMs ?? 0;
+    return [
+      '${t('processedAudio')}: ${time(processed)}${total == null ? '' : ' / ${time(total)}'}',
+      if (read > processed) '${t('audioRead')} ${time(read)}',
+    ].join(' · ');
+  }
+
+  Widget sessionPanel() => live.processingFiles
+      ? fileSessionPanel()
       : pageStack([
           pagePanel(
             context,
@@ -1786,8 +1873,10 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(sessionTitle, style: text.titleLarge),
-                            Text(
-                              '${t('elapsed')} ${elapsedLabel(DateTime.now().difference(live.record?.createdAt ?? DateTime.now()))} · ${live.record?.language == 'auto' ? t('cloudAutoLanguage') : sourceLanguage}${translate ? ' → $targetLanguage' : ''}',
+                            ElapsedText(
+                              since: live.record?.createdAt ?? DateTime.now(),
+                              label: (elapsed) =>
+                                  '${t('elapsed')} ${elapsedLabel(elapsed)} · ${live.record?.language == 'auto' ? t('cloudAutoLanguage') : sourceLanguage}${translate ? ' → $targetLanguage' : ''}',
                               style: text.bodyMedium?.copyWith(
                                 color: colors.onSurfaceVariant,
                               ),
@@ -1828,7 +1917,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                           visualDensity: altChipDensity,
                           avatarBoxConstraints: altChipIconBounds,
                           avatar: const Icon(AltIcons.translate, size: 18),
-                          label: Text('LLM · ${live.translator.backend}'),
+                          label: Text('LLM · ${live.llmBackend}'),
                         ),
                     ],
                   ),
@@ -1910,9 +1999,5 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
               padding: const EdgeInsets.all(24),
               child: Text(t('waitingSpeech'), textAlign: TextAlign.center),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-            child: pageStack(transcriptTiles(), gap: 4),
-          ),
         ]);
 }

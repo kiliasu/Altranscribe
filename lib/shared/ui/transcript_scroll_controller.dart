@@ -33,9 +33,18 @@ class TranscriptScrollController extends ScrollController {
     ];
   }
 
+  /// The row's box while it is laid out. A row built on demand that left
+  /// the screen keeps its element until the frame ends, but its box has
+  /// left the tree, so it is skipped.
+  RenderBox? _box(GlobalKey key) {
+    final context = key.currentContext;
+    final box = context is Element ? context.renderObject : null;
+    return box is RenderBox && box.attached && box.hasSize ? box : null;
+  }
+
   double? _top(GlobalKey key) {
-    final box = key.currentContext?.findRenderObject();
-    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    final box = _box(key);
+    if (box == null) return null;
     final viewport = RenderAbstractViewport.maybeOf(box);
     if (viewport is! RenderObject || !hasClients) return null;
     // Transform the origin only: getOffsetToReveal reads descendant sizes,
@@ -52,9 +61,9 @@ class TranscriptScrollController extends ScrollController {
     if (following() || !hasClients) return;
     for (final key in _keys.values) {
       final top = _top(key);
-      final box = key.currentContext?.findRenderObject();
+      final box = _box(key);
       if (top != null &&
-          box is RenderBox &&
+          box != null &&
           top + box.size.height > offset &&
           top < offset + position.viewportDimension) {
         _anchor = key;

@@ -47,7 +47,7 @@ class RemoteTranslationService implements TranslationService {
   String model = '';
   bool _textPreparation = false;
   @override
-  String backend = 'LLM · Remote';
+  String backend = 'Remote';
   @override
   Future<List<String>> models(
     String address, {

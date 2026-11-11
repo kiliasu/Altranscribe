@@ -464,6 +464,8 @@ const strings = <String, List<String>>{
   "fileCleaning": ["正在整理原文…", "Refining transcript…"],
   "fileCleaningTranslation": ["正在整理译文…", "Refining translation…"],
   "processedAudio": ["已转录音频", "Audio transcribed"],
+  "audioRead": ["已读取音频", "Audio read"],
+  "translatedLines": ["已翻译", "Translated"],
   "fileSummaryHint": [
     "需要可用的文字 LLM（本地服务或云端 API）。每个文件处理完成后生成，使用开始时的界面语言。",
     "Requires a text LLM (local server or cloud API). Generated after each file finishes, using the app language at start.",

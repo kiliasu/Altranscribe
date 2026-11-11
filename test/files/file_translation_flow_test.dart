@@ -147,9 +147,13 @@ void main() {
       }
       await tester.pump(const Duration(milliseconds: 300));
       expect(controller.record!.lines, hasLength(24));
+      // Rows exist only where they are on screen; each one that does holds
+      // the room its translation will take.
+      final shown = find.byType(TranscriptTile).evaluate().length;
+      expect(shown, inInclusiveRange(2, 23));
       expect(
         find.byKey(const Key('translation-placeholder')),
-        findsNWidgets(24),
+        findsNWidgets(shown),
       );
       final before = tester.getTopLeft(find.byType(TranscriptTile).last).dy;
       for (var i = 0; i < 3; i++) {
