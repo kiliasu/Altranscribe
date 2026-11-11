@@ -17,14 +17,14 @@
 需要 Xcode 27 或更新版本、CMake（`brew install cmake`）。所有命令在仓库根目录运行：
 
 ```sh
-bash macos/scripts/bootstrap-whisper.sh
-bash macos/scripts/build-app.sh
+bash apple/scripts/bootstrap-whisper.sh
+bash apple/scripts/build-app.sh
 open build/macos/Altranscribe.app
 ```
 
 首次会从 whisper.cpp 官方仓库下载固定提交的源代码。Swift Package Manager 下载并校验固定的 sherpa-onnx 1.13.8 和 ONNX Runtime 1.28.1 macOS 静态 XCFramework，并解析固定的 FluidAudio 0.17.7。构建缓存均放在被 Git 忽略的 `.build` 目录中；依赖齐全后可以离线构建。应用位于 `build/macos/Altranscribe.app`，采用本地 ad-hoc 签名，没有发布、公证或上传。可直接将 `.app` 拖入「应用程序」。
 
-可以用 Xcode 打开 `macos/Package.swift` 阅读、编辑和调试。测试可通过 Swift Package 运行；麦克风和系统声音的实际使用请启动打包后的 `.app`，保证权限说明和应用身份完整。
+可以用 Xcode 打开 `apple/Package.swift` 阅读、编辑和调试。测试可通过 Swift Package 运行；麦克风和系统声音的实际使用请启动打包后的 `.app`，保证权限说明和应用身份完整。
 
 分发包只含引擎，不携带任何模型权重；构建时也会清除旧包中残留的 Tiny。所有模型在设置中按需下载或选择已有文件，本机下载目录不受打包影响。
 
@@ -135,7 +135,7 @@ macOS 记录格式版本 2 保存可随界面语言切换的应用错误及摘�
 OpenAI、Gemini、Anthropic 的真实云端验证、协议依据、十分钟边界及服务可用性限制见 [云服务验证记录](CLOUD_VALIDATION.md)。真实云端测试默认跳过，必须显式提供本地凭据与公开音频才运行。云端会话的无文本活动、活动上限、`goAway`、替换连接重试和退役连接失败路径另有 8 项离线回归，使用脚本化的假连接，不访问网络：
 
 ```sh
-swift test --package-path macos --filter CloudSessionTests
+swift test --package-path apple --filter CloudSessionTests
 ```
 
 早期 FluidAudio / Apple 组合测试覆盖文件与旧版 8 秒采集分块、停止尾段、取消、文件队列和持久保存；旧设置兼容与 i18n 复用已有测试。只读取公开英语文件，不播放到扬声器，也不采集麦克风：
@@ -145,7 +145,7 @@ mkdir -p "$HOME/Library/Application Support/Altranscribe/Models" .build/addition
 [ -e .build/additional-speech-validation/Models ] || ln -s "$HOME/Library/Application Support/Altranscribe/Models" .build/additional-speech-validation/Models
 ALTRANSCRIBE_TEST_ADDITIONAL_ROOT="$PWD/.build/additional-speech-validation" \
 ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
-swift test --package-path macos --filter 'AdditionalSpeechTests|testEnglishDefaultAndExistingSettings|LocalizationTests'
+swift test --package-path apple --filter 'AdditionalSpeechTests|testEnglishDefaultAndExistingSettings|LocalizationTests'
 ```
 
 该可选测试会复用标准目录中的 FluidAudio v2、v3、Ultra，缺失时下载到同一目录，并为测试进程安装 Apple 英语语言资产。可额外设置 `ALTRANSCRIBE_TEST_QUIET_AUDIO` 指向同一语音的低音量版本，验证开启增强后的文件转写与持久保存。实际执行结果见 [验证记录](VALIDATION.md)。
@@ -155,7 +155,7 @@ swift test --package-path macos --filter 'AdditionalSpeechTests|testEnglishDefau
 ```sh
 ALTRANSCRIBE_REALTIME_MODELS="$HOME/Library/Application Support/Altranscribe/Models" \
 ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/bindings/go/samples/jfk.wav" \
-swift test --package-path macos --filter RealtimeSpeechTests
+swift test --package-path apple --filter RealtimeSpeechTests
 ```
 
 采集与流式实现依据：[SpeechAnalyzer 连续识别](https://developer.apple.com/videos/play/wwdc2025/277/)、[快速临时结果](https://developer.apple.com/documentation/speech/speechtranscriber/reportingoption/fastresults)、[AVAudioEngine 原生语音处理](https://developer.apple.com/documentation/avfaudio/avaudioionode/setvoiceprocessingenabled(_:))。实际虚拟麦克风、暂定翻译及后台检查结果另见 [验证记录](VALIDATION.md)。
@@ -163,13 +163,13 @@ swift test --package-path macos --filter RealtimeSpeechTests
 i18n 仅新增 2 项测试：双语资源完整性、格式占位符、旧记录兼容和导出；摘要语言不受翻译目标语言影响。复用 3 项工作流回归，共 5 项：
 
 ```sh
-swift test --package-path macos --filter 'LocalizationTests|testSummaryUsesCapturedInterfaceLanguageInsteadOfTranslationTarget|WorkflowTests'
+swift test --package-path apple --filter 'LocalizationTests|testSummaryUsesCapturedInterfaceLanguageInsteadOfTranslationTarget|WorkflowTests'
 ```
 
 细节修复仅新增 3 项回归测试，覆盖慢翻译与有界队列、补标点保留译文、源语言、重新翻译失败/取消及设置损坏时的记录恢复：
 
 ```sh
-swift test --package-path macos --filter WorkflowTests
+swift test --package-path apple --filter WorkflowTests
 ```
 
 Nemotron 接入仅新增两项测试：英语默认值与旧设置兼容；真实模型的流式结果、尾句、文件队列和保存。使用公开 JFK 样本，模型不存在时通过链接下载到标准模型目录：
@@ -180,18 +180,18 @@ mkdir -p "$HOME/Library/Application Support/Altranscribe/Models" .build/nemotron
 ALTRANSCRIBE_TEST_NEMOTRON_ROOT="$PWD/.build/nemotron-validation" \
 ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
 ALTRANSCRIBE_TEST_MULTILINGUAL=1 \
-swift test --package-path macos --filter NemotronTests
+swift test --package-path apple --filter NemotronTests
 ```
 
 以下为原有迁移测试，按需运行；本次 Nemotron 接入不重复运行整套测试：
 
 ```sh
-swift test --package-path macos
+swift test --package-path apple
 
 # 包含真实 Metal 推理的集成验证，使用 whisper.cpp 随附的 JFK 测试音频：
 ALTRANSCRIBE_TEST_MODEL="$HOME/Library/Application Support/Altranscribe/Models/ggml-tiny.bin" \
 ALTRANSCRIBE_TEST_AUDIO="$PWD/.build/whisper-src/samples/jfk.wav" \
-swift test --package-path macos
+swift test --package-path apple
 ```
 
 测试覆盖端点边界、认证请求、API 结果和错误处理、实时音频重采样、暂停/停止尾段保留、采集队列过载、存储恢复、搜索、HTML 转义、增量媒体解码、延迟音轨对齐与真实 Whisper 推理。没有 API 凭证时使用协议替身验证接口，不进行付费调用。本机已完成静音条件下的实际系统音频转写、暂停/恢复和保存，以及真实麦克风的启动、暂停和停止；麦克风真人语音识别按用户要求留待稍后。此次本地结果见 [验证记录](VALIDATION.md)。

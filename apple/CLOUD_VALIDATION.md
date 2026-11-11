@@ -41,7 +41,7 @@ Gemini 3.8 Flash 保留为官方当前推荐默认预选；实测可用的 3.5 F
 17 项现有或本次必要的检查通过：API 7 项、实时事件协议 2 项、双语资源 1 项、采集分块 3 项、保存与翻译工作流 4 项。不运行模型下载和全套离线引擎测试。
 
 ```sh
-swift test --package-path macos --filter 'APITests|CloudSpeechTests|LocalizationTests|WorkflowTests|CaptureTests'
+swift test --package-path apple --filter 'APITests|CloudSpeechTests|LocalizationTests|WorkflowTests|CaptureTests'
 ```
 
 真实云端测试仅显式启用时运行，不包含密钥或自动付费请求。准备本机权限为 `0600` 的 JSON 文件，字段为 `openai`、`anthropic`、`gemini`，通过 `ALTRANSCRIBE_CLOUD_KEYS` 传入路径；通过 `ALTRANSCRIBE_CLOUD_AUDIO` 指向公开 WAV。

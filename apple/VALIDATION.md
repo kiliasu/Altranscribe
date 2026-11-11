@@ -111,7 +111,7 @@
 
 **没有做到的**
 
-- 没有用真实密钥向在线模型发送新提示词：未经同意不产生付费请求，也不读取钥匙串。新提示词在 Haiku 5.5 上的实际首次通过率尚未验证；可以用 `ALTRANSCRIBE_CLOUD_KEYS=<密钥文件> ALTRANSCRIBE_CLOUD_CASE=anthropic:lines swift test --package-path macos --filter testRealLinesAreTranslatedOneAtATime` 检查（约 13 次请求），或在新版应用里对 11-09 的文稿重新翻译。
+- 没有用真实密钥向在线模型发送新提示词：未经同意不产生付费请求，也不读取钥匙串。新提示词在 Haiku 5.5 上的实际首次通过率尚未验证；可以用 `ALTRANSCRIBE_CLOUD_KEYS=<密钥文件> ALTRANSCRIBE_CLOUD_CASE=anthropic:lines swift test --package-path apple --filter testRealLinesAreTranslatedOneAtATime` 检查（约 13 次请求），或在新版应用里对 11-09 的文稿重新翻译。
 - 电池供电没有测，本机全程接电源。按用户的线索，后台节能调度是可能的诱因；本轮去掉了主线程的持续占用和返回时的积压，没有调整进程优先级，实时会话原有的 `userInitiated` + `latencyCritical` 活动声明保持不变。
 - 验证后半程屏幕处于锁定状态，申请操作测试副本的权限未获批准：没有真实的鼠标、键盘操作，滚动输入由进程内事件模拟；没有真实切换前后台后的肉眼核对。
 - 悬浮字幕面板的滚动方式没有改动。

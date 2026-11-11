@@ -4,7 +4,7 @@
 
 Windows 和 Android 上的实时转录与翻译应用：把麦克风、系统声音或音视频文件变成文稿，并显示双语悬浮字幕。
 
-新增独立的 **原生 macOS 本地开发版**，位于 [`macos/`](macos/README.md)：SwiftUI 界面、Whisper / Metal 本机转写、麦克风和系统声音、文件队列、API 翻译、悬浮字幕与记录库。最低要求 macOS 26，构建方法和迁移取舍见 macOS 说明。
+新增独立的 **原生 macOS 本地开发版**，位于 [`apple/`](apple/README.md)：SwiftUI 界面、Whisper / Metal 本机转写、麦克风和系统声音、文件队列、API 翻译、悬浮字幕与记录库。最低要求 macOS 26，构建方法和迁移取舍见 macOS 说明。
 
 [English](README.md)
 
