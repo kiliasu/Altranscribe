@@ -7,9 +7,16 @@ import 'package:material_ui/material_ui.dart';
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
 import 'package:altranscribe/shared/ui/expressive.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
+import 'package:altranscribe/shared/ui/notice.dart';
 import 'package:altranscribe/data/services/files/audio_file_decoder.dart';
 import 'package:altranscribe/data/services/files/media_paths.dart';
 import 'package:altranscribe/shared/platform/mobile_platform.dart';
+
+/// Asks the panel to open the file picker, as its own button does.
+class FilePickRequest extends ChangeNotifier {
+  void open() => notifyListeners();
+}
 
 class FileImportPanel extends StatefulWidget {
   const FileImportPanel({
@@ -17,10 +24,12 @@ class FileImportPanel extends StatefulWidget {
     required this.paths,
     required this.onChanged,
     required this.english,
+    this.openRequest,
   });
   final List<String> paths;
   final ValueChanged<List<String>> onChanged;
   final bool english;
+  final FilePickRequest? openRequest;
   @override
   State<FileImportPanel> createState() => _FileImportPanelState();
 }
@@ -29,6 +38,26 @@ class _FileImportPanelState extends State<FileImportPanel> {
   bool dragging = false;
   String? error;
   String t(String key) => strings[key]![widget.english ? 1 : 0];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.openRequest?.addListener(choose);
+  }
+
+  @override
+  void didUpdateWidget(FileImportPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.openRequest == widget.openRequest) return;
+    oldWidget.openRequest?.removeListener(choose);
+    widget.openRequest?.addListener(choose);
+  }
+
+  @override
+  void dispose() {
+    widget.openRequest?.removeListener(choose);
+    super.dispose();
+  }
 
   Future<void> addPaths(Iterable<String> paths) async {
     final accepted = <String>[];
@@ -142,7 +171,12 @@ class _FileImportPanelState extends State<FileImportPanel> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            t('dropFiles'),
+                            // A phone has nothing to drag from.
+                            t(
+                              MobilePlatform.android
+                                  ? 'tapToChooseFiles'
+                                  : 'dropFiles',
+                            ),
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w500),
@@ -187,14 +221,14 @@ class _FileImportPanelState extends State<FileImportPanel> {
                               ],
                             ),
                           ],
-                          if (error != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 12),
-                              child: Text(
-                                error!,
-                                style: TextStyle(color: colors.error),
-                              ),
-                            ),
+                          AltReveal(
+                            child: error == null
+                                ? null
+                                : Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: AltNotice.error(error!),
+                                  ),
+                          ),
                         ],
                       ),
                     ),

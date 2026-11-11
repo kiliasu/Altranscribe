@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/app/theme/app_theme.dart';
@@ -56,33 +57,33 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    Future<void> audioSettings() => showDialog<void>(
+    Future<void> audioSettings() => showAltDialog<void>(
       context: context,
       builder: (_) => AudioSettingsDialog(controller: live, english: english),
     );
 
-    Future<void> modelSettings() => showDialog<void>(
+    Future<void> modelSettings() => showAltDialog<void>(
       context: context,
       builder: (_) => ModelSettingsDialog(controller: live, english: english),
     );
 
-    Future<void> translationSettings() => showDialog<void>(
+    Future<void> translationSettings() => showAltDialog<void>(
       context: context,
       builder: (_) =>
           TranslationSettingsDialog(controller: live, english: english),
     );
 
-    Future<void> captionSettings() => showDialog<void>(
+    Future<void> captionSettings() => showAltDialog<void>(
       context: context,
       builder: (_) => CaptionSettingsDialog(controller: live, english: english),
     );
 
-    Future<void> contextSettings() => showDialog<void>(
+    Future<void> contextSettings() => showAltDialog<void>(
       context: context,
       builder: (_) => ContextSettingsDialog(controller: live, english: english),
     );
 
-    Future<void> privacyDialog() => showDialog<void>(
+    Future<void> privacyDialog() => showAltDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         icon: const Icon(AltIcons.shield),
@@ -234,7 +235,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
               ], gap: 6),
-              radius: 16,
+              radius: altInnerRadius,
               padding: const EdgeInsets.all(20),
               color: colors.surfaceContainerHighest,
             ),

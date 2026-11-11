@@ -4,6 +4,7 @@ import 'package:altranscribe/app/l10n/localized_issue.dart';
 import 'package:altranscribe/shared/ui/confirmation_dialog.dart';
 import 'package:altranscribe/shared/ui/elapsed_text.dart';
 import 'package:altranscribe/shared/ui/motion.dart';
+import 'package:altranscribe/shared/ui/notice.dart';
 import 'package:altranscribe/shared/ui/transcript_tile.dart';
 import 'package:altranscribe/shared/ui/transcript_scroll_controller.dart';
 import 'package:altranscribe/features/records/records_screen.dart';
@@ -90,7 +91,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   String targetLanguage = '简体中文';
   late final swapAnimation = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 500),
+    duration: AltMotion.spring,
     value: 1,
   );
   int swapCount = 0;
@@ -98,6 +99,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   double captionSize = 22;
   final fileOptions = <bool>[false, false, false, false];
   List<String> filePaths = [];
+  final openFiles = FilePickRequest();
   String preferredSpellings = '';
   final scrollBucket = PageStorageBucket();
   late final sessionScroll = TranscriptScrollController(
@@ -217,7 +219,8 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   }
 
   void checkPanel() {
-    if (!mounted || !showSession || !sessionScroll.hasClients) {
+    if (!mounted) return;
+    if (!showSession || !sessionScroll.hasClients) {
       panelHidden.value = false;
       return;
     }
@@ -385,6 +388,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     swapAnimation.dispose();
     sessionScroll.dispose();
     panelHidden.dispose();
+    openFiles.dispose();
     acknowledgeTimer?.cancel();
     super.dispose();
   }
@@ -396,7 +400,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     '한국어': 'ko',
   };
 
-  Future<void> showRecord(TranscriptRecord record) => showDialog<void>(
+  Future<void> showRecord(TranscriptRecord record) => showAltDialog<void>(
     context: context,
     builder: (_) => RecordDetailDialog(
       live: live,
@@ -405,31 +409,31 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     ),
   );
 
-  Future<void> audioSettings() => showDialog<void>(
+  Future<void> audioSettings() => showAltDialog<void>(
     context: context,
     builder: (_) =>
         AudioSettingsDialog(controller: live, english: widget.english),
   );
 
-  Future<void> modelSettings() => showDialog<void>(
+  Future<void> modelSettings() => showAltDialog<void>(
     context: context,
     builder: (_) =>
         ModelSettingsDialog(controller: live, english: widget.english),
   );
 
-  Future<void> translationSettings() => showDialog<void>(
+  Future<void> translationSettings() => showAltDialog<void>(
     context: context,
     builder: (_) =>
         TranslationSettingsDialog(controller: live, english: widget.english),
   );
 
-  Future<void> captionSettings() => showDialog<void>(
+  Future<void> captionSettings() => showAltDialog<void>(
     context: context,
     builder: (_) =>
         CaptionSettingsDialog(controller: live, english: widget.english),
   );
 
-  Future<void> contextSettings() => showDialog<void>(
+  Future<void> contextSettings() => showAltDialog<void>(
     context: context,
     builder: (_) =>
         ContextSettingsDialog(controller: live, english: widget.english),
@@ -438,7 +442,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   Duration get navigationDuration =>
       widget.reduceMotion || MediaQuery.disableAnimationsOf(context)
       ? Duration.zero
-      : const Duration(milliseconds: 240);
+      : AltMotion.quick;
 
   Widget captionToggle(String key, {bool compact = false}) => compact
       ? IconButton(
@@ -518,6 +522,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
         audioSummary: audioSummary,
       ),
     };
+    final bottom = narrow ? 96.0 : 20.0;
     final scaffold = Scaffold(
       body: SafeArea(
         child: Stack(
@@ -528,153 +533,12 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (!narrow)
-                        SizedBox(
-                          width: 220,
-                          child: ColoredBox(
-                            color: colors.surfaceContainerLow,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                SizedBox(
-                                  height: 56,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 28,
-                                    ),
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        'Altranscribe',
-                                        style: text.titleMedium?.copyWith(
-                                          color: colors.primary,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                for (var i = 0; i < pageKeys.length; i++)
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: Semantics(
-                                      selected: i == page,
-                                      child: AnimatedContainer(
-                                        duration: navigationDuration,
-                                        curve: Curves.easeOutCubic,
-                                        decoration: BoxDecoration(
-                                          color: i == page
-                                              ? colors.secondaryContainer
-                                              : Colors.transparent,
-                                          borderRadius: BorderRadius.circular(
-                                            28,
-                                          ),
-                                        ),
-                                        child: TextButton(
-                                          key: ValueKey('nav-$i'),
-                                          onPressed: () => selectPage(i),
-                                          style: TextButton.styleFrom(
-                                            minimumSize: const Size(0, 56),
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                            ),
-                                            backgroundColor: Colors.transparent,
-                                            foregroundColor: i == page
-                                                ? colors.onSurface
-                                                : colors.onSurfaceVariant,
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                pageIcons[i],
-                                                size: 24,
-                                                fill: i == page ? 1 : 0,
-                                                color: i == page
-                                                    ? colors
-                                                          .onSecondaryContainer
-                                                    : colors.onSurfaceVariant,
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                t(pageKeys[i]),
-                                                style: text.labelLarge,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      if (!narrow) navigationRail(),
                       Expanded(
                         child: Column(
                           children: [
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                narrow ? 16 : 24,
-                                20,
-                                narrow ? 16 : 24,
-                                8,
-                              ),
-                              child: Row(
-                                children: [
-                                  if (showSession) ...[
-                                    IconButton(
-                                      key: const Key('minimize-session'),
-                                      tooltip: t('minimize'),
-                                      onPressed: () =>
-                                          setState(() => minimized = true),
-                                      icon: const Icon(AltIcons.arrowBack),
-                                    ),
-                                    const SizedBox(width: 12),
-                                  ],
-                                  Expanded(
-                                    child: Text(
-                                      t(pageKeys[page]),
-                                      style: text.headlineMedium,
-                                    ),
-                                  ),
-                                  if (showSession && !live.processingFiles)
-                                    captionToggle('session-captions'),
-                                ],
-                              ),
-                            ),
-                            Expanded(
-                              child: PageStorage(
-                                bucket: scrollBucket,
-                                child: NotificationListener<ScrollNotification>(
-                                  onNotification: onScroll,
-                                  child: showSession
-                                      ? sessionBody(narrow)
-                                      : SingleChildScrollView(
-                                          key: PageStorageKey(
-                                            'page-$page-$showSession-$fileMode',
-                                          ),
-                                          padding: EdgeInsets.fromLTRB(
-                                            narrow ? 16 : 24,
-                                            8,
-                                            narrow ? 16 : 24,
-                                            session ? 120 : 32,
-                                          ),
-                                          child: Align(
-                                            alignment: Alignment.topCenter,
-                                            child: ConstrainedBox(
-                                              constraints: const BoxConstraints(
-                                                maxWidth: 960,
-                                              ),
-                                              child: pageTransition(
-                                                pageContent,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ),
+                            pageHeader(),
+                            Expanded(child: pageBody(pageContent)),
                           ],
                         ),
                       ),
@@ -697,43 +561,23 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                   ),
               ],
             ),
-            if (showSession)
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: narrow ? 96 : 20,
-                child: Center(child: sessionToolbar()),
-              ),
-            if (showSession)
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: (narrow ? 96 : 20) + 76,
-                child: Center(child: jumpToLatestButton()),
-              ),
-            if (!session || live.backgroundFinishing)
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: narrow ? 96 : 20,
-                child: Center(
-                  child: AnimatedSwitcher(
-                    duration: AltMotion.content,
-                    transitionBuilder: AltMotion.rise,
-                    // It belongs to the page the session ran on; the
-                    // library lists the saved transcript itself.
-                    child: acknowledged == null || page != 0
-                        ? const SizedBox.shrink()
-                        : acknowledgement(acknowledged!),
-                  ),
-                ),
-              ),
-            if (session && !live.backgroundFinishing && !showSession)
-              Positioned(
-                right: 24,
-                bottom: narrow ? 96 : 20,
-                child: miniSession(),
-              ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: bottom,
+              child: Center(child: sessionDock()),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: bottom + 76,
+              child: Center(child: jumpToLatestButton()),
+            ),
+            Positioned(
+              right: narrow ? 16 : 24,
+              bottom: bottom,
+              child: miniDock(),
+            ),
           ],
         ),
       ),
@@ -751,6 +595,188 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
       child: scaffold,
     );
   }
+
+  Widget navigationRail() => SizedBox(
+    width: 220,
+    child: ColoredBox(
+      color: colors.surfaceContainerLow,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 56,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Altranscribe',
+                  style: text.titleMedium?.copyWith(color: colors.primary),
+                ),
+              ),
+            ),
+          ),
+          for (var i = 0; i < pageKeys.length; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Semantics(
+                selected: i == page,
+                child: AnimatedContainer(
+                  duration: navigationDuration,
+                  curve: AltMotion.quickCurve,
+                  decoration: BoxDecoration(
+                    color: i == page
+                        ? colors.secondaryContainer
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: TextButton(
+                    key: ValueKey('nav-$i'),
+                    onPressed: () => selectPage(i),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 56),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: i == page
+                          ? colors.onSurface
+                          : colors.onSurfaceVariant,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          pageIcons[i],
+                          size: 24,
+                          fill: i == page ? 1 : 0,
+                          color: i == page
+                              ? colors.onSecondaryContainer
+                              : colors.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(t(pageKeys[i]), style: text.labelLarge),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+
+  /// The page's title. A session puts the way back before it and the
+  /// captions switch after it; both come and go with the session, and the
+  /// title of one page fades into the next. The header keeps one height,
+  /// so nothing below it moves.
+  Widget pageHeader() {
+    final quick = AltMotion.reduced(context) ? AltMotion.fade : AltMotion.quick;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(narrow ? 16 : 24, 18, narrow ? 16 : 24, 6),
+      child: SizedBox(
+        height: 40,
+        child: Row(
+          children: [
+            AltReveal(
+              axis: Axis.horizontal,
+              child: showSession
+                  ? Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: IconButton(
+                        key: const Key('minimize-session'),
+                        tooltip: t('minimize'),
+                        onPressed: () => setState(() => minimized = true),
+                        icon: const Icon(AltIcons.arrowBack),
+                      ),
+                    )
+                  : null,
+            ),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: quick,
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [...previous, ?current],
+                ),
+                child: Text(
+                  t(pageKeys[page]),
+                  key: ValueKey(page),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.headlineMedium,
+                ),
+              ),
+            ),
+            AltPresence(
+              distance: 0,
+              child: showSession && !live.processingFiles
+                  ? captionToggle('session-captions')
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The page itself. One page fades out as the next fades in.
+  Widget pageBody(Widget content) => PageStorage(
+    bucket: scrollBucket,
+    child: NotificationListener<ScrollNotification>(
+      onNotification: onScroll,
+      child: AltPageSwitcher(
+        page: 'page-transition-$page${showSession ? '-session' : ''}',
+        // The session's page holds the transcript's keys and its scroll
+        // controller, which the page after it may need at once.
+        lingers: !showSession,
+        child: showSession
+            ? sessionBody(narrow)
+            : SingleChildScrollView(
+                key: PageStorageKey('page-$page'),
+                padding: EdgeInsets.fromLTRB(
+                  narrow ? 16 : 24,
+                  8,
+                  narrow ? 16 : 24,
+                  session ? 120 : 32,
+                ),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 960),
+                    child: content,
+                  ),
+                ),
+              ),
+      ),
+    ),
+  );
+
+  /// What floats at the bottom of the session's page: its bar while the
+  /// session runs and, for a moment after it ends, the saved mark. Each
+  /// rises in and lifts away, so the one hands over to the other.
+  Widget sessionDock() => Stack(
+    alignment: Alignment.bottomCenter,
+    children: [
+      AltPresence(child: showSession ? sessionToolbar() : null),
+      // The mark belongs to the page the session ran on; the library
+      // lists the saved transcript itself.
+      AltPresence(
+        child:
+            acknowledged != null &&
+                page == 0 &&
+                !showSession &&
+                (!session || live.backgroundFinishing)
+            ? acknowledgement(acknowledged!)
+            : null,
+      ),
+    ],
+  );
+
+  /// A session that runs while another page is open, in the corner.
+  Widget miniDock() => AltPresence(
+    child: session && !live.backgroundFinishing && !showSession
+        ? miniSession()
+        : null,
+  );
 
   String get modelSummary {
     if (live.remoteProcessing) {
@@ -905,275 +931,380 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     ),
   );
 
-  Widget transcribePage() => pageStack([
-    Align(
-      alignment: Alignment.centerLeft,
-      child: AltButtonGroup(
-        items: [
-          AltGroupItem(t('live'), icon: AltIcons.mic),
-          AltGroupItem(t('file'), icon: AltIcons.folderOpen),
-        ],
-        selected: {fileMode ? 1 : 0},
-        onPressed: session ? null : (i) => setState(() => fileMode = i == 1),
+  Widget transcribePage() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Align(
+        alignment: Alignment.centerLeft,
+        child: AltButtonGroup(
+          items: [
+            AltGroupItem(t('live'), icon: AltIcons.mic),
+            AltGroupItem(t('file'), icon: AltIcons.folderOpen),
+          ],
+          selected: {fileMode ? 1 : 0},
+          onPressed: session ? null : (i) => setState(() => fileMode = i == 1),
+        ),
       ),
-    ),
-    pagePanel(
-      context,
-      pageStack([
-        if (fileMode)
-          IgnorePointer(
-            ignoring: session,
-            child: FileImportPanel(
-              paths: filePaths,
-              english: widget.english,
-              onChanged: (paths) => setState(() => filePaths = paths),
+      const SizedBox(height: 16),
+      pagePanel(
+        context,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // A live session's sources and a file run's queue take each
+            // other's place.
+            AltSwap(
+              child: fileMode
+                  ? IgnorePointer(
+                      key: const ValueKey('files'),
+                      ignoring: session,
+                      child: FileImportPanel(
+                        paths: filePaths,
+                        english: widget.english,
+                        openRequest: openFiles,
+                        onChanged: (paths) => setState(() => filePaths = paths),
+                      ),
+                    )
+                  : Column(
+                      key: const ValueKey('sources'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 20, 12, 4),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  t('sources'),
+                                  style: text.titleMedium,
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: audioSettings,
+                                icon: const Icon(AltIcons.tune, size: 20),
+                                label: Text(t('audioSettings')),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                          child: AltButtonGroup(
+                            height: 56,
+                            stretch: true,
+                            items: [
+                              AltGroupItem(
+                                t('microphone'),
+                                icon: microphone
+                                    ? AltIcons.check
+                                    : AltIcons.mic,
+                                key: const Key('microphone'),
+                              ),
+                              AltGroupItem(
+                                t('systemAudio'),
+                                icon: systemAudio
+                                    ? AltIcons.check
+                                    : AltIcons.volumeUp,
+                                key: const Key('system-audio'),
+                              ),
+                            ],
+                            selected: {if (microphone) 0, if (systemAudio) 1},
+                            onPressed: session
+                                ? null
+                                : (i) => setState(() {
+                                    if (i == 0) {
+                                      microphone = !microphone;
+                                    } else {
+                                      systemAudio = !systemAudio;
+                                    }
+                                  }),
+                          ),
+                        ),
+                      ],
+                    ),
             ),
-          )
-        else ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 12, 4),
-            child: Row(
-              children: [
-                Expanded(child: Text(t('sources'), style: text.titleMedium)),
-                TextButton.icon(
-                  onPressed: audioSettings,
-                  icon: const Icon(AltIcons.tune, size: 20),
-                  label: Text(t('audioSettings')),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            child: AltButtonGroup(
-              height: 56,
-              stretch: true,
-              items: [
-                AltGroupItem(
-                  t('microphone'),
-                  icon: microphone ? AltIcons.check : AltIcons.mic,
-                  key: const Key('microphone'),
-                ),
-                AltGroupItem(
-                  t('systemAudio'),
-                  icon: systemAudio ? AltIcons.check : AltIcons.volumeUp,
-                  key: const Key('system-audio'),
-                ),
-              ],
-              selected: {if (microphone) 0, if (systemAudio) 1},
-              onPressed: session
-                  ? null
-                  : (i) => setState(() {
-                      if (i == 0) {
-                        microphone = !microphone;
-                      } else {
-                        systemAudio = !systemAudio;
-                      }
-                    }),
-            ),
-          ),
-        ],
-        Padding(
-          padding: EdgeInsets.fromLTRB(20, fileMode ? 0 : 12, 20, 4),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              Tooltip(
-                message: t(fileMode ? 'fileSummaryHint' : 'summaryHint'),
-                child: FilterChip(
-                  visualDensity: altChipDensity,
-                  avatarBoxConstraints: altChipIconBounds,
-                  key: const Key('generate-summary'),
-                  showCheckmark: false,
-                  avatar: Icon(
-                    live.generateSummary
-                        ? AltIcons.check
-                        : AltIcons.autoAwesome,
-                    size: 18,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  Tooltip(
+                    message: t(fileMode ? 'fileSummaryHint' : 'summaryHint'),
+                    child: FilterChip(
+                      visualDensity: altChipDensity,
+                      avatarBoxConstraints: altChipIconBounds,
+                      key: const Key('generate-summary'),
+                      showCheckmark: false,
+                      avatar: Icon(
+                        live.generateSummary
+                            ? AltIcons.check
+                            : AltIcons.autoAwesome,
+                        size: 18,
+                      ),
+                      label: Text(t('summaryShort')),
+                      selected: live.generateSummary,
+                      onSelected: live.initialized && !session
+                          ? live.setGenerateSummary
+                          : null,
+                    ),
                   ),
-                  label: Text(t('summaryShort')),
-                  selected: live.generateSummary,
-                  onSelected: live.initialized && !session
-                      ? live.setGenerateSummary
-                      : null,
-                ),
-              ),
-              if (fileMode)
-                FilterChip(
-                  visualDensity: altChipDensity,
-                  avatarBoxConstraints: altChipIconBounds,
-                  key: const Key('refine'),
-                  showCheckmark: false,
-                  avatar: Icon(
-                    fileOptions.any((v) => v)
-                        ? AltIcons.check
-                        : AltIcons.spellcheck,
-                    size: 18,
+                  // Like the summary: on or off, with what it does once on.
+                  FilterChip(
+                    visualDensity: altChipDensity,
+                    avatarBoxConstraints: altChipIconBounds,
+                    key: const Key('translate-chip'),
+                    showCheckmark: false,
+                    avatar: Icon(
+                      translate ? AltIcons.check : AltIcons.translate,
+                      size: 18,
+                    ),
+                    label: Text(
+                      translate
+                          ? '${automaticLanguage ? t('cloudAutoLanguage') : sourceLanguage} → $targetLanguage'
+                          : t('translationToggle'),
+                    ),
+                    selected: translate,
+                    onSelected: session
+                        ? null
+                        : (value) => setState(() => translate = value),
                   ),
-                  label: Text(t('refine')),
-                  selected: fileOptions.any((v) => v),
-                  onSelected: session
-                      ? null
-                      : (value) => setState(() {
-                          for (var i = 0; i < fileOptions.length; i++) {
-                            // Joining sentences requires its own explicit opt-in.
-                            fileOptions[i] = value && i < 3;
-                          }
-                        }),
-                ),
-              ActionChip(
-                visualDensity: altChipDensity,
-                avatarBoxConstraints: altChipIconBounds,
-                avatar: const Icon(AltIcons.translate, size: 18),
-                label: Text(
-                  '${t('translationToggle')} · ${translate ? '${automaticLanguage ? t('cloudAutoLanguage') : sourceLanguage} → $targetLanguage' : t('sourceOff')}',
-                ),
-                onPressed: session
-                    ? null
-                    : () => setState(() => translate = !translate),
+                  // Files only. It is the last chip, so the others keep
+                  // their places as it comes and goes.
+                  AltPresence(
+                    distance: 0,
+                    child: !fileMode
+                        ? null
+                        : FilterChip(
+                            visualDensity: altChipDensity,
+                            avatarBoxConstraints: altChipIconBounds,
+                            key: const Key('refine'),
+                            showCheckmark: false,
+                            avatar: Icon(
+                              fileOptions.any((v) => v)
+                                  ? AltIcons.check
+                                  : AltIcons.spellcheck,
+                              size: 18,
+                            ),
+                            label: Text(t('refine')),
+                            selected: fileOptions.any((v) => v),
+                            onSelected: session
+                                ? null
+                                : (value) => setState(() {
+                                    for (
+                                      var i = 0;
+                                      i < fileOptions.length;
+                                      i++
+                                    ) {
+                                      // Joining sentences requires its own explicit opt-in.
+                                      fileOptions[i] = value && i < 3;
+                                    }
+                                  }),
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-        if (fileMode && fileOptions.any((v) => v))
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            child: TextFormField(
-              key: const Key('preferred-spellings'),
-              enabled: !session,
-              initialValue: preferredSpellings,
-              minLines: 2,
-              maxLines: 4,
-              maxLength: 1000,
-              decoration: InputDecoration(
-                labelText: t('preferredSpellings'),
-                helperText: t('spellingsHint'),
-                helperMaxLines: 3,
-              ),
-              onChanged: (value) => preferredSpellings = value,
             ),
-          ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-          child: pageStack([
-            startButton(),
-            pageStack([
-              speechStatus(),
-              if (llmNeeded && !live.backgroundFinishing) llmStatus(),
-            ], gap: 4),
-          ], gap: 12),
+            AltReveal(
+              child: fileMode && fileOptions.any((v) => v)
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                      child: TextFormField(
+                        key: const Key('preferred-spellings'),
+                        enabled: !session,
+                        initialValue: preferredSpellings,
+                        minLines: 2,
+                        maxLines: 4,
+                        maxLength: 1000,
+                        decoration: InputDecoration(
+                          labelText: t('preferredSpellings'),
+                          helperText: t('spellingsHint'),
+                          helperMaxLines: 3,
+                        ),
+                        onChanged: (value) => preferredSpellings = value,
+                      ),
+                    )
+                  : null,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  startButton(),
+                  const SizedBox(height: 12),
+                  speechStatus(),
+                  AltReveal(
+                    child: llmNeeded && !live.backgroundFinishing
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: llmStatus(),
+                          )
+                        : null,
+                  ),
+                  // A problem shows where the eye is after pressing Start.
+                  AltReveal(
+                    child: live.error == null
+                        ? null
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: AltNotice.error(
+                              issue(live.error!),
+                              key: const Key('home-error'),
+                            ),
+                          ),
+                  ),
+                  AltReveal(
+                    child: live.warning == null
+                        ? null
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: AltNotice.warning(
+                              issue(live.warning!),
+                              key: const Key('home-warning'),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ], gap: 0),
-      radius: 28,
-    ),
-    pageColumns(
-      context,
-      languageSection(),
+        radius: altHeroRadius,
+      ),
+      const SizedBox(height: 16),
+      pageColumns(
+        context,
+        languageSection(),
+        pagePanel(
+          context,
+          pageStack([
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(t('engine'), style: text.titleMedium),
+            ),
+            ListenableBuilder(
+              listenable: live.catalog,
+              builder: (context, _) => infoRow(
+                AltIcons.graphicEq,
+                t('model'),
+                localModelMissing
+                    ? '$modelSummary · ${t('model_missing')}'
+                    : modelSummary,
+                modelSettings,
+                smallTitle: true,
+                footer: AltReveal(child: downloadProgress()),
+              ),
+            ),
+            infoRow(
+              AltIcons.translate,
+              'LLM',
+              llmSummary,
+              translationSettings,
+              smallTitle: true,
+            ),
+            infoRow(
+              AltIcons.headsetMic,
+              t('audio'),
+              audioSummary,
+              audioSettings,
+              smallTitle: true,
+            ),
+          ], gap: 0),
+        ),
+      ),
+      AltReveal(
+        child: live.cloudSpeech
+            ? Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: AltNotice(
+                  t(fileMode ? 'cloudFileHint' : 'cloudAudioNotice'),
+                ),
+              )
+            : null,
+      ),
+      const SizedBox(height: 16),
       pagePanel(
         context,
         pageStack([
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(t('engine'), style: text.titleMedium),
-          ),
-          ListenableBuilder(
-            listenable: live.catalog,
-            builder: (context, _) => infoRow(
-              AltIcons.graphicEq,
-              t('model'),
-              localModelMissing
-                  ? '$modelSummary · ${t('model_missing')}'
-                  : modelSummary,
-              modelSettings,
-              smallTitle: true,
-              footer: downloadProgress(),
+            padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+            child: Row(
+              children: [
+                Expanded(child: Text(t('recent'), style: text.titleMedium)),
+                TextButton(
+                  onPressed: () => selectPage(1),
+                  child: Text(t('all')),
+                ),
+              ],
             ),
           ),
-          infoRow(
-            AltIcons.translate,
-            'LLM',
-            llmSummary,
-            translationSettings,
-            smallTitle: true,
-          ),
-          infoRow(
-            AltIcons.headsetMic,
-            t('audio'),
-            audioSummary,
-            audioSettings,
-            smallTitle: true,
-          ),
-        ], gap: 0),
-      ),
-    ),
-    if (live.cloudSpeech)
-      pageHint(context, t(fileMode ? 'cloudFileHint' : 'cloudAudioNotice')),
-    if (live.error != null)
-      Text(issue(live.error!), style: TextStyle(color: colors.error)),
-    if (live.warning != null) Text(issue(live.warning!)),
-    pagePanel(
-      context,
-      pageStack([
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
-          child: Row(
+          // A transcript just saved takes its place at the top.
+          AltFlow(
             children: [
-              Expanded(child: Text(t('recent'), style: text.titleMedium)),
-              TextButton(onPressed: () => selectPage(1), child: Text(t('all'))),
-            ],
-          ),
-        ),
-        for (final record in live.records.take(2))
-          infoRow(
-            record.summary == null
-                ? AltIcons.description
-                : AltIcons.autoAwesome,
-            record.displayTitle,
-            '${record.dateTimeLabel} · ${record.lines.length} ${t('segments')}',
-            () => showRecord(record),
-          ),
-        if (live.records.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            child: pageHint(context, t('emptyLibraryHint')),
-          ),
-      ], gap: 0),
-    ),
-    if (fileMode)
-      pagePanel(
-        context,
-        ExpansionTile(
-          key: const PageStorageKey('file-processing-options'),
-          title: Text(t('fileOptions')),
-          shape: const Border(),
-          children: [
-            for (var i = 0; i < fileOptions.length; i++)
-              CheckboxListTile(
-                key: ValueKey('file-option-$i'),
-                title: Text(
-                  t(
-                    [
-                      'unifyNames',
-                      'unifyTerms',
-                      'correctWords',
-                      'mergeSentences',
-                    ][i],
+              for (final record in live.records.take(2))
+                KeyedSubtree(
+                  key: ValueKey(record.id),
+                  child: infoRow(
+                    record.summary == null
+                        ? AltIcons.description
+                        : AltIcons.autoAwesome,
+                    record.displayTitle,
+                    '${record.dateTimeLabel} · ${record.lines.length} ${t('segments')}',
+                    () => showRecord(record),
                   ),
                 ),
-                value: fileOptions[i],
-                onChanged: session
-                    ? null
-                    : (value) => setState(() => fileOptions[i] = value!),
-              ),
+            ],
+          ),
+          if (live.records.isEmpty)
             Padding(
-              padding: const EdgeInsets.all(16),
-              child: pageHint(context, t('cleanupHint')),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: pageHint(context, t('emptyLibraryHint')),
             ),
-          ],
-        ),
+        ], gap: 0),
       ),
-  ]);
+      AltReveal(
+        child: fileMode
+            ? Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: pagePanel(
+                  context,
+                  ExpansionTile(
+                    key: const PageStorageKey('file-processing-options'),
+                    title: Text(t('fileOptions')),
+                    shape: const Border(),
+                    children: [
+                      for (var i = 0; i < fileOptions.length; i++)
+                        CheckboxListTile(
+                          key: ValueKey('file-option-$i'),
+                          title: Text(
+                            t(
+                              [
+                                'unifyNames',
+                                'unifyTerms',
+                                'correctWords',
+                                'mergeSentences',
+                              ][i],
+                            ),
+                          ),
+                          value: fileOptions[i],
+                          onChanged: session
+                              ? null
+                              : (value) =>
+                                    setState(() => fileOptions[i] = value!),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: pageHint(context, t('cleanupHint')),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : null,
+      ),
+    ],
+  );
 
   Widget languageSection() => pagePanel(
     context,
@@ -1231,7 +1362,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                 turns: swapCount * .5,
                 duration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero
-                    : const Duration(milliseconds: 500),
+                    : AltMotion.spring,
                 curve: altSpatial,
                 child: const Icon(AltIcons.swapHoriz),
               ),
@@ -1308,37 +1439,81 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     ),
   );
 
-  /// The speech side of starting: sources, the model and its files.
+  /// No local speech model has been chosen yet, as on a first run.
+  bool get modelUnconfigured =>
+      !live.remoteProcessing &&
+      !live.cloudSpeech &&
+      !live.transcribeSpeech &&
+      live.speechProvider != SpeechProvider.nemotron &&
+      live.model.isEmpty;
+
+  /// The speech side of starting: sources or files, and the model. What
+  /// stands in the way reads as a problem with the way to settle it; a
+  /// status that changes fades into the next.
   Widget speechStatus() => ListenableBuilder(
     listenable: live.catalog,
     builder: (context, _) {
       final noSource = !fileMode && !microphone && !systemAudio;
-      final missing = !noSource && localModelMissing;
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            noSource || missing ? AltIcons.error : AltIcons.checkCircle,
-            size: 18,
-            color: noSource || missing ? colors.error : colors.primary,
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              live.backgroundFinishing
-                  ? t('backgroundFinishingHint')
-                  : noSource
-                  ? t('noSource')
-                  : missing
-                  ? '$modelSummary · ${t('model_missing')}'
-                  : fileMode
-                  ? '${filePaths.length} ${t('filesInQueue')} · ${t('fileQueueHint')}'
+      final unset = modelUnconfigured || localModelMissing;
+      final (
+        IconData icon,
+        Color tint,
+        String message,
+      ) = live.backgroundFinishing
+          ? (
+              AltIcons.schedule,
+              colors.onSurfaceVariant,
+              t('backgroundFinishingHint'),
+            )
+          : noSource
+          ? (AltIcons.error, colors.error, t('noSource'))
+          : unset
+          ? (
+              AltIcons.error,
+              colors.error,
+              modelUnconfigured
+                  ? t('noSpeechModel')
+                  : '$modelSummary · ${t('model_missing')}',
+            )
+          : fileMode && filePaths.isEmpty
+          ? (AltIcons.info, colors.onSurfaceVariant, t('addFilesFirst'))
+          : (
+              AltIcons.checkCircle,
+              colors.primary,
+              fileMode
+                  ? '${filePaths.length} ${t('filesInQueue')} · ${t('fileQueueOrder')}'
                   : modelSummary,
-              textAlign: TextAlign.center,
-              style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+            );
+      final problem = tint == colors.error;
+      return AnimatedSwitcher(
+        key: const Key('speech-status'),
+        duration: AltMotion.reduced(context) ? AltMotion.fade : AltMotion.quick,
+        child: Row(
+          key: ValueKey('$message ${icon.codePoint}'),
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: tint),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: text.bodyMedium?.copyWith(
+                  color: problem ? colors.error : colors.onSurfaceVariant,
+                ),
+              ),
             ),
-          ),
-        ],
+            if (unset && !noSource && !live.backgroundFinishing) ...[
+              const SizedBox(width: 4),
+              TextButton(
+                key: const Key('choose-model'),
+                style: TextButton.styleFrom(visualDensity: altChipDensity),
+                onPressed: session ? null : modelSettings,
+                child: Text(t('chooseModel')),
+              ),
+            ],
+          ],
+        ),
       );
     },
   );
@@ -1356,7 +1531,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     Color? tint,
     Widget? action,
   }) => ConstrainedBox(
-    key: const Key('llm-status'),
+    key: ValueKey('note $message'),
     constraints: const BoxConstraints(minHeight: 28),
     child: Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -1379,7 +1554,14 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   /// While Transcribe would share the GPU with a local text model, files
   /// load the model after transcription, and live sessions translate after
   /// stopping or estimate the GPU memory. Online models need no loading.
-  Widget llmStatus() {
+  /// One status fades into the next where it stands.
+  Widget llmStatus() => AnimatedSwitcher(
+    key: const Key('llm-status'),
+    duration: AltMotion.reduced(context) ? AltMotion.fade : AltMotion.quick,
+    child: llmStatusRow(),
+  );
+
+  Widget llmStatusRow() {
     if (live.llmSharesGpu) {
       if (fileMode) return llmNote(AltIcons.schedule, t('llmAfterTranscribe'));
       if (live.liveLlm == LiveLlm.shared) {
@@ -1423,7 +1605,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
         '${t('llmCheckFailed')} · ${issue(check!.error!)}',
     };
     return ConstrainedBox(
-      key: const Key('llm-status'),
+      key: ValueKey('check ${state?.name}'),
       // As tall as its button (32 less the chip density), so the panel keeps
       // still while the button is hidden.
       constraints: const BoxConstraints(minHeight: 28),
@@ -1845,11 +2027,9 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
 
   /// Appears above the bar once the reader has scrolled away from the
   /// latest line, and takes them back to it.
-  Widget jumpToLatestButton() => AnimatedSwitcher(
-    duration: AltMotion.content,
-    transitionBuilder: AltMotion.rise,
-    child: followLatest || (live.record?.lines.isEmpty ?? true)
-        ? const SizedBox.shrink(key: ValueKey('following'))
+  Widget jumpToLatestButton() => AltPresence(
+    child: !showSession || followLatest || (live.record?.lines.isEmpty ?? true)
+        ? null
         : FilledButton.tonalIcon(
             key: const Key('jump-to-latest'),
             style: FilledButton.styleFrom(
@@ -1857,7 +2037,11 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
               shadowColor: colors.shadow,
             ),
             onPressed: jumpToLatest,
-            icon: const Icon(Icons.arrow_downward_rounded, size: 18),
+            // The set's own arrow, turned to point down.
+            icon: const RotatedBox(
+              quarterTurns: 3,
+              child: Icon(AltIcons.arrowBack, size: 18),
+            ),
             label: Text(t('jumpToLatest')),
           ),
   );
@@ -1874,12 +2058,12 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     width: math.min(480, MediaQuery.sizeOf(context).width - 48),
     child: DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(altHeroRadius),
         boxShadow: altFloatingShadow,
       ),
       child: Material(
         color: colors.primaryContainer,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(altHeroRadius),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: const Key('restore-session'),
@@ -2112,23 +2296,13 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           ],
         ),
         if (live.record?.cleanupError != null)
-          Text(
-            issue(live.record!.cleanupError!),
-            style: TextStyle(color: colors.error),
-          ),
-        if (live.error != null)
-          Text(issue(live.error!), style: TextStyle(color: colors.error)),
+          AltNotice.error(issue(live.record!.cleanupError!)),
+        if (live.error != null) AltNotice.error(issue(live.error!)),
       ], gap: 14),
-      radius: 24,
+      radius: altHeroRadius,
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
     );
   }
-
-  /// Fades a page in from a slight blur when it is first shown.
-  Widget pageTransition(Widget child) => AltPageIn(
-    key: ValueKey('page-transition-$page${showSession ? '-session' : ''}'),
-    child: child,
-  );
 
   /// The session's page: the live panel then one row per line, or a file's
   /// progress fixed above the transcript it produces. Rows are built only
@@ -2225,19 +2399,17 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           ],
         ),
       );
-      return pageTransition(
-        files
-            ? Column(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(side, 8, side, 0),
-                    child: fileProgressPanel(),
-                  ),
-                  Expanded(child: list),
-                ],
-              )
-            : list,
-      );
+      return files
+          ? Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+                  child: fileProgressPanel(),
+                ),
+                Expanded(child: list),
+              ],
+            )
+          : list;
     },
   );
 
@@ -2334,172 +2506,199 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     return parts.join(' · ');
   }
 
-  Widget sessionPanel() => pageStack([
-    pagePanel(
-      context,
-      pageStack([
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          spacing: 16,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedSwitcher(
-                  duration: AltMotion.quick,
-                  child: paused
-                      ? Icon(
-                          AltIcons.pauseCircle,
-                          key: const ValueKey('paused'),
-                          size: 40,
-                          color: colors.primary,
-                        )
-                      : AltLoading(
-                          key: const ValueKey('working'),
-                          shape: sessionShape,
-                        ),
-                ),
-                const SizedBox(width: 16),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AnimatedSwitcher(
-                        duration: AltMotion.quick,
-                        transitionBuilder: AltMotion.rise,
-                        layoutBuilder: (current, previous) => Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [...previous, ?current],
-                        ),
-                        child: Text(
-                          sessionTitle,
-                          key: ValueKey(sessionTitle),
-                          style: text.titleLarge,
-                        ),
-                      ),
-                      // The bar below keeps the time; the languages stay here.
-                      Text(
-                        '${live.record?.language == 'auto' ? t('cloudAutoLanguage') : sourceLanguage}${translate ? ' → $targetLanguage' : ''}',
-                        style: text.bodyMedium?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (live.record?.sources.contains('microphone') == true)
-                  Chip(
-                    visualDensity: altChipDensity,
-                    avatarBoxConstraints: altChipIconBounds,
-                    avatar: const Icon(AltIcons.mic, size: 18),
-                    label: Text(t('microphone')),
-                  ),
-                if (live.record?.sources.contains('system') == true)
-                  Chip(
-                    visualDensity: altChipDensity,
-                    avatarBoxConstraints: altChipIconBounds,
-                    avatar: const Icon(AltIcons.volumeUp, size: 18),
-                    label: Text(t('systemAudio')),
-                  ),
-                Chip(
-                  visualDensity: altChipDensity,
-                  avatarBoxConstraints: altChipIconBounds,
-                  avatar: const Icon(AltIcons.memory, size: 18),
-                  label: Text(live.speechBackend),
-                ),
-                if ((translate && live.record?.directTranslation != true) ||
-                    live.generateSummary)
-                  Chip(
-                    visualDensity: altChipDensity,
-                    avatarBoxConstraints: altChipIconBounds,
-                    avatar: const Icon(AltIcons.translate, size: 18),
-                    label: Text('LLM · ${live.llmBackend}'),
-                  ),
-              ],
-            ),
-          ],
-        ),
-        for (final source in [
-          if (live.record?.sources.contains('microphone') == true) 'microphone',
-          if (live.record?.sources.contains('system') == true) 'system',
-        ])
-          Row(
+  Widget sessionPanel() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      pagePanel(
+        context,
+        pageStack([
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 16,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              SizedBox(
-                width: 96,
-                child: Text(
-                  t(source == 'system' ? 'systemAudio' : 'microphone'),
-                  style: text.labelLarge?.copyWith(
-                    color: colors.onSurfaceVariant,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedSwitcher(
+                    duration: AltMotion.quick,
+                    child: paused
+                        ? Icon(
+                            AltIcons.pauseCircle,
+                            key: const ValueKey('paused'),
+                            size: 40,
+                            color: colors.primary,
+                          )
+                        : AltLoading(
+                            key: const ValueKey('working'),
+                            shape: sessionShape,
+                          ),
                   ),
-                ),
+                  const SizedBox(width: 16),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AnimatedSwitcher(
+                          duration: AltMotion.quick,
+                          transitionBuilder: AltMotion.rise,
+                          layoutBuilder: (current, previous) => Stack(
+                            alignment: Alignment.centerLeft,
+                            children: [...previous, ?current],
+                          ),
+                          child: Text(
+                            sessionTitle,
+                            key: ValueKey(sessionTitle),
+                            style: text.titleLarge,
+                          ),
+                        ),
+                        // The bar below keeps the time; the languages stay here.
+                        Text(
+                          '${live.record?.language == 'auto' ? t('cloudAutoLanguage') : sourceLanguage}${translate ? ' → $targetLanguage' : ''}',
+                          style: text.bodyMedium?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: ListenableBuilder(
-                  listenable: live.levelRevision,
-                  builder: (context, _) => AudioLevelHistory(
-                    key: ValueKey('level-history-$source'),
-                    samples: live.levelHistory[source] ?? const [],
-                    running: live.phase == SessionPhase.listening,
-                    label:
-                        '${t(source == 'system' ? 'systemAudio' : 'microphone')} · ${t('volumeHistory')}',
-                    color: source == 'microphone'
-                        ? colors.primary
-                        : colors.tertiary,
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (live.record?.sources.contains('microphone') == true)
+                    Chip(
+                      visualDensity: altChipDensity,
+                      avatarBoxConstraints: altChipIconBounds,
+                      avatar: const Icon(AltIcons.mic, size: 18),
+                      label: Text(t('microphone')),
+                    ),
+                  if (live.record?.sources.contains('system') == true)
+                    Chip(
+                      visualDensity: altChipDensity,
+                      avatarBoxConstraints: altChipIconBounds,
+                      avatar: const Icon(AltIcons.volumeUp, size: 18),
+                      label: Text(t('systemAudio')),
+                    ),
+                  Chip(
+                    visualDensity: altChipDensity,
+                    avatarBoxConstraints: altChipIconBounds,
+                    avatar: const Icon(AltIcons.memory, size: 18),
+                    label: Text(live.speechBackend),
                   ),
-                ),
+                  if ((translate && live.record?.directTranslation != true) ||
+                      live.generateSummary)
+                    Chip(
+                      visualDensity: altChipDensity,
+                      avatarBoxConstraints: altChipIconBounds,
+                      avatar: const Icon(AltIcons.translate, size: 18),
+                      label: Text('LLM · ${live.llmBackend}'),
+                    ),
+                ],
               ),
             ],
           ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              t('volumeHistory'),
-              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          for (final source in [
+            if (live.record?.sources.contains('microphone') == true)
+              'microphone',
+            if (live.record?.sources.contains('system') == true) 'system',
+          ])
+            Row(
+              children: [
+                SizedBox(
+                  width: 96,
+                  child: Text(
+                    t(source == 'system' ? 'systemAudio' : 'microphone'),
+                    style: text.labelLarge?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ListenableBuilder(
+                    listenable: live.levelRevision,
+                    builder: (context, _) => AudioLevelHistory(
+                      key: ValueKey('level-history-$source'),
+                      samples: live.levelHistory[source] ?? const [],
+                      running: live.phase == SessionPhase.listening,
+                      label:
+                          '${t(source == 'system' ? 'systemAudio' : 'microphone')} · ${t('volumeHistory')}',
+                      color: source == 'microphone'
+                          ? colors.primary
+                          : colors.tertiary,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            Text(
-              t('latestLevel'),
-              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-            ),
-          ],
-        ),
-        LayoutBuilder(
-          builder: (context, constraints) => RecordingWave(
-            running: live.phase == SessionPhase.listening,
-            // The histories reserve 96 px for the label and a 16 px gap.
-            historyWidth: constraints.maxWidth - 112,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                t('volumeHistory'),
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              Text(
+                t('latestLevel'),
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
           ),
-        ),
-        Text(
-          [
-            if (!live.cloudSpeech)
-              '${t('pendingAudio')}: ${live.pending} · ${t('lastInference')}: ${live.lastInferenceSeconds.toStringAsFixed(1)} s',
-            if (translate && live.record?.directTranslation != true)
-              '${t('pendingTranslations')}: ${live.pendingTranslations} · ${t('lastTranslation')}: ${live.lastTranslationSeconds.toStringAsFixed(1)} s',
-          ].join(' · '),
-          style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-        ),
-      ]),
-      radius: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-    ),
-    if (live.warning != null) Text(issue(live.warning!)),
-    if (live.error != null)
-      Text(issue(live.error!), style: TextStyle(color: colors.error)),
-    if (live.record?.lines.isEmpty ?? true)
-      Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(t('waitingSpeech'), textAlign: TextAlign.center),
+          LayoutBuilder(
+            builder: (context, constraints) => RecordingWave(
+              running: live.phase == SessionPhase.listening,
+              // The histories reserve 96 px for the label and a 16 px gap.
+              historyWidth: constraints.maxWidth - 112,
+            ),
+          ),
+          Text(
+            [
+              if (!live.cloudSpeech)
+                '${t('pendingAudio')}: ${live.pending} · ${t('lastInference')}: ${live.lastInferenceSeconds.toStringAsFixed(1)} s',
+              if (translate && live.record?.directTranslation != true)
+                '${t('pendingTranslations')}: ${live.pendingTranslations} · ${t('lastTranslation')}: ${live.lastTranslationSeconds.toStringAsFixed(1)} s',
+            ].join(' · '),
+            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+        ]),
+        radius: altHeroRadius,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       ),
-  ]);
+      AltReveal(
+        child: live.warning == null
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: AltNotice.warning(issue(live.warning!)),
+              ),
+      ),
+      AltReveal(
+        child: live.error == null
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: AltNotice.error(issue(live.error!)),
+              ),
+      ),
+      // It gives way to the first line.
+      AltReveal(
+        child: live.record?.lines.isEmpty ?? true
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+                child: Text(
+                  t('waitingSpeech'),
+                  textAlign: TextAlign.center,
+                  style: text.bodyLarge?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              )
+            : null,
+      ),
+    ],
+  );
 }

@@ -149,7 +149,7 @@ class _CaptionPanelState extends State<CaptionPanel> {
         if (await widget.action('prepareDiscard') != true) return;
         try {
           if (!mounted) return;
-          final confirmed = await showDialog<bool>(
+          final confirmed = await showAltDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
               title: Text(t('discardSession')),

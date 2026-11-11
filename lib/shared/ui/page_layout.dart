@@ -12,10 +12,16 @@ Widget pageStack(List<Widget> children, {double gap = 16}) => Column(
   ],
 );
 
+/// Corner radii, from a page's leading panel and whatever floats over the
+/// page, through the other panels, down to what sits inside one.
+const altHeroRadius = 28.0;
+const altPanelRadius = 20.0;
+const altInnerRadius = 16.0;
+
 Widget pagePanel(
   BuildContext context,
   Widget child, {
-  double radius = 20,
+  double radius = altPanelRadius,
   EdgeInsets padding = EdgeInsets.zero,
   Color? color,
 }) => Material(

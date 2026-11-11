@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/notice.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/data/services/cloud/cloud_provider.dart';
@@ -139,11 +140,10 @@ class CloudKeyEditorState extends State<CloudKeyEditor> {
               ),
           ],
         ),
-        if (error != null)
-          Text(
-            error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
+        if (error != null) ...[
+          const SizedBox(height: 8),
+          AltNotice.error(error!, selectable: true),
+        ],
       ],
     ),
   );

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/notice.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/features/transcription/realtime_controller.dart';
@@ -102,17 +103,14 @@ abstract class SettingsDialogState<T extends SettingsDialog> extends State<T>
           mainAxisSize: MainAxisSize.min,
           children: [
             if (controller.active && !allowDuringSession) ...[
-              Text(t('settingsLocked')),
+              AltNotice(t('settingsLocked')),
               gap(),
             ],
             ...contents(),
             if (busy) ...[gap(), const LinearProgressIndicator()],
             if (error != null) ...[
               gap(),
-              SelectableText(
-                error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+              AltNotice.error(error!, selectable: true),
             ],
           ],
         ),

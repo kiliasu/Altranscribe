@@ -179,7 +179,7 @@ class TranscriptTile extends StatelessWidget {
             else
               AnimatedSize(
                 duration: motion,
-                curve: Curves.easeOutCubic,
+                curve: AltMotion.quickCurve,
                 alignment: Alignment.topLeft,
                 child: AnimatedSwitcher(
                   duration: motion,

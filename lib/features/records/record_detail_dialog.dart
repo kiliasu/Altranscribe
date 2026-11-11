@@ -5,6 +5,7 @@ import 'package:altranscribe/data/models/transcript_record.dart';
 import 'package:altranscribe/shared/platform/mobile_platform.dart';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/notice.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
@@ -137,11 +138,10 @@ class RecordDetailDialog extends StatelessWidget {
                         if (record.summaryError != null)
                           Text(issue(record.summaryError!)),
                       ],
-                      if (record.error != null)
-                        Text(
-                          issue(record.error!),
-                          style: TextStyle(color: colors.error),
-                        ),
+                      if (record.error != null) ...[
+                        AltNotice.error(issue(record.error!)),
+                        const SizedBox(height: 12),
+                      ],
                       if (record.lines.isEmpty) Text(t('noSpeechRecorded')),
                     ],
                   ),
@@ -194,7 +194,7 @@ class RecordDetailDialog extends StatelessWidget {
               onPressed: live.canEditRecord(record)
                   ? () => showRenameRecordDialog(context, live, record, english)
                   : null,
-              icon: const Icon(Icons.edit_outlined),
+              icon: const Icon(AltIcons.edit),
               label: Text(t('renameTitle')),
             ),
             TextButton(

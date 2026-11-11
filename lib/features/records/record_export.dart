@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
 
 import 'package:altranscribe/app/l10n/localized_issue.dart';
 import 'package:altranscribe/app/l10n/strings.dart';
@@ -150,7 +151,7 @@ Future<void> showExportDialog(
   // A content URI means nothing to a browser, so phones can only embed.
   final canLink =
       hasFile && !MobilePlatform.android && !isDocumentUri(record.inputFile!);
-  return showDialog<void>(
+  return showAltDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (context) => StatefulBuilder(

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
+import 'package:altranscribe/shared/ui/notice.dart';
 
 import 'package:altranscribe/shared/platform/mobile_platform.dart';
 import 'package:altranscribe/shared/ui/confirmation_dialog.dart';
@@ -207,7 +209,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                         key: const Key('cancel-model-download'),
                         tooltip: t('cancelDownload'),
                         onPressed: catalog.cancelDownload,
-                        icon: const Icon(Icons.close_rounded),
+                        icon: const Icon(AltIcons.close),
                       ),
                     )
                   : Row(
@@ -245,10 +247,9 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
       ),
       if (catalog.downloadingModel != null) Text(t('modelDownloadBackground')),
       if (catalog.downloadError case final downloadError?)
-        Text(
+        AltNotice.error(
           t(downloadError),
           key: const Key('model-download-error'),
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
         ),
     ];
   }
@@ -273,7 +274,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
             ),
           TextButton.icon(
             onPressed: busy ? null : () => run(load),
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(AltIcons.refresh),
             label: Text(t('refreshModels')),
           ),
           TextButton.icon(
@@ -285,7 +286,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                       controller.catalog.directory.absolute.path,
                     ]);
                   }),
-            icon: const Icon(Icons.folder_open_rounded),
+            icon: const Icon(AltIcons.folderOpen),
             label: Text(t('openModelsFolder')),
           ),
         ],
@@ -357,7 +358,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
         trailing: const Icon(AltIcons.chevronRight),
         onTap: editable
             ? () async {
-                await showDialog<void>(
+                await showAltDialog<void>(
                   context: context,
                   builder: (_) => RemoteConnectionDialog(
                     controller: controller,
@@ -489,7 +490,7 @@ class _ModelSettingsState extends SettingsDialogState<ModelSettingsDialog> {
                 }
               })
             : null,
-        icon: const Icon(Icons.refresh_rounded),
+        icon: const Icon(AltIcons.refresh),
         label: Text(t('cloudCheckModels')),
       ),
       if (cloudModels != null)

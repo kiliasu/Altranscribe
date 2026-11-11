@@ -12,6 +12,7 @@ import 'package:altranscribe/data/services/transcription/whisper_service.dart';
 import 'package:altranscribe/data/services/remote/remote_protocol.dart';
 import 'package:altranscribe/data/services/remote/shared_host.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
+import 'package:altranscribe/shared/ui/notice.dart';
 import 'package:altranscribe/shared/ui/qr_code.dart';
 
 String remoteIssue(Object error, bool english) {
@@ -124,11 +125,10 @@ class _RemoteConnectionState extends State<RemoteConnectionDialog> {
             Text(t('remoteNetworkHint')),
             if (!editable && !busy) Text(t('settingsLocked')),
             if (busy) const LinearProgressIndicator(),
-            if (error != null)
-              Text(
-                error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+            if (error != null) ...[
+              const SizedBox(height: 12),
+              AltNotice.error(error!),
+            ],
           ],
         ),
       ),
@@ -363,11 +363,8 @@ class _SharedHostState extends State<SharedHostDialog> {
         ),
       ],
       if (host.discoveryUnavailable) ...[
-        const SizedBox(height: 8),
-        Text(
-          t('discoveryUnavailable'),
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
-        ),
+        const SizedBox(height: 12),
+        AltNotice.warning(t('discoveryUnavailable')),
       ],
     ];
   }
@@ -487,11 +484,10 @@ class _SharedHostState extends State<SharedHostDialog> {
               const SizedBox(height: 16),
               Text(t('remoteNetworkHint')),
               if (loading || host.busy) const LinearProgressIndicator(),
-              if (error != null)
-                Text(
-                  error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
+              if (error != null) ...[
+                const SizedBox(height: 12),
+                AltNotice.error(error!),
+              ],
             ],
           ),
         ),

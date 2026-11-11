@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
 import 'package:altranscribe/app/l10n/strings.dart';
 
 Future<bool> confirmRemoval(
@@ -10,7 +11,7 @@ Future<bool> confirmRemoval(
 ) async {
   String t(String key) => strings[key]![english ? 1 : 0];
   final colors = Theme.of(context).colorScheme;
-  return await showDialog<bool>(
+  return await showAltDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           constraints: const BoxConstraints(maxWidth: 480),

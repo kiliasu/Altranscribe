@@ -5,6 +5,7 @@ import 'package:altranscribe/data/models/transcript_record.dart';
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
@@ -83,7 +84,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
   Future<void> renameRecord(TranscriptRecord record) =>
       showRenameRecordDialog(context, live, record, widget.english);
 
-  Future<void> showRecord(TranscriptRecord record) => showDialog<void>(
+  Future<void> showRecord(TranscriptRecord record) => showAltDialog<void>(
     context: context,
     builder: (_) => RecordDetailDialog(
       live: live,

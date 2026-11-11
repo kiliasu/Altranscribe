@@ -14,6 +14,8 @@ import 'package:altranscribe/shared/platform/mobile_platform.dart';
 import 'package:altranscribe/features/remote/remote_dialogs.dart';
 
 import 'package:altranscribe/shared/ui/page_layout.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
+import 'package:altranscribe/shared/ui/notice.dart';
 
 class DevicesScreen extends StatefulWidget {
   const DevicesScreen({super.key, required this.live, required this.english});
@@ -106,7 +108,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Future<void> manual([String? address]) async {
-    final paired = await showDialog<bool>(
+    final paired = await showAltDialog<bool>(
       context: context,
       builder: (_) => RemoteConnectionDialog(
         controller: live,
@@ -119,7 +121,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
     }
   }
 
-  Future<void> sharingDialog() => showDialog<void>(
+  Future<void> sharingDialog() => showAltDialog<void>(
     context: context,
     builder: (_) => SharedHostDialog(controller: live, english: english),
   );
@@ -279,12 +281,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
                 ),
               ],
             ),
-            radius: 16,
+            radius: altInnerRadius,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             color: colors.surface,
           ),
       ], gap: 20),
-      radius: 28,
+      radius: altHeroRadius,
       padding: const EdgeInsets.all(24),
       color: colors.secondaryContainer,
     );
@@ -418,7 +420,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
                       children: [
                         Icon(
                           connected
-                              ? Icons.check_circle_rounded
+                              ? AltIcons.checkCircle
                               : live.hostStatus == HostStatus.offline
                               ? Icons.cloud_off_rounded
                               : Icons.more_horiz_rounded,
@@ -467,7 +469,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
           ),
         ],
       ),
-      radius: 28,
+      radius: altHeroRadius,
       padding: const EdgeInsets.fromLTRB(24, 24, 12, 24),
       color: connected ? colors.secondaryContainer : null,
     );
@@ -547,14 +549,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
             const SizedBox(height: 12),
             const LinearProgressIndicator(),
           ],
-          if (issue != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              issue!,
-              style: TextStyle(color: colors.error),
-              textAlign: TextAlign.center,
-            ),
-          ],
+          AltReveal(
+            child: issue == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: AltNotice.error(issue!),
+                  ),
+          ),
           const SizedBox(height: 20),
           Row(
             children: [

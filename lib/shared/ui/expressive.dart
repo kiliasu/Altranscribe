@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:material_ui/material_ui.dart';
 
+import 'motion.dart';
+
 // Account for the native chip's two-pixel border to keep a 32px height.
 const altChipDensity = VisualDensity(vertical: -1);
 const altChipIconBounds = BoxConstraints.tightFor(width: 18, height: 18);
@@ -173,7 +175,7 @@ class _AltButtonGroupState extends State<AltButtonGroup> {
                     tween: Tween(end: weights[i] / sum),
                     duration: MediaQuery.disableAnimationsOf(context)
                         ? Duration.zero
-                        : const Duration(milliseconds: 350),
+                        : AltMotion.springFast,
                     curve: altSpatialFast,
                     builder: (context, weight, child) => Expanded(
                       flex: (weight * 1000000).round(),
@@ -200,8 +202,8 @@ class _AltButtonGroupState extends State<AltButtonGroup> {
       tween: Tween(end: selected ? 1 : 0),
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
-          : const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
+          : AltMotion.quick,
+      curve: AltMotion.quickCurve,
       builder: (context, progress, _) =>
           segment(context, i, connected, count, selected, progress),
     );

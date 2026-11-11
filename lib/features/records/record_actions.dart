@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/app/l10n/localized_issue.dart';
 import 'package:altranscribe/data/models/transcript_record.dart';
@@ -15,7 +16,7 @@ Future<void> showRenameRecordDialog(
   var title = record.displayTitle;
   String? error;
   var saving = false;
-  return showDialog<void>(
+  return showAltDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (context) => StatefulBuilder(
