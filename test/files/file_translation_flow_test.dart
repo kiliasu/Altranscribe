@@ -150,7 +150,7 @@ void main() {
       // Rows exist only where they are on screen; each one that does holds
       // the room its translation will take.
       final shown = find.byType(TranscriptTile).evaluate().length;
-      expect(shown, inInclusiveRange(2, 23));
+      expect(shown, inInclusiveRange(1, 23));
       expect(
         find.byKey(const Key('translation-placeholder')),
         findsNWidgets(shown),

@@ -18,7 +18,20 @@ class FileTranscriber {
   FileTranscriber(this.decoder);
   final AudioFileDecoder decoder;
   bool cancelled = false;
-  String stage = 'fileTranscribing';
+
+  /// What the file is going through, and when that began and last moved
+  /// on: the file screen works out speed and time left from them.
+  String get stage => _stage;
+  set stage(String value) {
+    if (value == _stage) return;
+    _stage = value;
+    stageStarted = DateTime.now();
+    progressAt = null;
+  }
+
+  String _stage = 'fileTranscribing';
+  DateTime stageStarted = DateTime.now();
+  DateTime? progressAt;
 
   /// Audio transcribed so far, and audio read from the file so far, which
   /// runs ahead while a long piece collects before its request.
@@ -90,6 +103,7 @@ class FileTranscriber {
     PauseCutter? cutter,
   }) async {
     _begin(record, store, onChanged);
+    stageStarted = DateTime.now();
     final sentences = TranscriptAssembler();
     decoder.onDecoded = (endMs) {
       decodedMs = endMs;
@@ -137,6 +151,7 @@ class FileTranscriber {
           );
         }
         processedMs = chunk.endMs;
+        progressAt = DateTime.now();
         _saveSoon();
         _changedSoon();
       }
@@ -331,6 +346,7 @@ class FileTranscriber {
           line.translationStatus = cancelled ? 'interrupted' : 'failed';
           if (!cancelled) line.translationError = e.toString();
         }
+        progressAt = DateTime.now();
         _saveSoon();
         _changedSoon();
       }

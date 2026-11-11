@@ -81,6 +81,7 @@ List<Map<String, Object?>> captionRows(TranscriptRecord? record, int count) {
         .skip((sentences.length - used).clamp(0, sentences.length))
         .join(' ');
     rows.add({
+      'id': '${line.source} ${line.startMs}',
       'original': tail(original),
       'translation': tail(translation),
       'status': line.translationStatus,

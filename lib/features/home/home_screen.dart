@@ -3,6 +3,7 @@ import 'package:altranscribe/shared/ui/page_layout.dart';
 import 'package:altranscribe/app/l10n/localized_issue.dart';
 import 'package:altranscribe/shared/ui/confirmation_dialog.dart';
 import 'package:altranscribe/shared/ui/elapsed_text.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
 import 'package:altranscribe/shared/ui/transcript_tile.dart';
 import 'package:altranscribe/shared/ui/transcript_scroll_controller.dart';
 import 'package:altranscribe/features/records/records_screen.dart';
@@ -13,6 +14,7 @@ import 'package:altranscribe/data/models/transcript_record.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
@@ -108,6 +110,19 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   /// was entered or following was turned on. Other layouts, such as rows
   /// built while the user scrolls, keep the reading position.
   bool followArmed = false;
+
+  /// The reader is scrolling the transcript by hand.
+  bool userScrolling = false;
+
+  /// How many lines of [shownRecord] the session page had built. A line
+  /// beyond them rises in when it first appears; one the reader scrolls
+  /// back to does not.
+  int shownLines = 0;
+  String? shownRecord;
+
+  /// The transcript a session just saved, acknowledged for a moment.
+  TranscriptRecord? acknowledged;
+  Timer? acknowledgeTimer;
   bool wasSession = false;
   int transcriptRevision = -1;
   String? anchorRecord;
@@ -137,9 +152,86 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     }
     final contentChanged = transcriptRevision != live.transcriptRevision;
     transcriptRevision = live.transcriptRevision;
+    final ended = wasSession && !session;
     wasSession = session;
+    // Lines that arrive while the page is away appear without rising in.
+    if (!showSession && live.record?.id == shownRecord) {
+      shownLines = live.record?.lines.length ?? 0;
+    }
     setState(() {});
     if (contentChanged) scheduleFollow();
+    if (ended) acknowledgeSession();
+  }
+
+  /// A finished session or file run ends with a checkmark where its bar
+  /// was, and the way to the transcript it saved.
+  void acknowledgeSession() {
+    final record = live.record;
+    final saved = live.records
+        .where((item) => item.id == record?.id)
+        .firstOrNull;
+    if (saved == null || saved.status != 'completed' || live.error != null) {
+      return;
+    }
+    acknowledgeTimer?.cancel();
+    setState(() => acknowledged = saved);
+    acknowledgeTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => acknowledged = null);
+    });
+  }
+
+  Widget acknowledgement(TranscriptRecord saved) {
+    final label = saved.inputFile == null
+        ? t('sessionSaved')
+        : live.fileCount > 1
+        ? t('filesDone').replaceFirst('{count}', '${live.fileCount}')
+        : t('fileDone');
+    return DecoratedBox(
+      key: ValueKey(saved.id),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: altFloatingShadow,
+      ),
+      child: Material(
+        color: colors.primaryContainer,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DrawnCheckmark(
+                key: const Key('session-saved'),
+                size: 24,
+                color: colors.primary,
+                checkColor: colors.onPrimary,
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  '$label · ${saved.displayTitle}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.labelLarge?.copyWith(
+                    color: colors.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                key: const Key('open-saved'),
+                onPressed: () {
+                  acknowledgeTimer?.cancel();
+                  setState(() => acknowledged = null);
+                  showRecord(saved);
+                },
+                child: Text(t('openRecord')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void importMobileFiles() {
@@ -181,6 +273,39 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
+  /// Back to the latest line, however far away it is, following again.
+  void jumpToLatest() {
+    setState(() => followLatest = true);
+    if (sessionScroll.hasClients) {
+      sessionScroll.jumpTo(sessionScroll.position.maxScrollExtent);
+    }
+    scheduleFollow();
+  }
+
+  /// Scrolling away from the end by hand stops following, and reaching the
+  /// end again follows once more. Only the reader's own scrolling counts:
+  /// new text and the jumps that follow it move the view without a
+  /// direction.
+  bool onScroll(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification is UserScrollNotification) {
+      sessionScroll.releaseAnchor();
+      userScrolling = notification.direction != ScrollDirection.idle;
+    }
+    if (!showSession || notification is! ScrollUpdateNotification) {
+      return false;
+    }
+    if (!userScrolling && notification.dragDetails == null) return false;
+    final metrics = notification.metrics;
+    final distance = metrics.maxScrollExtent - metrics.pixels;
+    if (followLatest && distance > 48) {
+      setState(() => followLatest = false);
+    } else if (!followLatest && distance < 8) {
+      setState(() => followLatest = true);
+    }
+    return false;
+  }
+
   void selectPage(int value) {
     setState(() => page = value);
     scheduleFollow();
@@ -193,6 +318,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     MobilePlatform.importedFiles.removeListener(importMobileFiles);
     swapAnimation.dispose();
     sessionScroll.dispose();
+    acknowledgeTimer?.cancel();
     super.dispose();
   }
 
@@ -445,67 +571,18 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                                       style: text.headlineMedium,
                                     ),
                                   ),
+                                  if (showSession && !live.processingFiles)
+                                    captionToggle('session-captions'),
                                 ],
                               ),
                             ),
-                            if (showSession)
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: narrow ? 16 : 24,
-                                ),
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Wrap(
-                                    crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                    spacing: 8,
-                                    children: [
-                                      if (!live.processingFiles)
-                                        captionToggle('session-captions'),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Checkbox(
-                                            key: const Key('follow-latest'),
-                                            value: followLatest,
-                                            onChanged: (v) {
-                                              setState(() => followLatest = v!);
-                                              scheduleFollow();
-                                            },
-                                          ),
-                                          GestureDetector(
-                                            onTap: () {
-                                              setState(
-                                                () => followLatest =
-                                                    !followLatest,
-                                              );
-                                              scheduleFollow();
-                                            },
-                                            child: Text(
-                                              t('followLatest'),
-                                              style: text.labelLarge,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
                             Expanded(
                               child: PageStorage(
                                 bucket: scrollBucket,
                                 child: NotificationListener<ScrollNotification>(
-                                  onNotification: (notification) {
-                                    if (notification
-                                            is UserScrollNotification &&
-                                        notification.depth == 0) {
-                                      sessionScroll.releaseAnchor();
-                                    }
-                                    return false;
-                                  },
+                                  onNotification: onScroll,
                                   child: showSession
-                                      ? sessionScrollView(narrow)
+                                      ? sessionBody(narrow)
                                       : SingleChildScrollView(
                                           key: PageStorageKey(
                                             'page-$page-$showSession-$fileMode',
@@ -559,6 +636,28 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                 right: 16,
                 bottom: narrow ? 96 : 20,
                 child: Center(child: sessionToolbar()),
+              ),
+            if (showSession)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: (narrow ? 96 : 20) + 76,
+                child: Center(child: jumpToLatestButton()),
+              ),
+            if (!session || live.backgroundFinishing)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: narrow ? 96 : 20,
+                child: Center(
+                  child: AnimatedSwitcher(
+                    duration: AltMotion.content,
+                    transitionBuilder: AltMotion.rise,
+                    child: acknowledged == null
+                        ? const SizedBox.shrink()
+                        : acknowledgement(acknowledged!),
+                  ),
+                ),
               ),
             if (session && !live.backgroundFinishing && !showSession)
               Positioned(
@@ -1428,7 +1527,8 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   Widget sessionToolbar() => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      sessionControls(),
+      // While the bar narrows with the window, it fits the room it has.
+      Flexible(child: sessionControls()),
       if (!live.processingFiles) ...[
         const SizedBox(width: 12),
         IconButton.filledTonal(
@@ -1451,92 +1551,231 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     ],
   );
 
-  Widget sessionControls() => DecoratedBox(
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(999),
-      boxShadow: altFloatingShadow,
-    ),
-    child: Material(
-      color: colors.primaryContainer,
-      borderRadius: BorderRadius.circular(999),
-      child: SizedBox(
-        height: 64,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!live.processingFiles)
-                IconButton(
-                  style: IconButton.styleFrom(
-                    fixedSize: Size(narrow ? 40 : 48, 40),
-                  ),
-                  key: const Key('pause'),
-                  tooltip: t(paused ? 'resume' : 'pause'),
-                  onPressed:
-                      (live.phase == SessionPhase.listening || paused) &&
-                          !live.pausePending &&
-                          !confirmingDiscard
-                      ? live.togglePause
-                      : null,
-                  icon: Icon(
-                    paused ? AltIcons.playArrow : AltIcons.pause,
-                    color: colors.onPrimaryContainer,
-                  ),
-                ),
-              if (!live.processingFiles) const SizedBox(width: 4),
-              IconButton(
-                style: IconButton.styleFrom(
-                  fixedSize: Size(narrow ? 40 : 48, 40),
-                ),
-                key: const Key('caption-smaller'),
-                tooltip: t('smallerCaptions'),
-                onPressed: captionSize > 16
-                    ? () => setState(() => captionSize -= 2)
-                    : null,
-                icon: Icon(
-                  AltIcons.textDecrease,
-                  color: colors.onPrimaryContainer,
-                ),
+  /// The input levels of all sources at once, loudest first.
+  List<double> get levelSamples {
+    final lists = live.levelHistory.values.where((list) => list.isNotEmpty);
+    if (lists.isEmpty) return const [];
+    if (lists.length == 1) return lists.first;
+    final length = lists.map((list) => list.length).reduce(math.max);
+    return [
+      for (var i = 0; i < length; i++)
+        lists
+            .map((list) {
+              final j = list.length - length + i;
+              return j < 0 ? 0.0 : list[j];
+            })
+            .reduce(math.max),
+    ];
+  }
+
+  /// What the session is doing, at the bar's leading edge, where it stays
+  /// in view however far the transcript has grown: a pulsing dot, the time
+  /// spent listening and the input level while capturing, otherwise a
+  /// spinner and the stage.
+  Widget sessionStatus() {
+    final phase = live.phase;
+    final foreground = colors.onPrimaryContainer;
+    final label = text.labelLarge?.copyWith(color: foreground);
+    if (live.processingFiles) {
+      return const SizedBox.shrink(key: ValueKey('files'));
+    }
+    if (phase == SessionPhase.listening || phase == SessionPhase.paused) {
+      final pending = live.pendingTranslations;
+      return Row(
+        key: const ValueKey('capturing'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PulsingDot(
+            color: paused ? colors.tertiary : recordingRed,
+            pulsing: !paused,
+          ),
+          const SizedBox(width: 10),
+          ElapsedText.reading(
+            () => live.listened,
+            key: const Key('session-clock'),
+            label: durationLabel,
+            style: label,
+            rolling: true,
+          ),
+          if (!narrow) ...[
+            const SizedBox(width: 14),
+            LevelMeter(
+              samples: paused ? const [] : levelSamples,
+              color: foreground.withValues(alpha: .7),
+            ),
+          ],
+          AnimatedSize(
+            duration: AltMotion.quick,
+            curve: AltMotion.quickCurve,
+            child: pending > 0 && translate
+                ? Tooltip(
+                    message: t('pendingCount')
+                        .replaceFirst('{count}', '$pending'),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 14),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(AltIcons.translate, size: 16, color: foreground),
+                          const SizedBox(width: 4),
+                          RollingText('$pending', style: label),
+                        ],
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      );
+    }
+    return Row(
+      key: ValueKey('working $phase'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox.square(
+          dimension: 16,
+          child: CircularProgressIndicator(strokeWidth: 2, color: foreground),
+        ),
+        const SizedBox(width: 10),
+        Text(sessionTitle, style: label),
+      ],
+    );
+  }
+
+  /// The floating bar. Its status and its controls change with the
+  /// session's stage, and the bar takes the new width smoothly.
+  Widget sessionControls() {
+    final capturing =
+        live.phase == SessionPhase.listening ||
+        live.phase == SessionPhase.paused;
+    final button = IconButton.styleFrom(fixedSize: Size(narrow ? 40 : 48, 40));
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: altFloatingShadow,
+      ),
+      child: Material(
+        color: colors.primaryContainer,
+        borderRadius: BorderRadius.circular(999),
+        // A size animation that took no time would change its own layout
+        // while laying out; with reduced motion it is only short.
+        child: AnimatedSize(
+          duration: AltMotion.reduced(context)
+              ? AltMotion.fade
+              : AltMotion.content,
+          curve: AltMotion.contentCurve,
+          child: SizedBox(
+            height: 64,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: live.processingFiles ? 8 : (narrow ? 16 : 20),
+                right: 8,
               ),
-              const SizedBox(width: 4),
-              IconButton(
-                style: IconButton.styleFrom(
-                  fixedSize: Size(narrow ? 40 : 48, 40),
-                ),
-                key: const Key('caption-larger'),
-                tooltip: t('largerCaptions'),
-                onPressed: captionSize < 36
-                    ? () => setState(() => captionSize += 2)
-                    : null,
-                icon: Icon(
-                  AltIcons.textIncrease,
-                  color: colors.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                key: const Key('stop'),
-                onPressed:
-                    live.phase == SessionPhase.stopping || confirmingDiscard
-                    ? null
-                    : stopSession,
-                icon: const Icon(AltIcons.stop, size: 20),
-                label: Text(
-                  t(
-                    live.processingFiles
-                        ? 'cancelFile'
-                        : live.phase == SessionPhase.loading
-                        ? 'cancel'
-                        : 'stop',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedSwitcher(
+                    duration: AltMotion.content,
+                    transitionBuilder: AltMotion.rise,
+                    layoutBuilder: (current, previous) => Stack(
+                      alignment: Alignment.centerLeft,
+                      children: [...previous, ?current],
+                    ),
+                    child: sessionStatus(),
                   ),
-                ),
+                  if (!live.processingFiles) SizedBox(width: narrow ? 12 : 16),
+                  if (capturing) ...[
+                    IconButton(
+                      style: button,
+                      key: const Key('pause'),
+                      tooltip: t(paused ? 'resume' : 'pause'),
+                      onPressed: !live.pausePending && !confirmingDiscard
+                          ? live.togglePause
+                          : null,
+                      icon: AnimatedSwitcher(
+                        duration: AltMotion.quick,
+                        child: Icon(
+                          paused ? AltIcons.playArrow : AltIcons.pause,
+                          key: ValueKey(paused),
+                          color: colors.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  // Where the bar is short of room, the text size buttons
+                  // give way to the status before the stop button does.
+                  if (!narrow || !capturing) ...[
+                    IconButton(
+                      style: button,
+                      key: const Key('caption-smaller'),
+                      tooltip: t('smallerCaptions'),
+                      onPressed: captionSize > 16
+                          ? () => setState(() => captionSize -= 2)
+                          : null,
+                      icon: Icon(
+                        AltIcons.textDecrease,
+                        color: colors.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      style: button,
+                      key: const Key('caption-larger'),
+                      tooltip: t('largerCaptions'),
+                      onPressed: captionSize < 36
+                          ? () => setState(() => captionSize += 2)
+                          : null,
+                      icon: Icon(
+                        AltIcons.textIncrease,
+                        color: colors.onPrimaryContainer,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    key: const Key('stop'),
+                    onPressed:
+                        live.phase == SessionPhase.stopping || confirmingDiscard
+                        ? null
+                        : stopSession,
+                    icon: const Icon(AltIcons.stop, size: 20),
+                    label: Text(
+                      t(
+                        live.processingFiles
+                            ? 'cancelFile'
+                            : live.phase == SessionPhase.loading
+                            ? 'cancel'
+                            : 'stop',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
-    ),
+    );
+  }
+
+  /// Appears above the bar once the reader has scrolled away from the
+  /// latest line, and takes them back to it.
+  Widget jumpToLatestButton() => AnimatedSwitcher(
+    duration: AltMotion.content,
+    transitionBuilder: AltMotion.rise,
+    child: followLatest || (live.record?.lines.isEmpty ?? true)
+        ? const SizedBox.shrink(key: ValueKey('following'))
+        : FilledButton.tonalIcon(
+            key: const Key('jump-to-latest'),
+            style: FilledButton.styleFrom(
+              elevation: 3,
+              shadowColor: colors.shadow,
+            ),
+            onPressed: jumpToLatest,
+            icon: const Icon(Icons.arrow_downward_rounded, size: 18),
+            label: Text(t('jumpToLatest')),
+          ),
   );
 
   void restoreSession() {
@@ -1654,99 +1893,165 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     return '$minutes:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
-  Widget fileSessionPanel() => pageStack([
-    pagePanel(
+  /// The file being processed: which one, its stage and how far it has
+  /// come, at what speed and with which models. It stays above the
+  /// transcript as that grows, so the progress never scrolls away.
+  Widget fileProgressPanel() {
+    final task = live.fileTask;
+    final record = live.record;
+    final stage = task?.stage ?? 'fileTranscribing';
+    final fraction = fileProgress;
+    final muted = text.bodySmall?.copyWith(color: colors.onSurfaceVariant);
+    final icon = switch (stage) {
+      'fileTranslating' || 'fileCleaningTranslation' => AltIcons.translate,
+      'generatingSummary' => AltIcons.autoAwesome,
+      'fileCleaning' || 'filePreparingText' => AltIcons.spellcheck,
+      _ => AltIcons.graphicEq,
+    };
+    final translating =
+        record?.targetLanguage != null &&
+        record?.targetLanguage != record?.language;
+    Widget detail(IconData icon, String value) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: colors.onSurfaceVariant),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            value,
+            style: muted,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+    return pagePanel(
       context,
       pageStack([
         Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
-            AltLoading(shape: sessionShape),
-            const SizedBox(width: 16),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(sessionTitle, style: text.titleLarge),
-                  Text(
-                    '${live.fileNumber} / ${live.fileCount} · ${live.record?.displayTitle ?? t('file')}',
-                    style: text.bodyMedium?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
+              child: Text(
+                record?.displayTitle ?? t('file'),
+                style: text.titleMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (live.fileCount > 1)
+              Text(
+                t('fileNumber')
+                    .replaceFirst('{index}', '${live.fileNumber}')
+                    .replaceFirst('{count}', '${live.fileCount}'),
+                style: muted,
+              ),
+          ],
+        ),
+        pageStack([
+          Row(
+            children: [
+              AnimatedSwitcher(
+                duration: AltMotion.quick,
+                child: Icon(
+                  icon,
+                  key: ValueKey(icon),
+                  size: 20,
+                  color: colors.primary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: AltMotion.quick,
+                  transitionBuilder: AltMotion.rise,
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [...previous, ?current],
                   ),
-                ],
+                  child: Text(
+                    sessionTitle,
+                    key: ValueKey(sessionTitle),
+                    style: text.labelLarge,
+                  ),
+                ),
+              ),
+              if (fraction != null)
+                RollingText(
+                  '${(fraction * 100).floor()}%',
+                  style: text.labelLarge?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          TweenAnimationBuilder<double>(
+            tween: Tween(end: fraction ?? 0),
+            duration: AltMotion.reduced(context)
+                ? Duration.zero
+                : AltMotion.content,
+            curve: AltMotion.contentCurve,
+            builder: (context, value, _) => LinearProgressIndicator(
+              key: const Key('file-progress'),
+              value: fraction == null ? null : value,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          if (task != null)
+            ElapsedText(
+              key: const Key('file-progress-label'),
+              since: task.stageStarted,
+              label: (_) => fileProgressLabel,
+              style: muted?.copyWith(
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
-          ],
-        ),
+        ], gap: 8),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 16,
+          runSpacing: 6,
           children: [
-            Chip(
-              visualDensity: altChipDensity,
-              avatarBoxConstraints: altChipIconBounds,
-              avatar: const Icon(AltIcons.audioFile, size: 18),
-              label: Text(t('file')),
-            ),
-            Chip(
-              visualDensity: altChipDensity,
-              avatarBoxConstraints: altChipIconBounds,
-              avatar: const Icon(AltIcons.memory, size: 18),
-              label: Text(live.speechBackend),
-            ),
-            if (translate || fileOptions.any((v) => v) || live.generateSummary)
-              Chip(
-                visualDensity: altChipDensity,
-                avatarBoxConstraints: altChipIconBounds,
-                avatar: const Icon(AltIcons.translate, size: 18),
-                label: Text('LLM · ${live.llmBackend}'),
+            detail(AltIcons.memory, live.speechBackend),
+            if (translating)
+              detail(
+                AltIcons.translate,
+                '${t('translateTo').replaceFirst('{language}', targetLanguage)} · ${live.llmBackend}',
+              ),
+            if (live.generateSummary)
+              detail(
+                AltIcons.autoAwesome,
+                '${t('summaryShort')} · ${live.llmBackend}',
               ),
           ],
         ),
-        LinearProgressIndicator(
-          key: const Key('file-progress'),
-          value: fileProgress,
-          minHeight: 8,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        Text(
-          fileProgressLabel,
-          key: const Key('file-progress-label'),
-          style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-        ),
-      ]),
-      radius: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-    ),
-    if (live.record?.cleanupError != null)
-      Text(
-        issue(live.record!.cleanupError!),
-        style: TextStyle(color: colors.error),
-      ),
-    if (live.error != null)
-      Text(issue(live.error!), style: TextStyle(color: colors.error)),
-  ]);
+        if (live.record?.cleanupError != null)
+          Text(
+            issue(live.record!.cleanupError!),
+            style: TextStyle(color: colors.error),
+          ),
+        if (live.error != null)
+          Text(issue(live.error!), style: TextStyle(color: colors.error)),
+      ], gap: 14),
+      radius: 24,
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+    );
+  }
 
-  /// Fades a page in when it is first shown.
-  Widget pageTransition(Widget child) => TweenAnimationBuilder<double>(
-    key: ValueKey('page-transition-$page'),
-    tween: Tween(begin: 0, end: 1),
-    duration: navigationDuration,
-    curve: Curves.easeOutCubic,
-    builder: (context, value, child) => Opacity(
-      opacity: value,
-      child: Transform.translate(
-        offset: Offset(0, 12 * (1 - value)),
-        child: child,
-      ),
-    ),
+  /// Fades a page in from a slight blur when it is first shown.
+  Widget pageTransition(Widget child) => AltPageIn(
+    key: ValueKey('page-transition-$page${showSession ? '-session' : ''}'),
     child: child,
   );
 
-  /// The session: its panel, then one row per line. Rows are built only
-  /// where they are on or near the screen, so a transcript of a thousand
-  /// lines costs no more to update than one of ten.
-  Widget sessionScrollView(bool narrow) => LayoutBuilder(
+  /// The session's page: the live panel then one row per line, or a file's
+  /// progress fixed above the transcript it produces. Rows are built only
+  /// near the screen, so a thousand lines cost no more to update than ten.
+  /// While a live session follows its latest line, the earlier ones recede
+  /// and what each new result adds fades in.
+  Widget sessionBody(bool narrow) => LayoutBuilder(
     builder: (context, constraints) {
       final side = math.max(
         narrow ? 16.0 : 24.0,
@@ -1758,34 +2063,67 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           ? const <GlobalKey>[]
           : sessionScroll.keysFor(record.id, lines);
       final indexes = {for (final (index, key) in keys.indexed) key: index};
-      final animate = !live.processingFiles;
-      return pageTransition(
-        CustomScrollView(
+      final files = live.processingFiles;
+      final capturing =
+          !files &&
+          (live.phase == SessionPhase.listening ||
+              live.phase == SessionPhase.paused);
+      if (shownRecord != record?.id) {
+        shownRecord = record?.id;
+        shownLines = 0;
+      }
+      final arrivedFrom = shownLines;
+      shownLines = lines.length;
+      final reduced = AltMotion.reduced(context);
+      Widget row(BuildContext context, int index) {
+        final latest = index == lines.length - 1;
+        final receded = capturing && followLatest && !latest;
+        return Padding(
+          key: keys[index],
+          padding: EdgeInsets.only(bottom: latest ? 0 : 4),
+          child: AltRise(
+            animate: session && index >= arrivedFrom,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(end: receded ? .72 : 1),
+              duration: reduced ? AltMotion.fade : AltMotion.settle,
+              curve: AltMotion.contentCurve,
+              builder: (context, emphasis, _) => TranscriptTile(
+                line: lines[index],
+                english: widget.english,
+                captionSize: captionSize,
+                awaitingTranslation: awaitingTranslation(lines[index]),
+                animateTranslation: !files,
+                streaming: capturing && latest,
+                emphasis: emphasis,
+              ),
+            ),
+          ),
+        );
+      }
+
+      final list = EdgeFade(
+        top: 16,
+        bottom: 120,
+        bottomClear: 64,
+        child: CustomScrollView(
           key: PageStorageKey('page-$page-$showSession-$fileMode'),
           controller: sessionScroll,
           slivers: [
+            if (!files)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+                sliver: SliverToBoxAdapter(child: sessionPanel()),
+              ),
             SliverPadding(
-              padding: EdgeInsets.fromLTRB(side, 8, side, 0),
-              sliver: SliverToBoxAdapter(child: sessionPanel()),
-            ),
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(side + 8, 24, side + 8, 120),
+              padding: EdgeInsets.fromLTRB(
+                side + 8,
+                files ? 16 : 24,
+                side + 8,
+                120,
+              ),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (context, index) => Padding(
-                    padding: EdgeInsets.only(
-                      bottom: index == lines.length - 1 ? 0 : 4,
-                    ),
-                    child: TranscriptTile(
-                      key: keys[index],
-                      line: lines[index],
-                      english: widget.english,
-                      captionSize: captionSize,
-                      highlight: index == lines.length - 1,
-                      awaitingTranslation: awaitingTranslation(lines[index]),
-                      animateTranslation: animate,
-                    ),
-                  ),
+                  row,
                   childCount: lines.length,
                   findChildIndexCallback: (key) => indexes[key],
                 ),
@@ -1793,6 +2131,19 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
             ),
           ],
         ),
+      );
+      return pageTransition(
+        files
+            ? Column(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+                    child: fileProgressPanel(),
+                  ),
+                  Expanded(child: list),
+                ],
+              )
+            : list,
       );
     },
   );
@@ -1805,7 +2156,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     if (task == null || record == null) return null;
     switch (task.stage) {
       case 'fileTranscribing':
-        // The first piece says nothing until it returns; the text beside
+        // The first piece says nothing until it returns; the text below
         // the bar shows how much audio has been read meanwhile.
         final total = task.durationMs;
         if (total == null || total <= 0 || task.processedMs == 0) return null;
@@ -1828,176 +2179,231 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
       )
       .length;
 
+  /// The stage's measure, the time it has taken, and once there is enough
+  /// to go on, its speed and the time left.
   String get fileProgressLabel {
     final task = live.fileTask;
     final record = live.record;
-    String time(int ms) => elapsedLabel(Duration(milliseconds: ms));
-    if (task?.stage == 'fileTranslating' && record != null) {
-      return '${t('translatedLines')} ${translatedLines(record)} / ${record.lines.length}';
+    if (task == null) return '';
+    final now = DateTime.now();
+    final elapsed = now.difference(task.stageStarted);
+    final measured = task.progressAt?.difference(task.stageStarted);
+    final parts = <String>[];
+    Duration? left;
+    if (task.stage == 'fileTranslating' && record != null) {
+      final done = translatedLines(record);
+      final total = record.lines.length;
+      parts.add(
+        t('translatedOf')
+            .replaceFirst('{done}', '$done')
+            .replaceFirst('{total}', '$total'),
+      );
+      if (done >= 3 && measured != null && measured.inMilliseconds > 0) {
+        left =
+            measured * ((total - done) / done) -
+            now.difference(task.progressAt!);
+      }
+    } else if (task.stage == 'fileTranscribing') {
+      final processed = Duration(milliseconds: task.processedMs);
+      final total = task.durationMs == null
+          ? null
+          : Duration(milliseconds: task.durationMs!);
+      parts.add(
+        total == null
+            ? '${t('processedAudio')} ${durationLabel(processed)}'
+            : t('processedOf')
+                  .replaceFirst('{done}', durationLabel(processed))
+                  .replaceFirst('{total}', durationLabel(total)),
+      );
+      if (task.decodedMs > task.processedMs) {
+        parts.add(
+          '${t('audioRead')} ${durationLabel(Duration(milliseconds: task.decodedMs))}',
+        );
+      }
+      if (processed.inSeconds >= 5 &&
+          measured != null &&
+          measured.inMilliseconds >= 1000) {
+        final speed = processed.inMilliseconds / measured.inMilliseconds;
+        parts.add(
+          t('realTimeSpeed').replaceFirst('{speed}', speed.toStringAsFixed(1)),
+        );
+        if (total != null) {
+          left =
+              (total - processed) * (1 / speed) -
+              now.difference(task.progressAt!);
+        }
+      }
     }
-    final processed = task?.processedMs ?? 0;
-    final total = task?.durationMs;
-    final read = task?.decodedMs ?? 0;
-    return [
-      '${t('processedAudio')}: ${time(processed)}${total == null ? '' : ' / ${time(total)}'}',
-      if (read > processed) '${t('audioRead')} ${time(read)}',
-    ].join(' · ');
+    parts.add(t('elapsedTime').replaceFirst('{time}', durationLabel(elapsed)));
+    if (left != null && left.inSeconds >= 1) {
+      parts.add(t('timeLeft').replaceFirst('{time}', durationLabel(left)));
+    }
+    return parts.join(' · ');
   }
 
-  Widget sessionPanel() => live.processingFiles
-      ? fileSessionPanel()
-      : pageStack([
-          pagePanel(
-            context,
-            pageStack([
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                spacing: 16,
-                runSpacing: 12,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (paused)
-                        Icon(
+  Widget sessionPanel() => pageStack([
+    pagePanel(
+      context,
+      pageStack([
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          spacing: 16,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSwitcher(
+                  duration: AltMotion.quick,
+                  child: paused
+                      ? Icon(
                           AltIcons.pauseCircle,
+                          key: const ValueKey('paused'),
                           size: 40,
                           color: colors.primary,
                         )
-                      else
-                        AltLoading(shape: sessionShape),
-                      const SizedBox(width: 16),
-                      Flexible(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(sessionTitle, style: text.titleLarge),
-                            ElapsedText(
-                              since: live.record?.createdAt ?? DateTime.now(),
-                              label: (elapsed) =>
-                                  '${t('elapsed')} ${elapsedLabel(elapsed)} · ${live.record?.language == 'auto' ? t('cloudAutoLanguage') : sourceLanguage}${translate ? ' → $targetLanguage' : ''}',
-                              style: text.bodyMedium?.copyWith(
-                                color: colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                      : AltLoading(
+                          key: const ValueKey('working'),
+                          shape: sessionShape,
                         ),
-                      ),
-                    ],
-                  ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                ),
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (live.record?.sources.contains('microphone') == true)
-                        Chip(
-                          visualDensity: altChipDensity,
-                          avatarBoxConstraints: altChipIconBounds,
-                          avatar: const Icon(AltIcons.mic, size: 18),
-                          label: Text(t('microphone')),
+                      AnimatedSwitcher(
+                        duration: AltMotion.quick,
+                        transitionBuilder: AltMotion.rise,
+                        layoutBuilder: (current, previous) => Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [...previous, ?current],
                         ),
-                      if (live.record?.sources.contains('system') == true)
-                        Chip(
-                          visualDensity: altChipDensity,
-                          avatarBoxConstraints: altChipIconBounds,
-                          avatar: const Icon(AltIcons.volumeUp, size: 18),
-                          label: Text(t('systemAudio')),
+                        child: Text(
+                          sessionTitle,
+                          key: ValueKey(sessionTitle),
+                          style: text.titleLarge,
                         ),
-                      Chip(
-                        visualDensity: altChipDensity,
-                        avatarBoxConstraints: altChipIconBounds,
-                        avatar: const Icon(AltIcons.memory, size: 18),
-                        label: Text(live.speechBackend),
                       ),
-                      if ((translate &&
-                              live.record?.directTranslation != true) ||
-                          live.generateSummary)
-                        Chip(
-                          visualDensity: altChipDensity,
-                          avatarBoxConstraints: altChipIconBounds,
-                          avatar: const Icon(AltIcons.translate, size: 18),
-                          label: Text('LLM · ${live.llmBackend}'),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-              for (final source in [
-                if (live.record?.sources.contains('microphone') == true)
-                  'microphone',
-                if (live.record?.sources.contains('system') == true) 'system',
-              ])
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 96,
-                      child: Text(
-                        t(source == 'system' ? 'systemAudio' : 'microphone'),
-                        style: text.labelLarge?.copyWith(
+                      // The bar below keeps the time; the languages stay here.
+                      Text(
+                        '${live.record?.language == 'auto' ? t('cloudAutoLanguage') : sourceLanguage}${translate ? ' → $targetLanguage' : ''}',
+                        style: text.bodyMedium?.copyWith(
                           color: colors.onSurfaceVariant,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: AudioLevelHistory(
-                        key: ValueKey('level-history-$source'),
-                        samples: live.levelHistory[source] ?? const [],
-                        running: live.phase == SessionPhase.listening,
-                        label:
-                            '${t(source == 'system' ? 'systemAudio' : 'microphone')} · ${t('volumeHistory')}',
-                        color: source == 'microphone'
-                            ? colors.primary
-                            : colors.tertiary,
-                      ),
-                    ),
-                  ],
-                ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    t('volumeHistory'),
-                    style: text.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
+                    ],
                   ),
-                  Text(
-                    t('latestLevel'),
-                    style: text.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-              LayoutBuilder(
-                builder: (context, constraints) => RecordingWave(
-                  running: live.phase == SessionPhase.listening,
-                  // The histories reserve 96 px for the label and a 16 px gap.
-                  historyWidth: constraints.maxWidth - 112,
                 ),
-              ),
-              Text(
-                [
-                  if (!live.cloudSpeech)
-                    '${t('pendingAudio')}: ${live.pending} · ${t('lastInference')}: ${live.lastInferenceSeconds.toStringAsFixed(1)} s',
-                  if (translate && live.record?.directTranslation != true)
-                    '${t('pendingTranslations')}: ${live.pendingTranslations} · ${t('lastTranslation')}: ${live.lastTranslationSeconds.toStringAsFixed(1)} s',
-                ].join(' · '),
-                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-            ]),
-            radius: 28,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          ),
-          if (live.warning != null) Text(issue(live.warning!)),
-          if (live.error != null)
-            Text(issue(live.error!), style: TextStyle(color: colors.error)),
-          if (live.record?.lines.isEmpty ?? true)
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(t('waitingSpeech'), textAlign: TextAlign.center),
+              ],
             ),
-        ]);
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (live.record?.sources.contains('microphone') == true)
+                  Chip(
+                    visualDensity: altChipDensity,
+                    avatarBoxConstraints: altChipIconBounds,
+                    avatar: const Icon(AltIcons.mic, size: 18),
+                    label: Text(t('microphone')),
+                  ),
+                if (live.record?.sources.contains('system') == true)
+                  Chip(
+                    visualDensity: altChipDensity,
+                    avatarBoxConstraints: altChipIconBounds,
+                    avatar: const Icon(AltIcons.volumeUp, size: 18),
+                    label: Text(t('systemAudio')),
+                  ),
+                Chip(
+                  visualDensity: altChipDensity,
+                  avatarBoxConstraints: altChipIconBounds,
+                  avatar: const Icon(AltIcons.memory, size: 18),
+                  label: Text(live.speechBackend),
+                ),
+                if ((translate && live.record?.directTranslation != true) ||
+                    live.generateSummary)
+                  Chip(
+                    visualDensity: altChipDensity,
+                    avatarBoxConstraints: altChipIconBounds,
+                    avatar: const Icon(AltIcons.translate, size: 18),
+                    label: Text('LLM · ${live.llmBackend}'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        for (final source in [
+          if (live.record?.sources.contains('microphone') == true) 'microphone',
+          if (live.record?.sources.contains('system') == true) 'system',
+        ])
+          Row(
+            children: [
+              SizedBox(
+                width: 96,
+                child: Text(
+                  t(source == 'system' ? 'systemAudio' : 'microphone'),
+                  style: text.labelLarge?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: AudioLevelHistory(
+                  key: ValueKey('level-history-$source'),
+                  samples: live.levelHistory[source] ?? const [],
+                  running: live.phase == SessionPhase.listening,
+                  label:
+                      '${t(source == 'system' ? 'systemAudio' : 'microphone')} · ${t('volumeHistory')}',
+                  color: source == 'microphone'
+                      ? colors.primary
+                      : colors.tertiary,
+                ),
+              ),
+            ],
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              t('volumeHistory'),
+              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
+            Text(
+              t('latestLevel'),
+              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ],
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) => RecordingWave(
+            running: live.phase == SessionPhase.listening,
+            // The histories reserve 96 px for the label and a 16 px gap.
+            historyWidth: constraints.maxWidth - 112,
+          ),
+        ),
+        Text(
+          [
+            if (!live.cloudSpeech)
+              '${t('pendingAudio')}: ${live.pending} · ${t('lastInference')}: ${live.lastInferenceSeconds.toStringAsFixed(1)} s',
+            if (translate && live.record?.directTranslation != true)
+              '${t('pendingTranslations')}: ${live.pendingTranslations} · ${t('lastTranslation')}: ${live.lastTranslationSeconds.toStringAsFixed(1)} s',
+          ].join(' · '),
+          style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+      ]),
+      radius: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+    ),
+    if (live.warning != null) Text(issue(live.warning!)),
+    if (live.error != null)
+      Text(issue(live.error!), style: TextStyle(color: colors.error)),
+    if (live.record?.lines.isEmpty ?? true)
+      Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(t('waitingSpeech'), textAlign: TextAlign.center),
+      ),
+  ]);
 }

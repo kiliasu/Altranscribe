@@ -583,7 +583,18 @@ class RealtimeController extends ChangeNotifier {
       _translationQueue.fold<int>(0, (count, item) => count + item.$2.length) +
       _lineQueue.length +
       _translationsRunning;
+
+  /// Time this session has spent listening. It holds while the session is
+  /// paused, as the transcript's own times do.
+  Duration get listened => _listening.elapsed;
+  final _listening = Stopwatch();
+
   void _notify() {
+    if (phase == SessionPhase.listening) {
+      _listening.start();
+    } else {
+      _listening.stop();
+    }
     if (!active) captionsVisible = false;
     if (!_disposed) notifyListeners();
   }
@@ -1515,6 +1526,7 @@ class RealtimeController extends ChangeNotifier {
     _sentences = TranscriptAssembler();
     error = warning = null;
     record = null;
+    _listening.reset();
     readySources.clear();
     levels.clear();
     levelHistory.clear();

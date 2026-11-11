@@ -436,7 +436,7 @@ void main() {
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets(
-    'live captions follow new text, support manual scrolling and follow late translations',
+    'live captions follow new text until the reader scrolls away, and jump back to the latest',
     (tester) async {
       tester.view.physicalSize = const Size(1000, 700);
       tester.view.devicePixelRatio = 1;
@@ -452,16 +452,11 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('start')));
       await tester.pumpAndSettle();
-      final follow = find.byKey(const Key('follow-latest'));
-      expect(tester.widget<Checkbox>(follow).value, true);
-      final scroll = tester
-          .widget<CustomScrollView>(
-            find.byWidgetPredicate(
-              (widget) =>
-                  widget is CustomScrollView && widget.controller != null,
-            ),
-          )
-          .controller!;
+      final jump = find.byKey(const Key('jump-to-latest'));
+      final view = find.byWidgetPredicate(
+        (widget) => widget is CustomScrollView && widget.controller != null,
+      );
+      final scroll = tester.widget<CustomScrollView>(view).controller!;
       Future<void> addLine(int number) async {
         (controller.engine as FakeEngine).response = Completer<String>()
           ..complete('Transcript sentence $number. ' * 4);
@@ -472,22 +467,30 @@ void main() {
         await tester.pumpAndSettle();
       }
 
+      Future<void> scrollBy(double distance) async {
+        await tester.drag(view, Offset(0, distance));
+        await tester.pumpAndSettle();
+      }
+
+      bool atEnd() =>
+          (scroll.offset - scroll.position.maxScrollExtent).abs() < 1;
+
       for (var i = 0; i < 10; i++) {
         await addLine(i);
       }
       expect(scroll.position.maxScrollExtent, greaterThan(500));
-      expect(scroll.offset, closeTo(scroll.position.maxScrollExtent, 1));
-      await tester.tap(follow);
-      await tester.pumpAndSettle();
-      scroll.jumpTo(120);
-      await tester.pumpAndSettle();
+      expect(atEnd(), isTrue);
+      expect(jump, findsNothing);
+
+      // Scrolling up by hand stops following: new text leaves the reader
+      // where they are, and the button back to the latest line appears.
+      await scrollBy(400);
+      final reading = scroll.offset;
+      expect(atEnd(), isFalse);
+      expect(jump, findsOneWidget);
       await addLine(10);
-      expect(scroll.offset, closeTo(120, 1));
-      await tester.tap(follow);
-      await tester.pumpAndSettle();
-      expect(scroll.offset, closeTo(scroll.position.maxScrollExtent, 1));
-      // A level update alone must not pull the user back down.
-      scroll.jumpTo(200);
+      expect(scroll.offset, closeTo(reading, 1));
+      // A level update alone does not pull the reader back down either.
       (controller.audio as FakeAudio).events.add({
         'type': 'level',
         'source': 'microphone',
@@ -495,35 +498,56 @@ void main() {
       });
       await tester.pump(const Duration(milliseconds: 150));
       await tester.pumpAndSettle();
-      expect(scroll.offset, closeTo(200, 1));
+      expect(scroll.offset, closeTo(reading, 1));
+
+      // The button returns to the latest line and follows again.
+      await tester.tap(jump);
+      await tester.pumpAndSettle();
+      expect(atEnd(), isTrue);
+      expect(jump, findsNothing);
+      await addLine(11);
+      expect(atEnd(), isTrue);
+
+      // Scrolling back to the end by hand follows again as well.
+      await scrollBy(400);
+      expect(jump, findsOneWidget);
+      await scrollBy(-2000);
+      expect(atEnd(), isTrue);
+      expect(jump, findsNothing);
+
+      // A translation that arrives late grows the latest line in place.
       final translator = controller.translator as FakeTranslator;
       translator.response = Completer<String>();
-      await addLine(11);
+      await addLine(12);
       expect(find.textContaining('翻译中'), findsWidgets);
       expect(find.byKey(const Key('translation-placeholder')), findsWidgets);
-      expect(scroll.offset, closeTo(scroll.position.maxScrollExtent, 1));
+      expect(atEnd(), isTrue);
       final beforeTranslation = scroll.position.maxScrollExtent;
       translator.response!.complete('迟到的中文译文。' * 100);
       await tester.pumpAndSettle();
       expect(find.textContaining('翻译中'), findsNothing);
-      expect(find.byKey(const Key('translation-placeholder')), findsNothing);
       expect(scroll.position.maxScrollExtent, greaterThan(beforeTranslation));
-      expect(scroll.offset, closeTo(scroll.position.maxScrollExtent, 1));
-      // The checkbox stays accessible at the bottom; manual mode survives navigation.
-      await tester.tap(follow);
-      await tester.pumpAndSettle();
-      scroll.jumpTo(180);
+      expect(atEnd(), isTrue);
+
+      // Reading earlier text survives leaving the page and coming back.
+      await scrollBy(300);
+      final kept = scroll.offset;
       await tester.tap(find.text('设置').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('转录').last);
       await tester.pumpAndSettle();
-      expect(tester.widget<Checkbox>(follow).value, false);
-      expect(scroll.offset, closeTo(180, 1));
+      expect(jump, findsOneWidget);
+      expect(
+        tester.widget<CustomScrollView>(view).controller!.offset,
+        closeTo(kept, 1),
+      );
+
+      // A new session starts on its latest line again.
       await tester.tap(find.byKey(const Key('stop')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('start')));
       await tester.pumpAndSettle();
-      expect(tester.widget<Checkbox>(follow).value, true);
+      expect(jump, findsNothing);
       await tester.tap(find.byKey(const Key('stop')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);

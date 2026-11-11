@@ -48,15 +48,20 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       await tester.pump(const Duration(milliseconds: 300));
-      // The chip names the chosen provider and model, not the service's
-      // default, and the bar counts translated lines.
-      expect(find.text('LLM · OpenAI · gpt-test'), findsOneWidget);
+      // The file panel names the chosen provider and model, not the
+      // service's default, and counts the translated lines.
+      expect(
+        find.textContaining('翻译为简体中文 · OpenAI · gpt-test'),
+        findsOneWidget,
+      );
       expect(find.textContaining('Ollama'), findsNothing);
-      expect(find.text('已翻译 0 / 2'), findsOneWidget);
+      expect(find.textContaining('已翻译 0 / 2 句'), findsOneWidget);
       expect(live.fileTranslationSlots, 8);
       translator.waiting.first.complete('一句话。');
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('已翻译 1 / 2'), findsOneWidget);
+      expect(find.textContaining('已翻译 1 / 2 句'), findsOneWidget);
+      // The bar glides to its new length.
+      await tester.pump(const Duration(milliseconds: 500));
       final progress = tester.widget<LinearProgressIndicator>(
         find.byKey(const Key('file-progress')),
       );

@@ -7,6 +7,8 @@ import 'package:altranscribe/shared/ui/alt_icons.dart';
 import 'package:altranscribe/data/services/transcription/transcript_assembler.dart';
 
 import 'package:altranscribe/shared/ui/page_layout.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
+import 'package:altranscribe/shared/ui/streaming_text.dart';
 import 'package:altranscribe/app/l10n/localized_issue.dart';
 
 class TranscriptTile extends StatelessWidget {
@@ -19,6 +21,8 @@ class TranscriptTile extends StatelessWidget {
     this.highlight = false,
     this.awaitingTranslation = false,
     this.animateTranslation = true,
+    this.streaming = false,
+    this.emphasis = 1,
   });
   final TranscriptLine line;
   final bool english;
@@ -26,6 +30,14 @@ class TranscriptTile extends StatelessWidget {
   final double captionSize;
   final bool highlight;
   final bool animateTranslation;
+
+  /// The line is still being recognized or translated in a live session:
+  /// what each new result adds fades in.
+  final bool streaming;
+
+  /// How strongly the line reads, from 1 down to a receded earlier line.
+  /// The text fades rather than the whole row, so no layer is needed.
+  final double emphasis;
 
   /// The session will translate this line once its text is final. Its
   /// translation space is held from the first word, so the tile does not
@@ -40,11 +52,14 @@ class TranscriptTile extends StatelessWidget {
     final motion =
         !animateTranslation || MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : const Duration(milliseconds: 200);
+        : AltMotion.quick;
+    Color fade(Color color) =>
+        emphasis >= 1 ? color : color.withValues(alpha: color.a * emphasis);
     final body = text.bodyLarge!.copyWith(
       fontSize: compact ? 16 : captionSize,
       height: compact ? 1.5 : 1.45,
       letterSpacing: compact ? .5 : .2,
+      color: fade(text.bodyLarge!.color ?? colors.onSurface),
     );
     final status = line.transcriptionStatus;
     // Passing states are shown in the header, where they take no extra room.
@@ -65,27 +80,35 @@ class TranscriptTile extends StatelessWidget {
                 : 'tagTranslationQueued',
           )
         : null;
-    final label = text.labelMedium?.copyWith(color: colors.onSurfaceVariant);
+    final label = text.labelMedium?.copyWith(
+      color: fade(colors.onSurfaceVariant),
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
     final Widget translation = translated
-        ? SelectableText(
+        ? StreamingText(
             key: const ValueKey('translation'),
             readableTranscript(line.displayTranslation!),
+            active: streaming,
             style: body.copyWith(
               fontWeight: FontWeight.w500,
-              color: colors.primary,
+              color: fade(colors.primary),
             ),
           )
         : TranslationPlaceholder(
             key: const Key('translation-placeholder'),
             source: readableTranscript(line.displayText),
             style: body,
-            color: colors.primary.withValues(alpha: .12),
+            color: fade(colors.primary.withValues(alpha: .12)),
             label: t('translating'),
           );
-    return Container(
+    return AnimatedContainer(
+      duration: motion == Duration.zero ? Duration.zero : AltMotion.content,
+      curve: AltMotion.contentCurve,
       padding: compact ? EdgeInsets.zero : const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: highlight ? colors.surfaceContainerLow : Colors.transparent,
+        color: highlight
+            ? colors.surfaceContainerLow
+            : colors.surfaceContainerLow.withValues(alpha: 0),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
@@ -101,7 +124,7 @@ class TranscriptTile extends StatelessWidget {
                       ? AltIcons.volumeUp
                       : AltIcons.mic,
                   size: 16,
-                  color: colors.onSurfaceVariant,
+                  color: fade(colors.onSurfaceVariant),
                 ),
                 const SizedBox(width: 6),
               ],
@@ -118,7 +141,7 @@ class TranscriptTile extends StatelessWidget {
                       if (tag != null)
                         TextSpan(
                           text: ' · $tag',
-                          style: TextStyle(color: colors.primary),
+                          style: TextStyle(color: fade(colors.primary)),
                         ),
                     ],
                   ),
@@ -138,7 +161,11 @@ class TranscriptTile extends StatelessWidget {
             ),
           if (status != 'done' && !settling)
             pageHint(context, t('cloudPartialSaved')),
-          SelectableText(readableTranscript(line.displayText), style: body),
+          StreamingText(
+            readableTranscript(line.displayText),
+            style: body,
+            active: streaming,
+          ),
           if (translated || translating || awaitingTranslation) ...[
             SizedBox(height: compact ? 4 : 8),
             // The placeholder is sized like the text that replaces it; any

@@ -6,6 +6,8 @@ import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/app/theme/app_theme.dart';
 import 'package:altranscribe/shared/platform/mobile_platform.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
+import 'package:altranscribe/shared/ui/motion.dart';
+import 'package:altranscribe/shared/ui/streaming_text.dart';
 import 'package:altranscribe/features/captions/caption_host.dart'
     show captionChannel;
 import 'package:altranscribe/data/models/caption_preferences.dart';
@@ -94,6 +96,10 @@ class _CaptionPanelState extends State<CaptionPanel> {
   /// A count picked here, shown until the session confirms it.
   int? sentences;
   final scroll = ScrollController();
+
+  /// Rows already on the panel: a new one rises in, the rest stay put.
+  final shownRows = <String>{};
+  double? followedExtent;
   String t(String key) => strings[key]![widget.data['english'] == true ? 1 : 0];
   CaptionPreferences get prefs =>
       CaptionPreferences.fromJson(widget.data['preferences'] as Map? ?? {});
@@ -189,11 +195,30 @@ class _CaptionPanelState extends State<CaptionPanel> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final rows = widget.data['rows'] as List? ?? [];
+    final reduced = AltMotion.reduced(context);
+    // The newest sentence stays at the bottom: the panel glides there as
+    // the text grows, and earlier sentences dissolve under the top edge.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && scroll.hasClients) {
-        scroll.jumpTo(scroll.position.maxScrollExtent);
+      if (!mounted || !scroll.hasClients) return;
+      final end = scroll.position.maxScrollExtent;
+      if (end == followedExtent) return;
+      final first = followedExtent == null;
+      followedExtent = end;
+      if (first || reduced) {
+        scroll.jumpTo(end);
+      } else {
+        unawaited(
+          scroll.animateTo(
+            end,
+            duration: AltMotion.settle,
+            curve: AltMotion.contentCurve,
+          ),
+        );
       }
     });
+    final live = widget.data['phase'] == 'listening';
+    // Rows already there when the panel opens simply appear.
+    final opening = shownRows.isEmpty;
     Widget button(
       String action,
       String label,
@@ -246,6 +271,15 @@ class _CaptionPanelState extends State<CaptionPanel> {
                               color: colors.primary,
                             ),
                             const SizedBox(width: 10),
+                            if (live || paused) ...[
+                              // Steady, so the panel never redraws for it.
+                              PulsingDot(
+                                color: paused ? colors.tertiary : recordingRed,
+                                pulsing: false,
+                                size: 8,
+                              ),
+                              const SizedBox(width: 8),
+                            ],
                             Expanded(
                               child: Text.rich(
                                 TextSpan(
@@ -275,65 +309,112 @@ class _CaptionPanelState extends State<CaptionPanel> {
               ],
             ),
             Expanded(
-              child: SingleChildScrollView(
-                controller: scroll,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (rows.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          t('waitingSpeech'),
-                          style: style.copyWith(color: colors.onSurfaceVariant),
+              child: EdgeFade(
+                top: 28,
+                color: colors.surfaceContainer,
+                child: SingleChildScrollView(
+                  controller: scroll,
+                  padding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (rows.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            t('waitingSpeech'),
+                            style: style.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
                         ),
-                      ),
-                    for (final row in rows)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (widget.data['rows'] != null &&
-                                rows.map((r) => r['source']).toSet().length > 1)
-                              Text(
-                                t(
-                                  row['source'] == 'system'
-                                      ? 'systemAudio'
-                                      : 'microphone',
-                                ),
-                                style: Theme.of(context).textTheme.labelSmall,
-                              ),
-                            if (prefs.original &&
-                                (row['original'] as String).isNotEmpty)
-                              Text(row['original'] as String, style: style),
-                            if (prefs.translation &&
-                                widget.data['hasTranslation'] == true) ...[
-                              if (prefs.original) const SizedBox(height: 4),
-                              Text(
-                                (row['translation'] as String).isNotEmpty
-                                    ? row['translation'] as String
-                                    : t(switch (row['status']) {
-                                        'failed' => 'translationFailed',
-                                        'interrupted' =>
-                                          'translationInterrupted',
-                                        _ => 'translationPending',
-                                      }),
-                                style: style.copyWith(
-                                  color: colors.primary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ],
+                      for (final (index, row) in rows.indexed)
+                        AltRise(
+                          key: ValueKey(row['id'] ?? index),
+                          animate: shownRows.add('${row['id']}') && !opening,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (widget.data['rows'] != null &&
+                                    rows
+                                            .map((r) => r['source'])
+                                            .toSet()
+                                            .length >
+                                        1)
+                                  Text(
+                                    t(
+                                      row['source'] == 'system'
+                                          ? 'systemAudio'
+                                          : 'microphone',
+                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall,
+                                  ),
+                                if (prefs.original &&
+                                    (row['original'] as String).isNotEmpty)
+                                  StreamingText(
+                                    row['original'] as String,
+                                    style: style,
+                                    active: live && index == rows.length - 1,
+                                  ),
+                                if (prefs.translation &&
+                                    widget.data['hasTranslation'] == true) ...[
+                                  if (prefs.original) const SizedBox(height: 4),
+                                  AnimatedSwitcher(
+                                    duration: AltMotion.quick,
+                                    layoutBuilder: (current, previous) => Stack(
+                                      alignment: Alignment.topLeft,
+                                      children: [...previous, ?current],
+                                    ),
+                                    child:
+                                        (row['translation'] as String)
+                                            .isNotEmpty
+                                        ? StreamingText(
+                                            key: const ValueKey('translation'),
+                                            row['translation'] as String,
+                                            active:
+                                                live &&
+                                                index == rows.length - 1,
+                                            style: style.copyWith(
+                                              color: colors.primary,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          )
+                                        // Waiting is said quietly, so it is
+                                        // never read as the translation itself.
+                                        : Text(
+                                            key: ValueKey(row['status']),
+                                            t(switch (row['status']) {
+                                              'failed' => 'translationFailed',
+                                              'interrupted' =>
+                                                'translationInterrupted',
+                                              _ => 'translationPending',
+                                            }),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color:
+                                                      row['status'] == 'failed'
+                                                      ? colors.error
+                                                      : colors.onSurfaceVariant,
+                                                ),
+                                          ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                    if (rows.isNotEmpty &&
-                        !prefs.original &&
-                        widget.data['hasTranslation'] != true)
-                      Text(t('captionTranslationOff'), style: style),
-                  ],
+                      if (rows.isNotEmpty &&
+                          !prefs.original &&
+                          widget.data['hasTranslation'] != true)
+                        Text(t('captionTranslationOff'), style: style),
+                    ],
+                  ),
                 ),
               ),
             ),
