@@ -28,6 +28,11 @@ class FlutterWindow : public Win32Window {
   // The project to run.
   flutter::DartProject project_;
 
+  // Puts the window where it was when it was last closed, and keeps
+  // that place with the app's data.
+  void RestorePlacement();
+  void SavePlacement();
+
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<AudioCapture> audio_capture_;
