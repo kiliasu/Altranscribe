@@ -17,6 +17,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart' show ScrollDirection;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
@@ -101,6 +102,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   final fileOptions = <bool>[false, false, false, false];
   List<String> filePaths = [];
   final openFiles = FilePickRequest();
+  final searchFocus = FocusNode();
   String preferredSpellings = '';
   final scrollBucket = PageStorageBucket();
   late final sessionScroll = TranscriptScrollController(
@@ -390,6 +392,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
     sessionScroll.dispose();
     panelHidden.dispose();
     openFiles.dispose();
+    searchFocus.dispose();
     acknowledgeTimer?.cancel();
     super.dispose();
   }
@@ -448,7 +451,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   Widget captionToggle(String key, {bool compact = false}) => compact
       ? IconButton(
           key: Key(key),
-          tooltip: t('floatingCaptions'),
+          tooltip: keyed(t('floatingCaptions'), 'Ctrl+Shift+C'),
           isSelected: live.captionsVisible,
           selectedIcon: const Icon(AltIcons.subtitles, fill: 1),
           onPressed: () => live.setCaptionsVisible(!live.captionsVisible),
@@ -480,6 +483,10 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
   }
 
   String t(String key) => strings[key]![widget.english ? 1 : 0];
+
+  /// A label with the keys that do the same, where there is a keyboard.
+  String keyed(String label, String keys) =>
+      MobilePlatform.android ? label : '$label ($keys)';
   ColorScheme get colors => Theme.of(context).colorScheme;
   TextTheme get text => Theme.of(context).textTheme;
 
@@ -504,6 +511,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           page = 0;
           fileMode = false;
         }),
+        searchFocus: searchFocus,
       ),
       2 => DevicesScreen(live: live, english: widget.english),
       _ => SettingsScreen(
@@ -593,8 +601,102 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
           selectPage(0);
         }
       },
-      child: scaffold,
+      // The keys work wherever the focus is on the page, and from the
+      // start; a dialog over it keeps them to itself.
+      child: CallbackShortcuts(
+        bindings: shortcuts,
+        child: Focus(
+          autofocus: true,
+          skipTraversal: true,
+          includeSemantics: false,
+          child: scaffold,
+        ),
+      ),
     );
+  }
+
+  /// The keyboard's way through the app, as the Mac app has it: the pages
+  /// by number, the session with Shift, the text size as a browser zooms.
+  Map<ShortcutActivator, VoidCallback> get shortcuts {
+    void resize(double? step) => setState(
+      () => captionSize = step == null
+          ? 22
+          : (captionSize + step).clamp(16, 36).toDouble(),
+    );
+    final capturing =
+        !live.processingFiles &&
+        (paused || live.phase == SessionPhase.listening);
+    return {
+      for (final (i, key) in const [
+        LogicalKeyboardKey.digit1,
+        LogicalKeyboardKey.digit2,
+        LogicalKeyboardKey.digit3,
+        LogicalKeyboardKey.digit4,
+      ].indexed)
+        SingleActivator(key, control: true): () => selectPage(i),
+      const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+        selectPage(1);
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => searchFocus.requestFocus(),
+        );
+      },
+      const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
+        if (session) return;
+        setState(() {
+          page = 0;
+          fileMode = true;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => openFiles.open());
+      },
+      const SingleActivator(
+        LogicalKeyboardKey.keyR,
+        control: true,
+        shift: true,
+      ): () {
+        if (!canStart) return;
+        if (page != 0) setState(() => page = 0);
+        startSession();
+      },
+      const SingleActivator(
+        LogicalKeyboardKey.keyP,
+        control: true,
+        shift: true,
+      ): () {
+        if (capturing && !live.pausePending && !confirmingDiscard) {
+          live.togglePause();
+        }
+      },
+      const SingleActivator(
+        LogicalKeyboardKey.keyS,
+        control: true,
+        shift: true,
+      ): () {
+        if (capturing && !confirmingDiscard) stopSession();
+      },
+      const SingleActivator(
+        LogicalKeyboardKey.keyC,
+        control: true,
+        shift: true,
+      ): () {
+        if (session && !live.processingFiles) {
+          live.setCaptionsVisible(!live.captionsVisible);
+        }
+      },
+      for (final key in const [
+        LogicalKeyboardKey.equal,
+        LogicalKeyboardKey.numpadAdd,
+      ]) ...{
+        SingleActivator(key, control: true): () => resize(2),
+        SingleActivator(key, control: true, shift: true): () => resize(2),
+      },
+      for (final key in const [
+        LogicalKeyboardKey.minus,
+        LogicalKeyboardKey.numpadSubtract,
+      ])
+        SingleActivator(key, control: true): () => resize(-2),
+      const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
+          resize(null),
+    };
   }
 
   Widget navigationRail() => SizedBox(
@@ -1684,50 +1786,49 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
             ),
           ),
         ),
-    onPressed:
-        session ||
-            !live.initialized ||
-            live.removingModel ||
-            (fileMode ? filePaths.isEmpty : !microphone && !systemAudio)
-        ? null
-        : () {
-            setState(() => minimized = false);
-            if (fileMode) {
-              live.startFiles(
-                paths: filePaths,
-                language: languageCodes[sourceLanguage]!,
-                targetLanguage: translate
-                    ? languageCodes[targetLanguage]
-                    : null,
-                summaryLanguage: widget.english ? 'en' : 'zh',
-                options: CleanupOptions(
-                  names: fileOptions[0],
-                  terms: fileOptions[1],
-                  corrections: fileOptions[2],
-                  mergeSentences: fileOptions[3],
-                  spellings: preferredSpellings
-                      .split(RegExp(r'[,，\n]'))
-                      .map((s) => s.trim())
-                      .where((s) => s.isNotEmpty)
-                      .toSet()
-                      .toList(),
-                ),
-              );
-            } else {
-              live.start(
-                microphone: microphone,
-                system: systemAudio,
-                language: languageCodes[sourceLanguage]!,
-                targetLanguage: translate
-                    ? languageCodes[targetLanguage]
-                    : null,
-                summaryLanguage: widget.english ? 'en' : 'zh',
-              );
-            }
-          },
+    onPressed: canStart ? startSession : null,
     icon: Icon(fileMode ? AltIcons.folderOpen : AltIcons.playArrow),
     label: Text(t(fileMode ? 'startFiles' : 'start')),
   );
+
+  bool get canStart =>
+      !session &&
+      live.initialized &&
+      !live.removingModel &&
+      (fileMode ? filePaths.isNotEmpty : microphone || systemAudio);
+
+  /// Starts what the page is set up for: a live session or the file queue.
+  void startSession() {
+    setState(() => minimized = false);
+    if (fileMode) {
+      live.startFiles(
+        paths: filePaths,
+        language: languageCodes[sourceLanguage]!,
+        targetLanguage: translate ? languageCodes[targetLanguage] : null,
+        summaryLanguage: widget.english ? 'en' : 'zh',
+        options: CleanupOptions(
+          names: fileOptions[0],
+          terms: fileOptions[1],
+          corrections: fileOptions[2],
+          mergeSentences: fileOptions[3],
+          spellings: preferredSpellings
+              .split(RegExp(r'[,，\n]'))
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)
+              .toSet()
+              .toList(),
+        ),
+      );
+    } else {
+      live.start(
+        microphone: microphone,
+        system: systemAudio,
+        language: languageCodes[sourceLanguage]!,
+        targetLanguage: translate ? languageCodes[targetLanguage] : null,
+        summaryLanguage: widget.english ? 'en' : 'zh',
+      );
+    }
+  }
 
   String get sessionTitle => t(switch (live.phase) {
     SessionPhase.loading => 'loadingModel',
@@ -1955,7 +2056,10 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                     IconButton(
                       style: button,
                       key: const Key('pause'),
-                      tooltip: t(paused ? 'resume' : 'pause'),
+                      tooltip: keyed(
+                        t(paused ? 'resume' : 'pause'),
+                        'Ctrl+Shift+P',
+                      ),
                       onPressed: !live.pausePending && !confirmingDiscard
                           ? live.togglePause
                           : null,
@@ -1976,7 +2080,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                     IconButton(
                       style: button,
                       key: const Key('caption-smaller'),
-                      tooltip: t('smallerCaptions'),
+                      tooltip: keyed(t('smallerCaptions'), 'Ctrl+-'),
                       onPressed: captionSize > 16
                           ? () => setState(() => captionSize -= 2)
                           : null,
@@ -1989,7 +2093,7 @@ class _AltranscribeHomeState extends State<AltranscribeHome>
                     IconButton(
                       style: button,
                       key: const Key('caption-larger'),
-                      tooltip: t('largerCaptions'),
+                      tooltip: keyed(t('largerCaptions'), 'Ctrl++'),
                       onPressed: captionSize < 36
                           ? () => setState(() => captionSize += 2)
                           : null,

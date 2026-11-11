@@ -34,6 +34,8 @@ The Windows app is not code-signed, so Windows may say "Windows protected your P
 
 Pausing stops new capture while earlier speech finishes processing, and **Discard recording** deletes the current transcript. Closing the caption window only hides it.
 
+**Keyboard (Windows):** `Ctrl+1` to `Ctrl+4` switch between Transcribe, Library, Devices and Settings, `Ctrl+F` searches the library and `Ctrl+O` adds files. `Ctrl+Shift+R` starts, `Ctrl+Shift+P` pauses or resumes, `Ctrl+Shift+S` stops and saves, and `Ctrl+Shift+C` shows or hides the floating captions. `Ctrl` with `+`, `-` or `0` changes the transcript's text size.
+
 **Local models on Windows:** get `whisper-server.exe` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp), enter its path in the model settings and choose CPU or GPU. The download button next to each model fetches Tiny to Large v3 Turbo and verifies the file; the [model guide](docs/en/models.md) explains adding files yourself. Nemotron 3.5 Transcribe needs NVIDIA's [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) and downloads its model in the same panel; see [its section](docs/en/models.md#nemotron-35-transcribe). For translation and summaries, run Ollama or another OpenAI-compatible text service on the same computer, enter an online OpenAI-compatible service with its API key, or use OpenAI, Gemini or Anthropic directly.
 
 Other setups: [cloud services](docs/en/cloud-providers.md) and [connecting to a Windows host](docs/en/remote-processing.md), which lets a phone use your computer's models: turn on sharing on the computer, scan its QR code with the phone, and the host appears on the phone's **Devices** page. The phone can also transcribe with Nemotron itself and leave only translation and summaries to the computer.
