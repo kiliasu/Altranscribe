@@ -1,3 +1,5 @@
+import 'package:altranscribe/shared/ui/audio_visualizer.dart';
+import 'package:altranscribe/shared/ui/expressive.dart';
 import 'package:altranscribe/shared/ui/motion.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -309,5 +311,87 @@ void main() {
     expect(tester.getCenter(find.text('Title')).dy, lessThan(settled.dy));
     await tester.pumpAndSettle();
     expect(find.text('Title'), findsNothing);
+  });
+
+  testWidgets('slow decoration steps thirty times a second, only while it '
+      'is in view', (tester) async {
+    Widget build({bool inView = true, List<double> samples = const [.2]}) =>
+        host(
+          TickerMode(
+            enabled: inView,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const AltLoading(),
+                const RecordingWave(running: true, historyWidth: 300),
+                AudioLevelHistory(
+                  samples: samples,
+                  running: true,
+                  label: 'Level',
+                  color: Colors.pink,
+                ),
+              ],
+            ),
+          ),
+        );
+    expect(AltPace.running, 0);
+    await tester.pumpWidget(build());
+    // The shape and the wave move for as long as they are shown; the level
+    // rests until a sample arrives.
+    expect(AltPace.running, 2);
+    var frames = 0;
+    for (var i = 0; i < 100; i++) {
+      // Time passes without a frame; one is drawn only when asked for.
+      await tester.binding.delayed(const Duration(milliseconds: 10));
+      if (tester.binding.hasScheduledFrame) {
+        frames++;
+        await tester.pump();
+      }
+    }
+    // A second of them asks for about thirty frames, not one per vsync.
+    expect(frames, inInclusiveRange(28, 32));
+
+    // A new sample scrolls in over its interval, then the level rests.
+    await tester.pumpWidget(build(samples: const [.2, .4]));
+    expect(AltPace.running, 3);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(AltPace.running, 3);
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(AltPace.running, 2);
+
+    // Out of view, nothing steps, even as samples keep arriving.
+    await tester.pumpWidget(build(inView: false));
+    expect(AltPace.running, 0);
+    await tester.pumpWidget(build(inView: false, samples: const [.2, .4, .6]));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(AltPace.running, 0);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+
+    // Back in view, the shape and the wave go on from where they were.
+    await tester.pumpWidget(build(samples: const [.2, .4, .6]));
+    expect(AltPace.running, 2);
+    await tester.pumpWidget(const SizedBox());
+    expect(AltPace.running, 0);
+  });
+
+  test('the slow clock counts its steps and holds while stopped', () async {
+    final others = AltPace.running;
+    final pace = AltPace();
+    var steps = 0;
+    pace.addListener(() => steps++);
+    expect(pace.elapsed, Duration.zero);
+    pace.run(true);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    pace.run(false);
+    final held = pace.elapsed;
+    expect(steps, greaterThanOrEqualTo(2));
+    expect(held, AltPace.step * steps);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(pace.elapsed, held);
+    pace.run(true);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(pace.elapsed, greaterThan(held));
+    pace.dispose();
+    expect(AltPace.running, others);
   });
 }

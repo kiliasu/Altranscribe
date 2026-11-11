@@ -66,6 +66,73 @@ abstract final class AltMotion {
   );
 }
 
+/// The clock of decoration that moves slowly for as long as a session
+/// lasts: a turning shape, a drifting wave, a level scrolling in, a dot
+/// that pulses. A ticker would draw each of them at the display's rate,
+/// 120 or 165 times a second, to move them a fraction of a pixel; thirty
+/// steps a second look the same and leave most of those frames undrawn.
+///
+/// Every clock steps on the same beat, so whatever moves at one time is
+/// drawn in the same frames; clocks of their own would each ask for
+/// theirs. Listeners are told at every step and read [elapsed], which
+/// holds while the clock is stopped.
+class AltPace extends ChangeNotifier {
+  static const step = Duration(milliseconds: 33);
+
+  /// How many of these clocks are running: what a screen at rest should
+  /// have none of.
+  static int get running => _active.length;
+
+  static final _active = <AltPace>{};
+  static Timer? _beat;
+  static int _beatsBefore = 0;
+
+  /// Steps of the shared beat so far, counted by the timer itself, which
+  /// includes any it had to skip.
+  static int get _beats => _beatsBefore + (_beat?.tick ?? 0);
+
+  static void _onBeat(Timer _) {
+    // A listener may stop its clock, or another, while it is told.
+    for (final pace in _active.toList()) {
+      if (_active.contains(pace)) pace.notifyListeners();
+    }
+  }
+
+  int _stepsBefore = 0;
+  int _startedAt = 0;
+
+  bool get isRunning => _active.contains(this);
+
+  /// The time this clock has run.
+  Duration get elapsed =>
+      step * (_stepsBefore + (isRunning ? _beats - _startedAt : 0));
+
+  /// Runs while [wanted]: not with reduced motion, and not while its part
+  /// of the screen is out of view.
+  void run(bool wanted) {
+    if (wanted == isRunning) return;
+    if (wanted) {
+      _startedAt = _beats;
+      _active.add(this);
+      _beat ??= Timer.periodic(step, _onBeat);
+    } else {
+      _stepsBefore += _beats - _startedAt;
+      _active.remove(this);
+      if (_active.isEmpty) {
+        _beatsBefore = _beats;
+        _beat!.cancel();
+        _beat = null;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    run(false);
+    super.dispose();
+  }
+}
+
 /// Fades [child] with [animation] and moves it: from [enter] pixels below
 /// while it arrives, to [leave] pixels while it goes, which an
 /// [AnimatedSwitcher] tells apart by the reversing animation.
@@ -805,11 +872,11 @@ class _PulsingDotState extends State<PulsingDot> {
   /// The dot is on screen for as long as a session lasts. A ticker would
   /// draw the whole window at the display's rate for it; fifteen steps a
   /// second are as smooth for a slow fade and leave the screen at rest
-  /// between them.
-  static const _step = Duration(milliseconds: 66);
+  /// between them. They fall on the beat other decoration steps on, so
+  /// the dot costs no frames of its own while that is in view.
   static const _period = 1800;
-  Timer? _timer;
-  final _clock = Stopwatch();
+  late final _pace = AltPace()..addListener(_step);
+  int _stepped = -1;
   double _opacity = 1;
 
   @override
@@ -826,25 +893,23 @@ class _PulsingDotState extends State<PulsingDot> {
 
   void _update() {
     final pulse = widget.pulsing && !AltMotion.reduced(context);
-    if (pulse && _timer == null) {
-      _clock
-        ..reset()
-        ..start();
-      _timer = Timer.periodic(_step, (_) {
-        final phase = _clock.elapsedMilliseconds % _period / _period;
-        // Down to 35 % and back, easing at both ends.
-        setState(() => _opacity = .675 + .325 * math.cos(2 * math.pi * phase));
-      });
-    } else if (!pulse && _timer != null) {
-      _timer!.cancel();
-      _timer = null;
-      _opacity = 1;
-    }
+    _pace.run(pulse);
+    if (!pulse) _opacity = 1;
+  }
+
+  void _step() {
+    // Every other beat.
+    final count = _pace.elapsed.inMicroseconds ~/ AltPace.step.inMicroseconds;
+    if (count ~/ 2 == _stepped) return;
+    _stepped = count ~/ 2;
+    final phase = _pace.elapsed.inMilliseconds % _period / _period;
+    // Down to 35 % and back, easing at both ends.
+    setState(() => _opacity = .675 + .325 * math.cos(2 * math.pi * phase));
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _pace.dispose();
     super.dispose();
   }
 

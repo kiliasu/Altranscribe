@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:material_ui/material_ui.dart';
 
 import 'motion.dart';
@@ -43,12 +41,11 @@ class StreamingText extends StatefulWidget {
 
 class _StreamingTextState extends State<StreamingText> {
   /// A live line changes about once a second. Its fade takes a handful of
-  /// steps on a timer rather than a ticker's frame at the display's rate:
-  /// an opacity looks the same either way, and a long session draws a
-  /// fraction of the frames.
-  static const _step = Duration(milliseconds: 33);
-  Timer? _timer;
-  final _clock = Stopwatch();
+  /// steps on the shared slow clock rather than a ticker's frame at the
+  /// display's rate: an opacity looks the same either way, and a long
+  /// session draws a fraction of the frames.
+  late final _pace = AltPace()..addListener(_step);
+  Duration _from = Duration.zero;
   double _amount = 1;
   int _settled = 0;
 
@@ -66,29 +63,29 @@ class _StreamingTextState extends State<StreamingText> {
       return;
     }
     _amount = 0;
-    _clock
-      ..reset()
-      ..start();
-    _timer ??= Timer.periodic(_step, (_) {
-      final amount =
-          _clock.elapsedMilliseconds / StreamingText.duration.inMilliseconds;
-      if (amount >= 1) {
-        setState(_settle);
-      } else {
-        setState(() => _amount = amount);
-      }
-    });
+    _from = _pace.elapsed;
+    _pace.run(true);
+  }
+
+  void _step() {
+    final amount =
+        (_pace.elapsed - _from).inMicroseconds /
+        StreamingText.duration.inMicroseconds;
+    if (amount >= 1) {
+      setState(_settle);
+    } else {
+      setState(() => _amount = amount);
+    }
   }
 
   void _settle() {
-    _timer?.cancel();
-    _timer = null;
+    _pace.run(false);
     _amount = 1;
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _pace.dispose();
     super.dispose();
   }
 

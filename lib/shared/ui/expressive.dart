@@ -428,25 +428,22 @@ class AltLoading extends StatefulWidget {
   State<AltLoading> createState() => _AltLoadingState();
 }
 
-class _AltLoadingState extends State<AltLoading>
-    with SingleTickerProviderStateMixin {
-  late final animation = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 3500),
-  );
+class _AltLoadingState extends State<AltLoading> {
+  final pace = AltPace();
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
-      animation.stop();
-    } else {
-      animation.repeat();
-    }
+    // Still with reduced motion, and while its part of the screen is out
+    // of view.
+    pace.run(
+      !MediaQuery.disableAnimationsOf(context) &&
+          TickerMode.valuesOf(context).enabled,
+    );
   }
 
   @override
   void dispose() {
-    animation.dispose();
+    pace.dispose();
     super.dispose();
   }
 
@@ -455,18 +452,16 @@ class _AltLoadingState extends State<AltLoading>
     label: Localizations.localeOf(context).languageCode == 'zh'
         ? '正在处理'
         : 'Processing',
-    // Its own layer: the turning shape never repaints the page around it.
+    // Its own layer: the turning shape never repaints the page around it,
+    // and each step only paints, without building anything.
     child: RepaintBoundary(
       child: SizedBox.square(
         dimension: widget.size,
-        child: AnimatedBuilder(
-          animation: animation,
-          builder: (_, _) => CustomPaint(
-            painter: _LoadingPainter(
-              animation.value,
-              Theme.of(context).colorScheme.primary,
-              widget.shape,
-            ),
+        child: CustomPaint(
+          painter: _LoadingPainter(
+            pace,
+            Theme.of(context).colorScheme.primary,
+            widget.shape,
           ),
         ),
       ),
@@ -475,12 +470,17 @@ class _AltLoadingState extends State<AltLoading>
 }
 
 class _LoadingPainter extends CustomPainter {
-  _LoadingPainter(this.progress, this.color, this.shapeIndex);
-  final double progress;
+  _LoadingPainter(this.pace, this.color, this.shapeIndex)
+    : super(repaint: pace);
+  final AltPace pace;
   final Color color;
   final int shapeIndex;
+
+  /// One turn.
+  static const _turn = 3500000;
   @override
   void paint(Canvas canvas, Size size) {
+    final progress = pace.elapsed.inMicroseconds % _turn / _turn;
     canvas.translate(size.width / 2, size.height / 2);
     canvas.rotate(progress * math.pi * 2);
     canvas.scale(size.width * .8, size.height * .8);
@@ -570,9 +570,7 @@ class _LoadingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LoadingPainter oldDelegate) =>
-      progress != oldDelegate.progress ||
-      color != oldDelegate.color ||
-      shapeIndex != oldDelegate.shapeIndex;
+      color != oldDelegate.color || shapeIndex != oldDelegate.shapeIndex;
 }
 
 /// Custom track geometry with Slider's native input and accessibility.

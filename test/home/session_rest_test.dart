@@ -54,8 +54,11 @@ void main() {
       for (var i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      // At the top of a new session the panel is in view and its shape turns.
-      expect(runningTickers(), contains('AltLoading'));
+      // At the top of a new session the panel is in view: its shape turns
+      // and its wave drifts, at their own slow pace rather than on tickers
+      // that would draw every frame the display can show.
+      expect(AltPace.running, greaterThanOrEqualTo(3));
+      expect(runningTickers(), isEmpty);
 
       Future<void> speak(int i) async {
         (live.engine as FakeEngine).response = Completer<String>()
@@ -74,10 +77,11 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       // The transcript follows its latest line, the panel is far above, and
-      // nothing asks for frames any more: the dot steps on a timer, the
-      // panel's shapes are muted.
+      // nothing asks for frames at the display's rate any more. Of the slow
+      // clocks only the recording dot's is left; the panel's have stopped.
       expect(runningTickers(), isEmpty);
       expect(SchedulerBinding.instance.transientCallbackCount, 0);
+      expect(AltPace.running, 1);
 
       // Input levels move the meter without waking the rest of the screen.
       var notifications = 0;
@@ -101,6 +105,8 @@ void main() {
         greaterThan(before),
       );
       expect(runningTickers(), isEmpty);
+      // The level histories are out of view and do not scroll for them.
+      expect(AltPace.running, 1);
 
       await live.stop();
       for (var j = 0; j < 30; j++) {
