@@ -87,6 +87,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_GETMINMAXINFO: {
+      // The narrowest layout is a phone's; below it the page would be cut off.
+      const double scale = GetDpiForWindow(hwnd) / 96.0;
+      auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+      info->ptMinTrackSize = {static_cast<LONG>(400 * scale),
+                              static_cast<LONG>(560 * scale)};
+      return 0;
+    }
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
