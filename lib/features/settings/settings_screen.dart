@@ -6,6 +6,7 @@ import 'package:altranscribe/shared/ui/motion.dart';
 
 import 'package:altranscribe/app/l10n/strings.dart';
 import 'package:altranscribe/app/theme/app_theme.dart';
+import 'package:altranscribe/app/version.dart';
 import 'package:altranscribe/data/services/logging/app_log.dart';
 import 'package:altranscribe/shared/platform/mobile_platform.dart';
 import 'package:altranscribe/shared/ui/alt_icons.dart';
@@ -342,7 +343,8 @@ class SettingsScreen extends StatelessWidget {
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Text(
-          'Flutter · Material 3 Expressive · ${t('appTagline')}',
+          'Altranscribe $appVersion · ${t('appTagline')}',
+          key: const Key('app-version'),
           style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
         ),
       ),
