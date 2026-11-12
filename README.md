@@ -71,11 +71,23 @@ Recognition and translation can contain errors, and timestamps marked "≈" are 
 
 The Mac app is a separate native app, version 1.0.0, built with SwiftUI and AppKit around the same ideas: live transcription with translation, a file queue, floating captions and a searchable library. It follows macOS 26's design, with Liquid Glass bars and captions, a sidebar that lists every transcript by date, and Settings in its own window.
 
+![Altranscribe for macOS transcribing an English lecture into Chinese](docs/images/macos-live-light-en.png)
+
+<details><summary>Dark appearance</summary>
+
+![Altranscribe for macOS in the dark appearance](docs/images/macos-live-dark-en.png)
+
+</details>
+
 - **Speech**: Nemotron streaming in English or 3.5 multilingual (sherpa-onnx on the CPU, the default), Whisper Tiny to Large v3 on Metal, Parakeet v2, v3 and Ultra through FluidAudio on Core ML (English, or 25 European languages), Apple SpeechTranscriber, or OpenAI / Gemini for files, live speech and direct speech translation. Models download in Settings, Nemotron and Whisper checked by SHA-256; the app itself carries none.
 - **Text**: Apple Intelligence on the device, Ollama and other OpenAI-compatible services, OpenAI, Gemini or Anthropic, for translation and summaries.
 - **Capture**: a chosen microphone or the system audio (one at a time), with adaptive gain for quiet or distant voices. Each live session keeps an M4A recording unless **Save Recording** is off.
 - **Files**: drop audio, video or whole folders; macOS decodes WAV, M4A, MP3, AAC, AIFF, MP4 and MOV, and a quiet-file boost helps distant recordings.
 - **Library**: searched words are marked in the transcript; transcripts export as TXT, Markdown, HTML or SRT and move to the Trash with their recording when deleted.
+
+![Floating bilingual captions in Liquid Glass on macOS](docs/images/macos-captions-en.png)
+
+![A saved transcript on macOS with its AI title and summary](docs/images/macos-record-en.png)
 
 It has no local network sharing, host pairing, FFmpeg, automatic term correction or HTML player, and records one source at a time. The [macOS guide](apple/README.md) (in Chinese) covers every engine, the data and model folders, permissions and the checks that were run.
 

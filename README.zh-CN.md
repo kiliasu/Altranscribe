@@ -71,11 +71,23 @@ Windows 和 Android 共用一个 Flutter 应用；Mac 上是单独的原生应�
 
 Mac 版是单独的原生应用，版本 1.0.0，用 SwiftUI 和 AppKit 编写，功能思路相同：实时转录与翻译、文件队列、悬浮字幕和可搜索的记录库。界面遵循 macOS 26 的设计：底栏和悬浮字幕使用 Liquid Glass，侧栏按日期列出全部文稿，设置在独立窗口中打开。
 
+![macOS 版 Altranscribe 正在把英文讲座转录并翻译成中文](docs/images/macos-live-light-zh.png)
+
+<details><summary>深色外观</summary>
+
+![macOS 版 Altranscribe 深色外观](docs/images/macos-live-dark-zh.png)
+
+</details>
+
 - **语音**：Nemotron 流式英语版或 3.5 多语言版（sherpa-onnx，CPU，默认）、Metal 上的 Whisper Tiny 到 Large v3、通过 FluidAudio 在 Core ML 上运行的 Parakeet v2、v3 和 Ultra（英语，或 25 种欧洲语言）、Apple SpeechTranscriber，或 OpenAI / Gemini 的文件转录、实时转录和语音直译。模型在设置中下载（Nemotron 和 Whisper 以 SHA-256 校验），应用本身不带模型。
 - **文字**：设备端 Apple Intelligence、Ollama 等 OpenAI 兼容服务、OpenAI、Gemini 或 Anthropic，用于翻译和摘要。
 - **采集**：指定的麦克风或系统声音（一次一个），自适应增益能提升较轻或较远的声音。实时会话默认保存一份 M4A 录音，可关闭「保存录音」。
 - **文件**：可拖入音频、视频或整个文件夹；macOS 能解码 WAV、M4A、MP3、AAC、AIFF、MP4 和 MOV，「低音量增强」适合远距离录音。
 - **记录**：搜索的词会在文稿中标出；文稿可导出为 TXT、Markdown、HTML 或 SRT，删除时连同录音移到废纸篓。
+
+![macOS 上的 Liquid Glass 双语悬浮字幕](docs/images/macos-captions-zh.png)
+
+![macOS 上保存后的文稿，带 AI 生成的标题和摘要](docs/images/macos-record-zh.png)
 
 Mac 版不包含局域网共享、主机配对、FFmpeg、自动术语纠错和网页播放器，一次只采集一个音源。各引擎、数据与模型目录、权限和验证记录见 [macOS 说明](apple/README.md)。
 
