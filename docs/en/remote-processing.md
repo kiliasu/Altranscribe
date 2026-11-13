@@ -26,7 +26,7 @@ The client does not need Whisper or model weights. Windows file transcription st
 
 - Sharing is off by default. Closing its settings panel leaves sharing active; turn off the sharing switch or exit the host app to end it.
 - Local network addresses and Tailscale's private address range are accepted. Connections between Tailscale nodes have not been verified. Public internet connections and HTTPS are not supported.
-- HTTP does not encrypt traffic; share only on trusted networks. Tailscale connections rely on Tailscale's own network protection.
+- HTTP does not encrypt traffic; share only on trusted networks. This is why the Android app allows cleartext traffic. Tailscale connections rely on Tailscale's own network protection.
 - Running local transcription and sharing at the same time uses additional memory or GPU memory. Clients receive a message when the host is busy.
 
 ## Data and interruptions
